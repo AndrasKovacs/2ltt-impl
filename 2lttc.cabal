@@ -38,8 +38,11 @@ flag llvm
 executable 2lttc
   main-is: Main.hs
   other-modules:
+      Common
       MainInteraction
       Parser.Batteries
+      Parser.Test
+      Parser.TestRun
       Paths_2lttc
   hs-source-dirs:
       src

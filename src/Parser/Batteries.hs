@@ -6,8 +6,8 @@ import Common
 
 import qualified Data.ByteString as B
 import qualified Data.Set as S
-import Language.Haskell.TH
-import Language.Haskell.TH.Syntax
+import Language.Haskell.TH        hiding (Overlap)
+import Language.Haskell.TH.Syntax hiding (Overlap(..))
 
 import qualified FlatParse.Stateful as FP
 import qualified FlatParse.Common.Switch as FP
@@ -152,50 +152,60 @@ localIndentation n p = FP.local (\_ -> n) p
 -- Template Haskell for generating basic parsing utilities
 --------------------------------------------------------------------------------
 
+-- | Lexer configuration.
+--   - An identifier starts with a FirstIdentChar and is followed by 0 or more RestIdentChar-s, which is not
+--     a reserved symbol
+--   - An operator is a sequence of 1 or more OperatorChar-s which is not a reserved symbol.
+--   - ASSUMPTION 1: operators and identifiers don't overlap.
+--   - ASSUMPTION 2: symbols don't contain whitespace characters.
+--   - A symbol is any nonempty sequence of non-whitespace characters.
+
 data Config = Config {
-    _configFirstIdentChar    :: (CodeQ (Parser Char))  -- ^ Parsing first character of an identifier.
-  , _configRestIdentChar     :: (CodeQ (Parser Char))  -- ^ Parsing non-first characters of an identifier.
-  , _configWhitespaceChars   :: String   -- ^ List of whitespace characters, excluding newline (which is always whitespace).
-  , _configLineComment       :: String   -- ^ Line comment start.
-  , _configBlockCommentStart :: String   -- ^ Block comment start.
-  , _configBlockCommentEnd   :: String   -- ^ Block comment end.
-  , _configKeywords          :: [String] -- ^ List of keywords.
+    _firstIdentChar    :: (CodeQ (Parser Char))  -- ^ Parsing first character of an identifier.
+  , _restIdentChar     :: (CodeQ (Parser Char))  -- ^ Parsing non-first characters of an identifier.
+  , _operatorChar      :: (CodeQ (Parser Char))  -- ^ Parsing operator characters.
+  , _whitespaceChars   :: String   -- ^ List of whitespace characters, excluding newline (which is always whitespace).
+  , _lineComment       :: String   -- ^ Line comment start.
+  , _blockCommentStart :: String   -- ^ Block comment start.
+  , _blockCommentEnd   :: String   -- ^ Block comment end.
+  , _symbols           :: [String] -- ^ List of reserved symbols (may overlap with idents and operators)
   }
 
-makeFields ''Config
+data Overlap = IdentOverlap | OpOverlap | NoOverlap
 
 -- Working around nested quote limitations
 --------------------------------------------------------------------------------
 
-symBody1 :: String -> Q Exp
-symBody1 s = [| spanOfToken $(FP.string s) `notFollowedBy` identChar |]
+handleOverlap :: Overlap -> Q Exp
+handleOverlap = \case
+  IdentOverlap -> [| FP.fails identChar    |]
+  OpOverlap    -> [| FP.fails operatorChar |]
+  NoOverlap    -> [| pure ()               |]
 
-symBody2 :: String -> Q Exp
-symBody2 s = [| spanOfToken $(FP.string s) |]
+symBody :: S.Set String -> (String -> Overlap) -> Bool -> String -> Q Exp
+symBody symbols overlap cut s | S.notMember s symbols =
+  error $ "string " ++ show s ++ " is not among the reserved symbols: "
+          ++ show (S.toList symbols)
+symBody symbols overlap cut s =
+  let p = [| spanOfToken $(FP.string s) <* FP.fails (operatorChar)|] in --  <* $(handleOverlap (overlap s))|] in
+  if cut then [| $(p) `FP.cut` [Lit (Show s)] |] else p
 
-symBody1' :: String -> Q Exp
-symBody1' s = [| (spanOfToken $(FP.string s) `notFollowedBy` identChar) `cut` [Lit (show s)] |]
-
-symBody2' :: String -> Q Exp
-symBody2' s = [| spanOfToken $(FP.string s) `cut` [Lit (show s)]  |]
-
-switchBody :: (String -> Bool) -> ([(String, Exp)], Maybe Exp) -> Q Exp
-switchBody identOverlap (cases, deflt) =
+switchBody :: (String -> Overlap) -> ([(String, Exp)], Maybe Exp) -> Q Exp
+switchBody overlap (cases, deflt) =
       [| do lvl
             left <- FP.getPos
             $(FP.switch (FP.makeRawSwitch
-                (map (\(s, body) -> (s, if identOverlap s
-                     then [| do {FP.fails identChar; right <- FP.getPos; ws; $(pure body) (FP.Span left right)} |]
-                     else [| do {right <- FP.getPos; ws ; $(pure body) (FP.Span left right)} |]))
-                     cases)
+                (map (\(s, body) ->
+                   (s, [| do {$(handleOverlap (overlap s)); right <- FP.getPos; ws; $(pure body) (FP.Span left right)} |]))
+                 cases)
                 ((\deflt -> [| do {right <- FP.getPos; ws ; $(pure deflt)} |]) <$> deflt)))
         |]
 
 --------------------------------------------------------------------------------
 
 chargeBatteries :: Config -> DecsQ
-chargeBatteries (Config identStart identRest wsChars lineComment
-                        blockCommentStart blockCommentEnd keywords) = do
+chargeBatteries (Config identStart identRest opChar wsChars lineComment
+                        blockCommentStart blockCommentEnd symbols) = do
 
   let
       blockCommentStartLen = length blockCommentStart
@@ -245,6 +255,16 @@ chargeBatteries (Config identStart identRest wsChars lineComment
     spanOfToken' p = lvl' *> FP.spanOf p <* ws
     {-# inline spanOfToken' #-}
 
+    anySymbol :: Parser ()
+    anySymbol = $(case symbols of
+      [] -> [|FP.empty|]
+      _  -> FP.switch $
+              FP.makeRawSwitch
+                (map (\s -> (s, [| FP.eof |])) (symbols))
+                Nothing)
+
+    ------------------------------------------------------------
+
     identStartChar :: Parser Char
     identStartChar = $(unTypeCode identStart)
 
@@ -258,17 +278,9 @@ chargeBatteries (Config identStart identRest wsChars lineComment
     scanIdent :: Parser ()
     scanIdent = identStartChar >> FP.skipMany inlineIdentChar
 
-    anyKeyword :: Parser ()
-    anyKeyword = $(case keywords of
-      [] -> [|FP.empty|]
-      _  -> FP.switch $
-              FP.makeRawSwitch
-                (map (\s -> (s, [| FP.eof |])) keywords)
-                Nothing)
-
     identBase :: Parser FP.Span
     identBase = FP.withSpan scanIdent \_ span -> do
-      FP.fails $ FP.inSpan span anyKeyword
+      FP.fails $ FP.inSpan span anySymbol
       ws
       pure span
 
@@ -282,19 +294,52 @@ chargeBatteries (Config identStart identRest wsChars lineComment
     ident' = lvl' >> identBase `cut` [Lit "identifier"]
     {-# inline ident' #-}
 
-    identOverlap :: String -> Bool
-    identOverlap s = case runParser (ws >> scanIdent >> FP.eof) (FP.strToUtf8 s) of
-      FP.OK{} -> True
-      _       -> False
+    ------------------------------------------------------------
 
+    operatorChar :: Parser Char
+    operatorChar = $(unTypeCode opChar)
+
+    inlineOperatorChar :: Parser Char
+    inlineOperatorChar = $(unTypeCode identRest)
+    {-# inline inlineOperatorChar #-}
+
+    scanOperator :: Parser ()
+    scanOperator = FP.skipSome inlineOperatorChar
+
+    operatorBase :: Parser FP.Span
+    operatorBase = FP.withSpan scanOperator \_ span -> do
+      FP.fails $ FP.inSpan span anySymbol
+      ws
+      pure span
+
+    -- | Parse an identifier.
+    operator :: Parser FP.Span
+    operator = lvl >> operatorBase
+    {-# inline operator #-}
+
+    -- | Parse an identifier.
+    operator' :: Parser FP.Span
+    operator' = lvl' >> operatorBase `cut` [Lit "operator"]
+    {-# inline operator' #-}
+
+    ------------------------------------------------------------
+
+    symbolSet :: S.Set String
+    symbolSet = S.fromList symbols
+
+    checkOverlap :: String -> Overlap
+    checkOverlap s
+      | FP.OK{} <- runParser (ws >> scanOperator >> FP.eof) (FP.strToUtf8 s) = OpOverlap
+      | FP.OK{} <- runParser (ws >> scanIdent    >> FP.eof) (FP.strToUtf8 s) = IdentOverlap
+      | True = NoOverlap
+
+    -- | Parse a symbol
     sym :: String -> Q Exp
-    sym s | identOverlap s = symBody1 s
-          | otherwise = symBody2 s
+    sym s = symBody symbolSet checkOverlap False s
 
     sym' :: String -> Q Exp
-    sym' s | identOverlap s = symBody1' s
-           | otherwise = symBody2' s
+    sym' s = symBody symbolSet checkOverlap True s
 
     switch :: Q Exp -> Q Exp
-    switch cases = switchBody identOverlap =<< FP.parseSwitch cases
+    switch cases = switchBody checkOverlap =<< FP.parseSwitch cases
     |]

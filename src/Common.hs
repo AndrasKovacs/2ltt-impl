@@ -20,13 +20,12 @@ module Common (
 
 import Control.Monad
 import Data.Bits
-import Data.Flat
 import Data.Foldable
 import Data.IORef
 import Data.List
 import Data.Time.Clock
 import Debug.Trace (trace, traceM, traceShow, traceShowM)
-import GHC.Exts hiding (lazy, fromList, toList)
+import GHC.Exts hiding (lazy, toList)
 import GHC.IO
 import GHC.Word
 import IO (runIO)
@@ -89,7 +88,7 @@ impossible :: Dbg => a
 impossible = error "impossible"
 {-# noinline impossible #-}
 
--- performance
+-- strictness & primops
 -------------------------------------------------------------------------------------------
 
 ctz :: Word -> Word
@@ -197,7 +196,7 @@ data Name
   = NSpan {-# unpack #-} Span
   | NGeneric B.ByteString
   | N_
-  deriving (Eq, Ord)
+  deriving (Eq)
 
 instance Show Name where
   show (NSpan x)    = show x
@@ -252,17 +251,11 @@ z_ = NGeneric "z"
 -- source positions & spans
 --------------------------------------------------------------------------------
 
-newtype Pos = Pos FP.Pos
-  deriving Show via DontShow Pos
-  deriving (Eq, Ord)
-
--- | Source span. The left position must not be larger than the right one.
-data Span = Span# Pos Pos
-  deriving Show via DontShow Span
-  deriving (Eq, Ord)
+type Pos = FP.Pos
+type Span = FP.Span
 
 spanToBs :: SrcArg => Span -> B.ByteString
-spanToBs (Span# i j) =
+spanToBs (FP.Span i j) =
   let bstr = srcToBs ?src
       i'   = B.length bstr - coerce i   -- Pos counts backwards from the end of the string
       j'   = B.length bstr - coerce j
