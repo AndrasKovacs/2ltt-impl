@@ -1,18 +1,45 @@
 
-module Parser.Config where
+module Parser.Config (config) where
 
 import qualified FlatParse.Stateful as FP
 import Data.Char
 import Parser.Batteries
 
+isOperatorChar :: Char -> Bool
+isOperatorChar c = case generalCategory c of
+  MathSymbol           -> True
+  CurrencySymbol       -> True
+  ModifierSymbol       -> True
+  OtherSymbol          -> True
+  DashPunctuation      -> True
+  ConnectorPunctuation -> True
+  OpenPunctuation      -> case c of '(' -> False
+                                    '{' -> False
+                                    _   -> True
+  ClosePunctuation     -> case c of ')' -> False
+                                    '}' -> False
+                                    _   -> True
+  OtherPunctuation     -> case c of '\'' -> False
+                                    '"'  -> False
+                                    _    -> True
+  InitialQuote         -> True
+  FinalQuote           -> True
+  _                    -> False
+
+symbols :: [String]
+symbols = [
+
+
+  ]
+
 config :: Config
 config = Config {
     _firstIdentChar    = [|| FP.satisfy isLetter ||]
   , _restIdentChar     = [|| FP.satisfy (\c -> c == '\'' || isAlphaNum c) ||]
-  , _operatorChar      = [|| FP.satisfy isSymbol ||]
-  , _whitespaceChars   = " \t\r\v\f" -- ASCII whitespace only
+  , _operatorChar      = [|| FP.satisfy isOperatorChar ||]
+  , _whitespaceChars   = " \t\r\v\f"
   , _lineComment       = "--"
   , _blockCommentStart = "{-"
   , _blockCommentEnd   = "-}"
-  , _symbols           = ["foo", "bar", "blabar"]
+  , _symbols           = symbols
   }
