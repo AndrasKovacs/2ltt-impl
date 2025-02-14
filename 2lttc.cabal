@@ -41,6 +41,7 @@ executable 2lttc
       Common
       MainInteraction
       Parser.Batteries
+      Parser.Config
       Parser.Test
       Parser.TestRun
       Paths_2lttc
