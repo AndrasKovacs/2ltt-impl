@@ -112,13 +112,13 @@ w2i (W# n) = I# (word2Int# n)
 {-# inline ($$!) #-}
 infixl 9 $$!
 
-infixl 4 <*!>
-(<*!>) :: Monad m => m (a -> b) -> m a -> m b
-(<*!>) mf ma = do
+infixl 4 ∙
+(∙) :: Monad m => m (a -> b) -> m a -> m b
+(∙) mf ma = do
   f <- mf
   a <- ma
   pure $! f a
-{-# inline (<*!>) #-}
+{-# inline (∙) #-}
 
 infixr 4 //
 (//) :: a -> b -> (a, b)
@@ -155,6 +155,15 @@ lvlToIx (Lvl envl) (Lvl x) = Ix (envl - x - 1)
 ixToLvl :: Lvl -> Ix -> Lvl
 ixToLvl (Lvl envl) (Ix x) = Lvl (envl - x - 1)
 {-# inline ixToLvl #-}
+
+--------------------------------------------------------------------------------
+
+-- | Stages.
+data Stage = S0 | S1
+  deriving (Eq, Show, Ord, Enum)
+
+data Icit = Impl | Expl
+  deriving (Eq, Show, Ord, Enum)
 
 -- Time measurement
 --------------------------------------------------------------------------------
@@ -263,3 +272,20 @@ spanToBs (FP.Span i j) =
 
 spanToString :: SrcArg => Span -> String
 spanToString s = FP.utf8ToStr (spanToBs s)
+
+class SpanOf a where
+  spanOf  :: a -> Span
+  spanOf a = FP.Span (leftPos a) (rightPos a)
+
+  leftPos :: a -> Pos
+  leftPos a = case spanOf a of FP.Span l _ -> l
+
+  rightPos :: a -> Pos
+  rightPos a = case spanOf a of FP.Span _ r -> r
+
+instance SpanOf Span where
+  spanOf s = s
+
+instance SpanOf Pos where
+  leftPos  x = x
+  rightPos x = x

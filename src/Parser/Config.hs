@@ -15,21 +15,37 @@ isOperatorChar c = case generalCategory c of
   ConnectorPunctuation -> True
   OpenPunctuation      -> case c of '(' -> False
                                     '{' -> False
+                                    '.' -> False
                                     _   -> True
   ClosePunctuation     -> case c of ')' -> False
                                     '}' -> False
                                     _   -> True
   OtherPunctuation     -> case c of '\'' -> False
                                     '"'  -> False
+                                    ';'  -> False
                                     _    -> True
   InitialQuote         -> True
   FinalQuote           -> True
   _                    -> False
 
+-- operator forms of lift, quote, splice might be stdlib-defined
 symbols :: [String]
 symbols = [
-
-
+    "MetaTy"
+  , "Ty"
+  , "CompTy"
+  , "ValTy"
+  , "ElVal"
+  , "ElComp"
+  , "Prop"
+  , "Prf"
+  , "Code"
+  , "↑"
+  , "="
+  , ":="
+  , "let"
+  , "("
+  , ")"
   ]
 
 config :: Config

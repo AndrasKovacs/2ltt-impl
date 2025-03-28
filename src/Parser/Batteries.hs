@@ -1,8 +1,5 @@
-{-# options_ghc -Wno-unused-imports #-}
 
 module Parser.Batteries where
-
-import Common
 
 import qualified Data.ByteString as B
 import qualified Data.Set as S

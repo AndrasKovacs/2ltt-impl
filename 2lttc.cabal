@@ -42,8 +42,9 @@ executable 2lttc
       MainInteraction
       Parser.Batteries
       Parser.Config
-      Parser.Test
-      Parser.TestRun
+      Parser.Lexer
+      Parser.Parser
+      Presyntax
       Paths_2lttc
   hs-source-dirs:
       src

@@ -1,0 +1,45 @@
+
+Operator design:
+
+Every name binding can be mixfix + precedence.
+Every operator can be displayed with or without implicit args
+  - display with implicit args: every implicit arg is grouped and attached
+    to the *first* operator chunk
+    - disadvantage: left-to-right syntactic dependency is not maintained!!!
+    - but I don't see a reasonable way to do all of the following:
+      1. maintain left-to-right dependency
+      2. use the same fixity for implicit/explicit printing
+
+Examples
+
+  _+_ fixl 4 : Int -> Int -> Int
+  _+_ = ...
+
+  (x : Int) + (y : Int) left 4 = ...
+
+  x + y fixl 4 = ...
+
+  _+_ fixr 10 = x y. ...
+
+Mixfix names can be used in
+   1 explicit form
+   2 implicit form
+   3 prefix form
+
+declaration:
+  _+_ : {a : A} -> B a -> B a -> C
+  _+_ {a} x y := ...
+
+  {a : A}(x : B a) + (y : B a) := ...
+
+implicit form:
+  foo + bar
+
+explicit form:
+  foo +{a} bar       -- violates left-to-right dependency!
+
+prefix form
+  _+_ foo bar
+  _+_ {a} foo bar
+
+Tl;dr: implicit args get gathered up and printed as attached to the first operator chunk.

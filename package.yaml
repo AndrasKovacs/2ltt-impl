@@ -108,7 +108,7 @@ dependencies:
 - ghc-prim
 - microlens
 - microlens-th
-# - primdata
+- primdata
 - strict-impl-params
 - template-haskell
 - time

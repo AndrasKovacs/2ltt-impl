@@ -1,7 +1,7 @@
 
-module Parser.Test (
+module Parser.Lexer (
     module Parser.Batteries
-  , module Parser.Test
+  , module Parser.Lexer
   ) where
 
 import Parser.Batteries
