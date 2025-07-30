@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ghc: ["9.8.4"]
+        ghc: ["9.12.2"]
     env:
       CONFIG: "--enable-tests --enable-benchmarks"
     steps:
