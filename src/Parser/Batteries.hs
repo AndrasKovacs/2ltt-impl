@@ -93,9 +93,10 @@ runParser p src = FP.runParser p 0 0 src
 -- | Run parser, print pretty error on failure.
 testParser :: Show a => Parser a -> String -> IO ()
 testParser p (FP.strToUtf8 -> str) = case runParser p str of
-    FP.Err e    -> putStrLn $ prettyError str e
-    FP.OK a _ _ -> print a
-    FP.Fail     -> putStrLn "parse error"
+    FP.Err e       -> putStrLn $ prettyError str e
+    FP.OK a _ rest -> do print a
+                         print rest
+    FP.Fail        -> putStrLn "parse error"
 
 -- | Query the current indentation level, fail if it's smaller than the current expected level.
 lvl :: Parser Int
@@ -170,17 +171,27 @@ data Overlap = IdentOverlap | OpOverlap | NoOverlap
 
 handleOverlap :: Overlap -> Q Exp
 handleOverlap = \case
-  IdentOverlap -> [| FP.fails identChar    |]
-  OpOverlap    -> [| FP.fails operatorChar |]
-  NoOverlap    -> [| pure ()               |]
+  IdentOverlap -> [| FP.fails identRestChar |]
+  OpOverlap    -> [| FP.fails opRestChar    |]
+  NoOverlap    -> [| pure ()                |]
 
 symBody :: S.Set String -> (String -> Overlap) -> Bool -> String -> Q Exp
 symBody symbols overlap cut s | S.notMember s symbols =
   error $ "string " ++ show s ++ " is not among the reserved symbols: "
           ++ show (S.toList symbols)
-symBody symbols overlap cut s =
-  let p = [| spanOfToken $(FP.string s) <* FP.fails (operatorChar)|] in --  <* $(handleOverlap (overlap s))|] in
-  if cut then [| $(p) `FP.cut` [Lit (Show s)] |] else p
+symBody symbols overlap cut s = let
+  plvl   = if cut then [| Parser.Batteries.lvl' |]
+                  else [| Parser.Batteries.lvl  |]
+  pcut p = if cut then [| $p `Parser.Batteries.cut` [Lit (show @String s)] |]
+                  else p
+
+  disamb = case overlap s of
+    IdentOverlap -> \p -> [| $p <* FP.fails identRestChar |]
+    OpOverlap    -> \p -> [| $p <* FP.fails opRestChar |]
+    NoOverlap    -> \p -> p
+
+  in [| $(pcut [|$plvl *> $(disamb [| FP.spanOf $(FP.string s)|])|]) <* ws |]
+
 
 switchBody :: (String -> Overlap) -> ([(String, Exp)], Maybe Exp) -> Q Exp
 switchBody overlap (cases, deflt) =
@@ -188,7 +199,10 @@ switchBody overlap (cases, deflt) =
             left <- FP.getPos
             $(FP.switch (FP.makeRawSwitch
                 (map (\(s, body) ->
-                   (s, [| do {$(handleOverlap (overlap s)); right <- FP.getPos; ws; $(pure body) (FP.Span left right)} |]))
+                   (s, [| do {$(handleOverlap (overlap s));
+                              right <- FP.getPos;
+                              ws;
+                              $(pure body) (FP.Span left right)} |]))
                  cases)
                 ((\deflt -> [| do {right <- FP.getPos; ws ; $(pure deflt)} |]) <$> deflt)))
         |]
@@ -239,14 +253,6 @@ chargeBatteries (Config switchChar wsChars identStart identRest opStart opRest l
     token' p = Parser.Batteries.lvl' *> p <* ws
     {-# inline token' #-}
 
-    spanOfToken :: Parser a -> Parser FP.Span
-    spanOfToken p = lvl *> FP.spanOf p <* ws
-    {-# inline spanOfToken #-}
-
-    spanOfToken' :: Parser a -> Parser FP.Span
-    spanOfToken' p = lvl' *> FP.spanOf p <* ws
-    {-# inline spanOfToken' #-}
-
     anySymbol :: Parser ()
     anySymbol = $(case symbols of
       [] -> [|FP.empty|]
@@ -260,15 +266,15 @@ chargeBatteries (Config switchChar wsChars identStart identRest opStart opRest l
     identStartChar :: Parser Char
     identStartChar = $(unTypeCode identStart)
 
-    identChar :: Parser Char
-    identChar = $(unTypeCode identRest)
+    identRestChar :: Parser Char
+    identRestChar = $(unTypeCode identRest)
 
-    inlineIdentChar :: Parser Char
-    inlineIdentChar = $(unTypeCode identRest)
-    {-# inline inlineIdentChar #-}
+    inlineIdentRestChar :: Parser Char
+    inlineIdentRestChar = $(unTypeCode identRest)
+    {-# inline inlineIdentRestChar #-}
 
     scanIdent :: Parser ()
-    scanIdent = identStartChar >> FP.skipMany inlineIdentChar
+    scanIdent = identStartChar >> FP.skipMany inlineIdentRestChar
 
     identBase :: Parser FP.Span
     identBase = FP.withSpan scanIdent \_ span -> do
@@ -328,8 +334,8 @@ chargeBatteries (Config switchChar wsChars identStart identRest opStart opRest l
 
     checkOverlap :: String -> Overlap
     checkOverlap s
-      | FP.OK{} <- runParser (ws >> scanOperator >> FP.eof) (FP.strToUtf8 s) = OpOverlap
-      | FP.OK{} <- runParser (ws >> scanIdent    >> FP.eof) (FP.strToUtf8 s) = IdentOverlap
+      | FP.OK{} <- runParser (scanOperator >> FP.eof) (FP.strToUtf8 s) = OpOverlap
+      | FP.OK{} <- runParser (scanIdent    >> FP.eof) (FP.strToUtf8 s) = IdentOverlap
       | True = NoOverlap
 
     -- | Parse a symbol

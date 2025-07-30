@@ -77,4 +77,5 @@ symbols = [
   , ";"
   , "record"
   , "data"
+  , "?"
   ]

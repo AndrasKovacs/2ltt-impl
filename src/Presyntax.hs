@@ -64,7 +64,7 @@ data Tm
   | Dot Tm Projection                      -- record field or qualified name or inductive constructor by index
   | Unparsed Unparsed                      -- unparsed operator expression
   | ParserError Pos Pos                    -- delayed parse error
-  | Rec Pos RecFields Pos                  -- record
+  | Rec Pos RecFields Pos                  -- Rec(<fields>)
   deriving Show
 
 data RecordDecl

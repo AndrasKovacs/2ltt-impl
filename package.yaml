@@ -32,6 +32,7 @@ when:
       - -dsuppress-all
       - -dno-suppress-type-signatures
       - -ddump-to-file
+      - -ddump-splices
   - condition: flag(llvm)
     ghc-options:
       - -fllvm
