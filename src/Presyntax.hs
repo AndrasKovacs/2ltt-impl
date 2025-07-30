@@ -7,20 +7,13 @@ import Common hiding (Name)
 type Name = Span
 type Ty = Tm
 
-data Mixfix
-  = MDNil
-  | MDImpl Mixfix
-  | MDExpl Mixfix
-  | MDChunk Name Mixfix
-  deriving Show
-
 newtype Precedence = Precedence Int
   deriving (Eq, Show, Num, Ord, Enum) via Int
 
 data Fixity = FLeft | FRight | FNon | FClosed
   deriving Show
 
-data OpDecl = OpDecl Mixfix Fixity Precedence
+data OpDecl = OpDecl Fixity (List Name) Precedence
   deriving Show
 
 data Bind
@@ -42,30 +35,45 @@ data Unparsed
   | UOp Name Unparsed
   deriving Show
 
+data RecFields
+  = RFNil
+  | RFCons (Maybe Name) Icit Tm RecFields  -- TODO: sprinkle Pos
+  deriving Show
+
 data Tm
-  = Lam Pos Bind Icit (Maybe Ty) Tm        -- x. t | {x}. t | (x : A). t | {x : A}. t
+  = Lam Pos Bind Icit (Maybe Ty) Tm        -- (\ | λ) (x. t | {x}. t | (x : A). t | {x : A}. t)
   | Let Pos Stage Bind (Maybe Ty) Tm Tm    -- let x = t; u | let x : A = t; u | let x := t; u | let x : A := t; u
 
   | MetaTy Pos Pos                         -- MetaTy
   | Ty Pos Pos                             -- Ty
   | ValTy Pos Pos                          -- ValTy
   | CompTy Pos Pos                         -- CompTy
-  | ElValTy Tm                             -- El
-  | ElCompTy Tm                            -- El
+  | ElVal Pos Pos                          -- ElVal
+  | ElComp Pos Pos                         -- ElComp
   | Prop Pos Pos                           -- Prop
-  | Prf Pos Pos                            -- Prf
 
   | Pi Pos Bind Icit Tm Tm                 -- (x : A) -> B | {x : A} -> B
-  | Parens Pos Tm Pos                      -- (t)    -- used to correctly remember positions
+  | Parens Pos Tm Pos                      -- (t)    -- used to correctly track spans
   | Hole Pos                               -- ?
   | Inferred Pos                           -- _
+  | Lift Pos Pos                           -- Code | ↑ | ^
   | Quote Pos Tm Pos                       -- <_>
-  | Lift Pos Pos                           -- \^ | ↑
+  | Splice Pos Tm                          -- ~t
   | Ident Name                             -- any general identifier
-  | LocalLvl Pos Lvl Pos                   -- @@n (De Bruijn level)
+  | LocalLvl Pos Lvl Pos                   -- @n (De Bruijn level)
   | Dot Tm Projection                      -- record field or qualified name or inductive constructor by index
   | Unparsed Unparsed                      -- unparsed operator expression
   | ParserError Pos Pos                    -- delayed parse error
+  | Rec Pos RecFields Pos                  -- record
+  deriving Show
+
+data RecordDecl
+  deriving Show
+
+data Top
+  = TNil
+  | TDef Pos Stage Bind (Maybe Ty) Tm Top
+  | TRecord Pos Stage Name RecordDecl Top
   deriving Show
 
 instance SpanOf Unparsed where
@@ -107,12 +115,13 @@ instance SpanOf Tm where
     Unparsed x      -> leftPos x
     ValTy x _       -> leftPos x
     CompTy x _      -> leftPos x
-    ElValTy x       -> leftPos x
-    ElCompTy x      -> leftPos x
+    ElVal x _       -> leftPos x
+    ElComp x _      -> leftPos x
     Prop x _        -> leftPos x
-    Prf x _         -> leftPos x
     Inferred x      -> leftPos x
     ParserError x _ -> leftPos x
+    Splice x _      -> leftPos x
+    Rec x _ _       -> leftPos x
 
   rightPos = \case
     Lam _ _ _ _ x   -> rightPos x
@@ -130,9 +139,10 @@ instance SpanOf Tm where
     Unparsed x      -> rightPos x
     ValTy _ x       -> rightPos x
     CompTy _ x      -> rightPos x
-    ElValTy x       -> rightPos x
-    ElCompTy x      -> rightPos x
+    ElVal _ x       -> rightPos x
+    ElComp _ x      -> rightPos x
     Prop _ x        -> rightPos x
-    Prf _ x         -> rightPos x
     Inferred x      -> rightPos x
     ParserError _ x -> rightPos x
+    Splice _ x      -> rightPos x
+    Rec _ _ x       -> rightPos x

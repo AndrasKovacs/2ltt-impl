@@ -22,10 +22,10 @@ import Control.Monad
 import Data.Bits
 import Data.Foldable
 import Data.IORef
-import Data.List
+import Data.List hiding (List)
 import Data.Time.Clock
 import Debug.Trace (trace, traceM, traceShow, traceShowM)
-import GHC.Exts hiding (lazy, toList)
+import GHC.Exts hiding (lazy, toList, List, BCO, mkApUpd0#, newBCO#)
 import GHC.IO
 import GHC.Word
 import IO (runIO)
@@ -35,6 +35,7 @@ import Text.Show
 
 import qualified Data.ByteString.Char8 as B
 import qualified FlatParse.Stateful as FP
+
 
 -- Debug printing, toggled by "debug" cabal flag
 --------------------------------------------------------------------------------
@@ -77,8 +78,15 @@ noinlineRunIO :: IO a -> a
 noinlineRunIO (IO f) = runRW# (\s -> case f s of (# _, a #) -> a)
 {-# noinline noinlineRunIO #-}
 
+
+-- Strict list
+--------------------------------------------------------------------------------
+
+data List a = Nil | Cons a (List a)
+  deriving Show
+
 -- errors
-----------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 uf :: Dbg => a
 uf = undefined
@@ -89,7 +97,7 @@ impossible = error "impossible"
 {-# noinline impossible #-}
 
 -- strictness & primops
--------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 ctz :: Word -> Word
 ctz (W# n) = W# (ctz# n)
@@ -220,15 +228,15 @@ nameToBs = \case
 
 data Src
   = SrcFile FilePath B.ByteString
-  | SrcImpossible                   -- ^ Impossible case just for killing unboxing.
+  | SrcDontUnbox
 
 instance Show Src where
   show (SrcFile fp _) = "File " ++ fp
-  show  SrcImpossible = impossible
+  show SrcDontUnbox   = impossible
 
 srcToBs :: Src -> B.ByteString
-srcToBs (SrcFile _ bs)   = bs
-srcToBs SrcImpossible    = impossible
+srcToBs (SrcFile _ bs) = bs
+srcToBs SrcDontUnbox   = impossible
 
 type SrcArg = (?src :: Src)
 

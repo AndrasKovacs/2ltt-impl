@@ -25,12 +25,12 @@ errorPos = \case
   Error p _ -> p
   _         -> undefined
 
--- | Merge two errors. Inner errors (which were thrown at points with more consumed inputs)
---   are preferred. If errors are thrown at identical input positions, we prefer precise errors
---   to imprecise ones.
+-- | Merge two errors. Inner errors (which were thrown at points with more consumed inputs) are
+--   preferred. If errors are thrown at identical input positions, we prefer precise errors to
+--   imprecise ones.
 --
---   The point of prioritizing inner and precise errors is to suppress the deluge of "expected"
---   items, and instead try to point to a concrete issue to fix.
+-- This is to suppress the deluge of "expected" items, and instead try to point to a concrete issue
+-- to fix.
 mergeErrors :: Error -> Error -> Error
 mergeErrors e@(Error p es) e'@(Error p' es')
   | p < p'     = e'
@@ -149,23 +149,18 @@ localIndentation n p = FP.local (\_ -> n) p
 -- Template Haskell for generating basic parsing utilities
 --------------------------------------------------------------------------------
 
--- | Lexer configuration.
---   - An identifier starts with a FirstIdentChar and is followed by 0 or more RestIdentChar-s, which is not
---     a reserved symbol
---   - An operator is a sequence of 1 or more OperatorChar-s which is not a reserved symbol.
---   - ASSUMPTION 1: operators and identifiers don't overlap.
---   - ASSUMPTION 2: symbols don't contain whitespace characters.
---   - A symbol is any nonempty sequence of non-whitespace characters.
-
 data Config = Config {
-    _firstIdentChar    :: (CodeQ (Parser Char))  -- ^ Parsing first character of an identifier.
-  , _restIdentChar     :: (CodeQ (Parser Char))  -- ^ Parsing non-first characters of an identifier.
-  , _operatorChar      :: (CodeQ (Parser Char))  -- ^ Parsing operator characters.
+    _lexicalSwitch     :: Char     -- ^ Turns identifiers into operators an vice verse when
+                                   --   used as a prefix.
   , _whitespaceChars   :: String   -- ^ List of whitespace characters, excluding newline (which is always whitespace).
+  , _firstIdentChar    :: CodeQ (Parser Char) -- ^ Parsing first character of an identifier.
+  , _restIdentChar     :: CodeQ (Parser Char) -- ^ Parsing non-first characters of an identifier.
+  , _firstOpChar       :: CodeQ (Parser Char) -- ^ Parsing first character of an operator chunk.
+  , _restOpChar        :: CodeQ (Parser Char) -- ^ Parsing non-first characters of an operator chunk.
   , _lineComment       :: String   -- ^ Line comment start.
   , _blockCommentStart :: String   -- ^ Block comment start.
   , _blockCommentEnd   :: String   -- ^ Block comment end.
-  , _symbols           :: [String] -- ^ List of reserved symbols (may overlap with idents and operators)
+  , _symbols           :: [String] -- ^ List of reserved symbols (may overlap with identifiers and operators)
   }
 
 data Overlap = IdentOverlap | OpOverlap | NoOverlap
@@ -201,7 +196,7 @@ switchBody overlap (cases, deflt) =
 --------------------------------------------------------------------------------
 
 chargeBatteries :: Config -> DecsQ
-chargeBatteries (Config identStart identRest opChar wsChars lineComment
+chargeBatteries (Config switchChar wsChars identStart identRest opStart opRest lineComment
                         blockCommentStart blockCommentEnd symbols) = do
 
   let
@@ -293,15 +288,22 @@ chargeBatteries (Config identStart identRest opChar wsChars lineComment
 
     ------------------------------------------------------------
 
-    operatorChar :: Parser Char
-    operatorChar = $(unTypeCode opChar)
+    opStartChar :: Parser Char
+    opStartChar = $(unTypeCode opStart)
 
-    inlineOperatorChar :: Parser Char
-    inlineOperatorChar = $(unTypeCode identRest)
-    {-# inline inlineOperatorChar #-}
+    opRestChar :: Parser Char
+    opRestChar = $(unTypeCode opRest)
+
+    inlineOpStartChar :: Parser Char
+    inlineOpStartChar = $(unTypeCode opStart)
+    {-# inline inlineOpStartChar #-}
+
+    inlineOpRestChar :: Parser Char
+    inlineOpRestChar = $(unTypeCode opRest)
+    {-# inline inlineOpRestChar #-}
 
     scanOperator :: Parser ()
-    scanOperator = FP.skipSome inlineOperatorChar
+    scanOperator = opStartChar >> FP.skipMany inlineOpRestChar
 
     operatorBase :: Parser FP.Span
     operatorBase = FP.withSpan scanOperator \_ span -> do
@@ -309,12 +311,12 @@ chargeBatteries (Config identStart identRest opChar wsChars lineComment
       ws
       pure span
 
-    -- | Parse an identifier.
+    -- | Parse an operator.
     operator :: Parser FP.Span
     operator = lvl >> operatorBase
     {-# inline operator #-}
 
-    -- | Parse an identifier.
+    -- | Parse an operator.
     operator' :: Parser FP.Span
     operator' = lvl' >> operatorBase `cut` [Lit "operator"]
     {-# inline operator' #-}

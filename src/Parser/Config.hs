@@ -5,8 +5,28 @@ import qualified FlatParse.Stateful as FP
 import Data.Char
 import Parser.Batteries
 
-isOperatorChar :: Char -> Bool
-isOperatorChar c = case generalCategory c of
+config :: Config
+config = Config {
+    _lexicalSwitch     = '#'
+  , _whitespaceChars   = " \t\r\v\f"
+  , _firstIdentChar    = [|| FP.satisfy isFirstIdentChar ||]
+  , _restIdentChar     = [|| FP.satisfy isRestIdentChar ||]
+  , _firstOpChar       = [|| FP.satisfy isFirstOpChar ||]
+  , _restOpChar        = [|| FP.satisfy isRestOpChar ||]
+  , _lineComment       = "--"
+  , _blockCommentStart = "{-"
+  , _blockCommentEnd   = "-}"
+  , _symbols           = symbols
+  }
+
+isFirstIdentChar :: Char -> Bool
+isFirstIdentChar c = isLetter c
+
+isRestIdentChar :: Char -> Bool
+isRestIdentChar c = isAlphaNum c || c == '\''
+
+isFirstOpChar :: Char -> Bool
+isFirstOpChar c = case generalCategory c of
   MathSymbol           -> True
   CurrencySymbol       -> True
   ModifierSymbol       -> True
@@ -28,6 +48,9 @@ isOperatorChar c = case generalCategory c of
   FinalQuote           -> True
   _                    -> False
 
+isRestOpChar :: Char -> Bool
+isRestOpChar c = isFirstOpChar c || isAlphaNum c || c == '\''
+
 -- operator forms of lift, quote, splice might be stdlib-defined
 symbols :: [String]
 symbols = [
@@ -38,24 +61,20 @@ symbols = [
   , "ElVal"
   , "ElComp"
   , "Prop"
-  , "Prf"
-  , "Code"
   , "↑"
+  , "^"
   , "="
   , ":="
   , "let"
   , "("
   , ")"
+  , "{"
+  , "}"
+  , "<"
+  , ">"
+  , "Rec"
+  , "."
+  , ";"
+  , "record"
+  , "data"
   ]
-
-config :: Config
-config = Config {
-    _firstIdentChar    = [|| FP.satisfy isLetter ||]
-  , _restIdentChar     = [|| FP.satisfy (\c -> c == '\'' || isAlphaNum c) ||]
-  , _operatorChar      = [|| FP.satisfy isOperatorChar ||]
-  , _whitespaceChars   = " \t\r\v\f"
-  , _lineComment       = "--"
-  , _blockCommentStart = "{-"
-  , _blockCommentEnd   = "-}"
-  , _symbols           = symbols
-  }
