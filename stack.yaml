@@ -23,7 +23,5 @@ ghc-options:
 #   executable-profiling: true
 
 extra-deps:
-- git: https://github.com/AndrasKovacs/ghc-strict-implicit-params.git
-  commit: fdef75e73c3354bd39b641e6b452b7087839e09b
-- git: https://github.com/AndrasKovacs/primdata
-  commit: 1f0dc7595bb488ccacb20255465f1e78a28f998f
+- primdata-0.1.2.2
+- strict-impl-params-1.1.0

@@ -112,7 +112,7 @@ dependencies:
 - microlens
 - microlens-th
 - primdata
-- strict-impl-params
+- strict-impl-params == 1.1.0
 - template-haskell
 - time
 
