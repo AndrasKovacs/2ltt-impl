@@ -11,8 +11,7 @@ config = Config {
   , _whitespaceChars   = " \t\r\v\f"
   , _firstIdentChar    = [|| FP.satisfy isFirstIdentChar ||]
   , _restIdentChar     = [|| FP.satisfy isRestIdentChar ||]
-  , _firstOpChar       = [|| FP.satisfy isFirstOpChar ||]
-  , _restOpChar        = [|| FP.satisfy isRestOpChar ||]
+  , _opChar            = [|| FP.satisfy isOpChar ||]
   , _lineComment       = "--"
   , _blockCommentStart = "{-"
   , _blockCommentEnd   = "-}"
@@ -25,8 +24,8 @@ isFirstIdentChar c = isLetter c
 isRestIdentChar :: Char -> Bool
 isRestIdentChar c = isAlphaNum c || c == '\''
 
-isFirstOpChar :: Char -> Bool
-isFirstOpChar c = case generalCategory c of
+isOpChar :: Char -> Bool
+isOpChar c = case generalCategory c of
   MathSymbol           -> True
   CurrencySymbol       -> True
   ModifierSymbol       -> True
@@ -48,34 +47,52 @@ isFirstOpChar c = case generalCategory c of
   FinalQuote           -> True
   _                    -> False
 
-isRestOpChar :: Char -> Bool
-isRestOpChar c = isFirstOpChar c || isAlphaNum c || c == '\''
-
 -- operator forms of lift, quote, splice might be stdlib-defined
 symbols :: [String]
 symbols = [
-    "MetaTy"
+    "Set"
   , "Ty"
   , "CompTy"
   , "ValTy"
   , "ElVal"
   , "ElComp"
+
   , "Prop"
+  , "refl"
+  , "=="
+
+  , "@"
+
   , "↑"
   , "^"
-  , "="
-  , ":="
-  , "let"
-  , "("
-  , ")"
-  , "{"
-  , "}"
   , "<"
   , ">"
-  , "Rec"
-  , "."
+  , "~"
+
+  , "->"
+  , "→"
+
+  , "="
+  , ":="
+
+  , "let"
   , ";"
+
+  , "("
+  , ")"
+
+  , "{"
+  , "}"
+
+  , "Rec"
+  , "rec"
+  , "."
   , "record"
   , "data"
+
+  , "\\"
+  , "λ"
+
   , "?"
+  , "_"
   ]

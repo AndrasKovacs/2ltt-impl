@@ -48,6 +48,7 @@ default-extensions:
   - ConstraintKinds
   - DataKinds
   - DerivingVia
+  - EmptyCase
   - EmptyDataDeriving
   - ExplicitNamespaces
   - FlexibleContexts
@@ -60,6 +61,7 @@ default-extensions:
   - LambdaCase
   - MagicHash
   - MultiParamTypeClasses
+  - NondecreasingIndentation
   - OverloadedStrings
   - PackageImports
   - PatternSynonyms

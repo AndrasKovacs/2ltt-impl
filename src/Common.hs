@@ -1,15 +1,16 @@
 
 module Common (
     module Common
+  , module Control.Applicative
   , module Control.Monad
   , module Data.Bits
-  , module Lens.Micro
-  , module Lens.Micro.TH
+  , module Data.Foldable
   , module Data.IORef
   , module GHC.Exts
   , module GHC.Word
+  , module Lens.Micro
+  , module Lens.Micro.TH
   , module Text.Show
-  , module Data.Foldable
   , FP.utf8ToStr
   , FP.strToUtf8
   , runIO
@@ -18,6 +19,7 @@ module Common (
   , traceShow
   , traceShowM) where
 
+import Control.Applicative
 import Control.Monad
 import Data.Bits
 import Data.Foldable
@@ -216,9 +218,9 @@ data Name
   deriving (Eq)
 
 instance Show Name where
-  show (NSpan x)    = show x
-  show (NGeneric x) = B.unpack x
-  show N_           = "_"
+  showsPrec p (NSpan x)    acc = showsPrec p x acc
+  showsPrec p (NGeneric x) acc = B.unpack x ++ acc
+  showsPrec p N_           acc = '_':acc
 
 nameToBs :: SrcArg => Name -> B.ByteString
 nameToBs = \case

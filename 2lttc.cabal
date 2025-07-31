@@ -44,6 +44,7 @@ executable 2lttc
       Parser.Config
       Parser.Lexer
       Parser.Parser
+      Parser.Prototype.Proto
       Presyntax
       Paths_2lttc
   hs-source-dirs:
@@ -56,6 +57,7 @@ executable 2lttc
       ConstraintKinds
       DataKinds
       DerivingVia
+      EmptyCase
       EmptyDataDeriving
       ExplicitNamespaces
       FlexibleContexts
@@ -68,6 +70,7 @@ executable 2lttc
       LambdaCase
       MagicHash
       MultiParamTypeClasses
+      NondecreasingIndentation
       OverloadedStrings
       PackageImports
       PatternSynonyms

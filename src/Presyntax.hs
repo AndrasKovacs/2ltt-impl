@@ -1,5 +1,6 @@
 {-# options_ghc -funbox-strict-fields #-}
 
+
 module Presyntax where
 
 import Common hiding (Name)
@@ -27,12 +28,10 @@ data Projection
   | PLvl Pos Lvl Pos  -- record field index
   deriving Show
 
--- unparsed sequence of operator chunks & explicit and implicit (braced) terms applications
-data Unparsed
-  = UNil Pos
-  | UExpl Tm Unparsed
-  | UImpl Tm Unparsed
-  | UOp Name Unparsed
+data Spine
+  = SNil
+  | SApp Tm Spine
+  | SOp Name Spine
   deriving Show
 
 data RecFields
@@ -42,9 +41,12 @@ data RecFields
 
 data Tm
   = Lam Pos Bind Icit (Maybe Ty) Tm        -- (\ | λ) (x. t | {x}. t | (x : A). t | {x : A}. t)
-  | Let Pos Stage Bind (Maybe Ty) Tm Tm    -- let x = t; u | let x : A = t; u | let x := t; u | let x : A := t; u
+  | Let Pos Stage Bind (Maybe Ty) Tm Tm    -- let x = t; u | let x : A = t; u
+                                           --  | let x := t; u | let x : A := t; u
+  | Spine Tm Spine
+  | Unparsed Spine
 
-  | MetaTy Pos Pos                         -- MetaTy
+  | Set Pos Pos                         -- Set
   | Ty Pos Pos                             -- Ty
   | ValTy Pos Pos                          -- ValTy
   | CompTy Pos Pos                         -- CompTy
@@ -56,18 +58,22 @@ data Tm
   | Parens Pos Tm Pos                      -- (t)    -- used to correctly track spans
   | Hole Pos                               -- ?
   | Inferred Pos                           -- _
-  | Lift Pos Pos                           -- Code | ↑ | ^
+  | Lift Pos Pos                           -- ↑ | ^
   | Quote Pos Tm Pos                       -- <_>
   | Splice Pos Tm                          -- ~t
   | Ident Name                             -- any general identifier
   | LocalLvl Pos Lvl Pos                   -- @n (De Bruijn level)
   | Dot Tm Projection                      -- record field or qualified name or inductive constructor by index
-  | Unparsed Unparsed                      -- unparsed operator expression
-  | ParserError Pos Pos                    -- delayed parse error
-  | Rec Pos RecFields Pos                  -- Rec(<fields>)
+
+  | Rec Pos RecFields Pos                  -- rec (<fields>)
+  | RecTy Pos RecTyFields Pos              -- Rec (<type fields>)
+
   deriving Show
 
 data RecordDecl
+  deriving Show
+
+data RecTyFields = RecTyFields
   deriving Show
 
 data Top
@@ -76,18 +82,18 @@ data Top
   | TRecord Pos Stage Name RecordDecl Top
   deriving Show
 
-instance SpanOf Unparsed where
-  leftPos = \case
-    UNil x    -> leftPos x
-    UExpl x _ -> leftPos x
-    UImpl x _ -> leftPos x
-    UOp x _   -> leftPos x
+instance SpanOf Spine where
+  -- leftPos = \case
+  --   UNil x    -> leftPos x
+  --   UExpl x _ -> leftPos x
+  --   UImpl x _ -> leftPos x
+  --   UOp x _   -> leftPos x
 
-  rightPos = \case
-    UNil x    -> rightPos x
-    UExpl _ x -> rightPos x
-    UImpl _ x -> rightPos x
-    UOp _ x   -> rightPos x
+  -- rightPos = \case
+  --   UNil x    -> rightPos x
+  --   UExpl _ x -> rightPos x
+  --   UImpl _ x -> rightPos x
+  --   UOp _ x   -> rightPos x
 
 instance SpanOf Projection where
   leftPos = \case
@@ -102,7 +108,7 @@ instance SpanOf Tm where
   leftPos = \case
     Lam x _ _ _ _   -> leftPos x
     Let x _ _ _ _ _ -> leftPos x
-    MetaTy x _      -> leftPos x
+    Set x _      -> leftPos x
     Ty x _          -> leftPos x
     Pi x _ _ _ _    -> leftPos x
     Parens x _ _    -> leftPos x
@@ -119,14 +125,15 @@ instance SpanOf Tm where
     ElComp x _      -> leftPos x
     Prop x _        -> leftPos x
     Inferred x      -> leftPos x
-    ParserError x _ -> leftPos x
     Splice x _      -> leftPos x
     Rec x _ _       -> leftPos x
+    RecTy x _ _     -> leftPos x
+    Spine x _       -> leftPos x
 
   rightPos = \case
     Lam _ _ _ _ x   -> rightPos x
     Let _ _ _ _ _ x -> rightPos x
-    MetaTy _ x      -> rightPos x
+    Set _ x      -> rightPos x
     Ty _ x          -> rightPos x
     Pi _ _ _ _ x    -> rightPos x
     Parens _ _ x    -> rightPos x
@@ -143,6 +150,7 @@ instance SpanOf Tm where
     ElComp _ x      -> rightPos x
     Prop _ x        -> rightPos x
     Inferred x      -> rightPos x
-    ParserError _ x -> rightPos x
     Splice _ x      -> rightPos x
+    RecTy _ _ x     -> rightPos x
     Rec _ _ x       -> rightPos x
+    Spine _ x       -> rightPos x

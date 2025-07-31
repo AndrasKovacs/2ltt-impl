@@ -1,6 +1,7 @@
 
 module Parser.Batteries where
 
+import Data.String
 import qualified Data.ByteString as B
 import qualified Data.Set as S
 import Language.Haskell.TH        hiding (Overlap)
@@ -16,6 +17,9 @@ data Expected
   | ExactIndent Int  -- ^ Exact indentation level.
   | IndentMore Int   -- ^ More than given indentation level.
   deriving (Eq, Show, Ord)
+
+instance IsString Expected where
+  fromString = Lit
 
 data Error = Error FP.Pos [Expected] | DontUnbox
   deriving Show
@@ -156,8 +160,7 @@ data Config = Config {
   , _whitespaceChars   :: String   -- ^ List of whitespace characters, excluding newline (which is always whitespace).
   , _firstIdentChar    :: CodeQ (Parser Char) -- ^ Parsing first character of an identifier.
   , _restIdentChar     :: CodeQ (Parser Char) -- ^ Parsing non-first characters of an identifier.
-  , _firstOpChar       :: CodeQ (Parser Char) -- ^ Parsing first character of an operator chunk.
-  , _restOpChar        :: CodeQ (Parser Char) -- ^ Parsing non-first characters of an operator chunk.
+  , _opChar            :: CodeQ (Parser Char) -- ^ Parsing first character of an operator chunk.
   , _lineComment       :: String   -- ^ Line comment start.
   , _blockCommentStart :: String   -- ^ Block comment start.
   , _blockCommentEnd   :: String   -- ^ Block comment end.
@@ -172,37 +175,43 @@ data Overlap = IdentOverlap | OpOverlap | NoOverlap
 handleOverlap :: Overlap -> Q Exp
 handleOverlap = \case
   IdentOverlap -> [| FP.fails identRestChar |]
-  OpOverlap    -> [| FP.fails opRestChar    |]
-  NoOverlap    -> [| pure ()                |]
+  OpOverlap    -> [| FP.fails opChar        |]
+  NoOverlap    -> [| pure () |]
 
-symBody :: S.Set String -> (String -> Overlap) -> Bool -> String -> Q Exp
-symBody symbols overlap cut s | S.notMember s symbols =
+notReservedError :: S.Set String -> String -> a
+notReservedError syms s =
   error $ "string " ++ show s ++ " is not among the reserved symbols: "
-          ++ show (S.toList symbols)
-symBody symbols overlap cut s = let
+          ++ show (S.toList syms)
+
+symBody :: S.Set String -> (String -> Overlap) -> Bool -> String -> Char -> Q Exp
+symBody _ _ _ (c:cs) switch | c == switch =
+  error $ "symbols cannot begin with the switch character"
+symBody symbols overlap cut s switch | S.notMember s symbols =
+  notReservedError symbols s
+symBody symbols overlap cut s switch = let
   plvl   = if cut then [| Parser.Batteries.lvl' |]
                   else [| Parser.Batteries.lvl  |]
   pcut p = if cut then [| $p `Parser.Batteries.cut` [Lit (show @String s)] |]
                   else p
 
-  disamb = case overlap s of
-    IdentOverlap -> \p -> [| $p <* FP.fails identRestChar |]
-    OpOverlap    -> \p -> [| $p <* FP.fails opRestChar |]
-    NoOverlap    -> \p -> p
+  base = [| FP.spanOf $(FP.string s)|]
 
-  in [| $(pcut [|$plvl *> $(disamb [| FP.spanOf $(FP.string s)|])|]) <* ws |]
+  in [| $(pcut [| $plvl *> $base <* $(handleOverlap (overlap s)) |]) <* ws |]
 
-
-switchBody :: (String -> Overlap) -> ([(String, Exp)], Maybe Exp) -> Q Exp
-switchBody overlap (cases, deflt) =
+switchBody :: S.Set String -> (String -> Overlap) -> ([(String, Exp)], Maybe Exp) -> Q Exp
+switchBody symbols overlap (cases, deflt) =
       [| do lvl
             left <- FP.getPos
             $(FP.switch (FP.makeRawSwitch
                 (map (\(s, body) ->
-                   (s, [| do {$(handleOverlap (overlap s));
-                              right <- FP.getPos;
-                              ws;
-                              $(pure body) (FP.Span left right)} |]))
+                        if S.notMember s symbols then
+                          notReservedError symbols s
+                        else
+                          (s, [| do {$(handleOverlap (overlap s));
+                                     right <- FP.getPos;
+                                     ws;
+                                     $(pure body) (FP.Span left right)} |])
+                     )
                  cases)
                 ((\deflt -> [| do {right <- FP.getPos; ws ; $(pure deflt)} |]) <$> deflt)))
         |]
@@ -210,7 +219,7 @@ switchBody overlap (cases, deflt) =
 --------------------------------------------------------------------------------
 
 chargeBatteries :: Config -> DecsQ
-chargeBatteries (Config switchChar wsChars identStart identRest opStart opRest lineComment
+chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
                         blockCommentStart blockCommentEnd symbols) = do
 
   let
@@ -284,32 +293,29 @@ chargeBatteries (Config switchChar wsChars identStart identRest opStart opRest l
 
     -- | Parse an identifier.
     ident :: Parser FP.Span
-    ident = lvl >> identBase
+    ident = do
+      lvl
+      FP.branch $(FP.char switchChar) operatorBase identBase
     {-# inline ident #-}
 
     -- | Parse an identifier.
     ident' :: Parser FP.Span
-    ident' = lvl' >> identBase `cut` [Lit "identifier"]
+    ident' = do
+      lvl'
+      FP.branch $(FP.char switchChar) operatorBase identBase `cut` [Lit "identifier"]
     {-# inline ident' #-}
 
     ------------------------------------------------------------
 
-    opStartChar :: Parser Char
-    opStartChar = $(unTypeCode opStart)
+    opChar :: Parser Char
+    opChar = $(unTypeCode op)
 
-    opRestChar :: Parser Char
-    opRestChar = $(unTypeCode opRest)
-
-    inlineOpStartChar :: Parser Char
-    inlineOpStartChar = $(unTypeCode opStart)
-    {-# inline inlineOpStartChar #-}
-
-    inlineOpRestChar :: Parser Char
-    inlineOpRestChar = $(unTypeCode opRest)
-    {-# inline inlineOpRestChar #-}
+    inlineOpChar :: Parser Char
+    inlineOpChar = $(unTypeCode op)
+    {-# inline inlineOpChar #-}
 
     scanOperator :: Parser ()
-    scanOperator = opStartChar >> FP.skipMany inlineOpRestChar
+    scanOperator = FP.skipSome inlineOpChar
 
     operatorBase :: Parser FP.Span
     operatorBase = FP.withSpan scanOperator \_ span -> do
@@ -340,11 +346,11 @@ chargeBatteries (Config switchChar wsChars identStart identRest opStart opRest l
 
     -- | Parse a symbol
     sym :: String -> Q Exp
-    sym s = symBody symbolSet checkOverlap False s
+    sym s = symBody symbolSet checkOverlap False s switchChar
 
     sym' :: String -> Q Exp
-    sym' s = symBody symbolSet checkOverlap True s
+    sym' s = symBody symbolSet checkOverlap True s switchChar
 
     switch :: Q Exp -> Q Exp
-    switch cases = switchBody checkOverlap =<< FP.parseSwitch cases
+    switch cases = switchBody symbolSet checkOverlap =<< FP.parseSwitch cases
     |]
