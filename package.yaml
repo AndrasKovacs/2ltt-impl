@@ -27,12 +27,12 @@ when:
   - condition: flag(dump)
     ghc-options:
       - -ddump-simpl
-      - -ddump-stg-final
-      - -ddump-cmm
+      # - -ddump-stg-final
+      # - -ddump-cmm
       - -dsuppress-all
       - -dno-suppress-type-signatures
       - -ddump-to-file
-      - -ddump-splices
+      # - -ddump-splices
   - condition: flag(llvm)
     ghc-options:
       - -fllvm

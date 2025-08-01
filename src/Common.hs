@@ -87,6 +87,8 @@ noinlineRunIO (IO f) = runRW# (\s -> case f s of (# _, a #) -> a)
 data List a = Nil | Cons a (List a)
   deriving Show
 
+pattern Single a = Cons a Nil
+
 -- errors
 --------------------------------------------------------------------------------
 
@@ -168,7 +170,6 @@ ixToLvl (Lvl envl) (Ix x) = Lvl (envl - x - 1)
 
 --------------------------------------------------------------------------------
 
--- | Stages.
 data Stage = S0 | S1
   deriving (Eq, Show, Ord, Enum)
 

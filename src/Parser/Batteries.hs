@@ -29,19 +29,21 @@ errorPos = \case
   Error p _ -> p
   _         -> undefined
 
--- | Merge two errors. Inner errors (which were thrown at points with more consumed inputs) are
+-- | Merge two errors. Errors which were thrown at points with more consumed inputs are
 --   preferred. If errors are thrown at identical input positions, we prefer precise errors to
---   imprecise ones.
+--   imprecise ones, and later thrown errors to earlier thrown ones.
 --
 -- This is to suppress the deluge of "expected" items, and instead try to point to a concrete issue
 -- to fix.
 mergeErrors :: Error -> Error -> Error
-mergeErrors e@(Error p es) e'@(Error p' es')
-  | p < p'     = e'
-  | p > p'     = e
-  | [_] <- es  = e
-  | [_] <- es' = e'
-  | otherwise  = Error p (es ++ es')
+mergeErrors e@(Error p es) e'@(Error p' es') = case compare p p' of
+  LT -> e'
+  GT -> e
+  EQ -> case (es, es') of
+    ([_], [_]) -> e'
+    ([_], _  ) -> e
+    (_  , [_]) -> e'
+    _          -> Error p (es ++ es')
 mergeErrors _ _ = undefined
 {-# noinline mergeErrors #-} -- cold code
 
@@ -100,41 +102,41 @@ testParser p (FP.strToUtf8 -> str) = case runParser p str of
     FP.Err e       -> putStrLn $ prettyError str e
     FP.OK a _ rest -> do print a
                          print rest
-    FP.Fail        -> putStrLn "parse error"
+    FP.Fail        -> putStrLn "parse failure"
 
 -- | Query the current indentation level, fail if it's smaller than the current expected level.
-lvl :: Parser Int
-lvl = do
-  lvl <- FP.ask
-  currentLvl <- FP.get
-  if currentLvl < lvl
-    then FP.empty
-    else pure currentLvl
-{-# inline lvl #-}
-
--- | Same as `lvl` except we throw an error on mismatch.
 lvl' :: Parser Int
 lvl' = do
   lvl <- FP.ask
   currentLvl <- FP.get
   if currentLvl < lvl
-    then err [IndentMore lvl]
+    then FP.empty
     else pure currentLvl
 {-# inline lvl' #-}
 
--- | Fail if the current level is not the expected one.
-exactLvl :: Int -> Parser ()
-exactLvl l = do
-  l' <- FP.get
-  if l == l' then pure () else FP.empty
-{-# inline exactLvl #-}
+-- | Same as `lvl` except we throw an error on mismatch.
+lvl :: Parser Int
+lvl = do
+  lvl <- FP.ask
+  currentLvl <- FP.get
+  if currentLvl < lvl
+    then err [IndentMore lvl]
+    else pure currentLvl
+{-# inline lvl #-}
 
--- | Throw error if the current level is not the expected one.
+-- | Fail if the current level is not the expected one.
 exactLvl' :: Int -> Parser ()
 exactLvl' l = do
   l' <- FP.get
-  if l == l' then pure () else err [ExactIndent l]
+  if l == l' then pure () else FP.empty
 {-# inline exactLvl' #-}
+
+-- | Throw error if the current level is not the expected one.
+exactLvl :: Int -> Parser ()
+exactLvl l = do
+  l' <- FP.get
+  if l == l' then pure () else err [ExactIndent l]
+{-# inline exactLvl #-}
 
 -- | Parse something, then run an action with token indentation level greater
 --   then the level of the firstly parsed thing.
@@ -292,18 +294,24 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
       pure span
 
     -- | Parse an identifier.
-    ident :: Parser FP.Span
-    ident = do
-      lvl
-      FP.branch $(FP.char switchChar) operatorBase identBase
-    {-# inline ident #-}
-
-    -- | Parse an identifier.
     ident' :: Parser FP.Span
     ident' = do
+      lvl
+      FP.branch $(FP.char switchChar) operatorBase identBase
+    {-# inline ident' #-}
+
+    -- | Parse an identifier.
+    ident :: Parser FP.Span
+    ident = do
       lvl'
       FP.branch $(FP.char switchChar) operatorBase identBase `cut` [Lit "identifier"]
-    {-# inline ident' #-}
+    {-# inline ident #-}
+
+    -- -- | Parse an identifier.
+    -- identNoLvl :: Parser FP.Span
+    -- identNoLvl =
+    --   FP.branch $(FP.char switchChar) operatorBase identBase `cut` [Lit "identifier"]
+    -- {-# inline identNoLvl #-}
 
     ------------------------------------------------------------
 
@@ -324,14 +332,14 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
       pure span
 
     -- | Parse an operator.
-    operator :: Parser FP.Span
-    operator = lvl >> operatorBase
-    {-# inline operator #-}
+    operator' :: Parser FP.Span
+    operator' = lvl >> operatorBase
+    {-# inline operator' #-}
 
     -- | Parse an operator.
-    operator' :: Parser FP.Span
-    operator' = lvl' >> operatorBase `cut` [Lit "operator"]
-    {-# inline operator' #-}
+    operator :: Parser FP.Span
+    operator = lvl' >> operatorBase `cut` [Lit "operator"]
+    {-# inline operator #-}
 
     ------------------------------------------------------------
 
@@ -345,11 +353,11 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
       | True = NoOverlap
 
     -- | Parse a symbol
-    sym :: String -> Q Exp
-    sym s = symBody symbolSet checkOverlap False s switchChar
-
     sym' :: String -> Q Exp
-    sym' s = symBody symbolSet checkOverlap True s switchChar
+    sym' s = symBody symbolSet checkOverlap False s switchChar
+
+    sym :: String -> Q Exp
+    sym s = symBody symbolSet checkOverlap True s switchChar
 
     switch :: Q Exp -> Q Exp
     switch cases = switchBody symbolSet checkOverlap =<< FP.parseSwitch cases

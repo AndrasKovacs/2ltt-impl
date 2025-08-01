@@ -42,6 +42,7 @@ isOpChar c = case generalCategory c of
   OtherPunctuation     -> case c of '\'' -> False
                                     '"'  -> False
                                     ';'  -> False
+                                    '.'  -> False
                                     _    -> True
   InitialQuote         -> True
   FinalQuote           -> True
@@ -74,6 +75,7 @@ symbols = [
 
   , "="
   , ":="
+  , ":"
 
   , "let"
   , ";"
