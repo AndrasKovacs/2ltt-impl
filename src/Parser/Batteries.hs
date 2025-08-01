@@ -1,6 +1,8 @@
 
 module Parser.Batteries where
 
+-- import Debug.Trace
+
 import Data.String
 import qualified Data.ByteString as B
 import qualified Data.Set as S
@@ -15,7 +17,7 @@ type Parser = FP.Parser Int Error
 data Expected
   = Lit String       -- ^ Name of expected thing.
   | ExactIndent Int  -- ^ Exact indentation level.
-  | IndentMore Int   -- ^ More than given indentation level.
+  | IndentMore Int Int  -- ^ More than given indentation level.
   deriving (Eq, Show, Ord)
 
 instance IsString Expected where
@@ -55,12 +57,13 @@ prettyError b (Error pos es) =
   let ls     = FP.linesUtf8 b
       (l, c) = case FP.posLineCols b [pos] of x:_ -> x; _ -> undefined
       line   = if l < length ls then ls !! l else ""
-      linum  = show l
+      linum  = show (l + 1)
       lpad   = map (const ' ') linum
 
       expected (Lit s)           = s
       expected (ExactIndent col) = "expected a token indented to column " ++ show (col + 1)
-      expected (IndentMore col)  = "expected a token indented to column " ++ show (col + 1) ++ " or more."
+      expected (IndentMore ex cur)  = "expected a token indented to column " ++ show (ex + 1) ++ " or more, "
+                                       ++ "actually indented to column " ++ show (cur + 1)
 
       expecteds :: [Expected] -> String
       expecteds []     = error "impossible"
@@ -70,7 +73,7 @@ prettyError b (Error pos es) =
         go [e]    = " or " ++ expected e
         go (e:es) = ", " ++ expected e ++ go es
 
-  in show l ++ ":" ++ show c ++ ":\n" ++
+  in linum ++ ":" ++ show (c + 1) ++ ":\n" ++
      lpad   ++ "|\n" ++
      linum  ++ "| " ++ line ++ "\n" ++
      lpad   ++ "| " ++ replicate c ' ' ++ "^\n" ++
@@ -120,7 +123,7 @@ lvl = do
   lvl <- FP.ask
   currentLvl <- FP.get
   if currentLvl < lvl
-    then err [IndentMore lvl]
+    then err [IndentMore lvl currentLvl]
     else pure currentLvl
 {-# inline lvl #-}
 
@@ -191,18 +194,16 @@ symBody _ _ _ (c:cs) switch | c == switch =
 symBody symbols overlap cut s switch | S.notMember s symbols =
   notReservedError symbols s
 symBody symbols overlap cut s switch = let
-  plvl   = if cut then [| Parser.Batteries.lvl' |]
-                  else [| Parser.Batteries.lvl  |]
+  plvl   = if cut then [| Parser.Batteries.lvl  |]
+                  else [| Parser.Batteries.lvl' |]
   pcut p = if cut then [| $p `Parser.Batteries.cut` [Lit (show @String s)] |]
                   else p
-
   base = [| FP.spanOf $(FP.string s)|]
+  in pcut [| $plvl *> $base <* $(handleOverlap (overlap s)) <* ws |]
 
-  in [| $(pcut [| $plvl *> $base <* $(handleOverlap (overlap s)) |]) <* ws |]
-
-switchBody :: S.Set String -> (String -> Overlap) -> ([(String, Exp)], Maybe Exp) -> Q Exp
-switchBody symbols overlap (cases, deflt) =
-      [| do lvl
+switchBody :: S.Set String -> (String -> Overlap) -> Bool -> ([(String, Exp)], Maybe Exp) -> Q Exp
+switchBody symbols overlap cut (cases, deflt) =
+      [| do $(if cut then [| lvl |] else [| lvl' |])
             left <- FP.getPos
             $(FP.switch (FP.makeRawSwitch
                 (map (\(s, body) ->
@@ -296,14 +297,14 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     -- | Parse an identifier.
     ident' :: Parser FP.Span
     ident' = do
-      lvl
+      lvl'
       FP.branch $(FP.char switchChar) operatorBase identBase
     {-# inline ident' #-}
 
     -- | Parse an identifier.
     ident :: Parser FP.Span
     ident = do
-      lvl'
+      lvl
       FP.branch $(FP.char switchChar) operatorBase identBase `cut` [Lit "identifier"]
     {-# inline ident #-}
 
@@ -333,12 +334,12 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
 
     -- | Parse an operator.
     operator' :: Parser FP.Span
-    operator' = lvl >> operatorBase
+    operator' = lvl' >> operatorBase
     {-# inline operator' #-}
 
     -- | Parse an operator.
     operator :: Parser FP.Span
-    operator = lvl' >> operatorBase `cut` [Lit "operator"]
+    operator = lvl >> operatorBase `cut` [Lit "operator"]
     {-# inline operator #-}
 
     ------------------------------------------------------------
@@ -360,5 +361,8 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     sym s = symBody symbolSet checkOverlap True s switchChar
 
     switch :: Q Exp -> Q Exp
-    switch cases = switchBody symbolSet checkOverlap =<< FP.parseSwitch cases
+    switch cases = switchBody symbolSet checkOverlap True =<< FP.parseSwitch cases
+
+    switch' :: Q Exp -> Q Exp
+    switch' cases = switchBody symbolSet checkOverlap False =<< FP.parseSwitch cases
     |]

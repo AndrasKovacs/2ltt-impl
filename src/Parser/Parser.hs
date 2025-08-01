@@ -1,5 +1,5 @@
 
-module Parser.Parser (tm) where
+module Parser.Parser (tm, top) where
 
 import Prelude hiding (pi)
 import Common hiding (some, many)
@@ -45,6 +45,9 @@ anyLvl' = lvl *> anyLvlBase'
 arr :: Parser FP.Span
 arr = $(switch [| case _ of "->" -> pure; "→" -> pure |])
 
+arr' :: Parser FP.Span
+arr' = $(switch' [| case _ of "->" -> pure; "→" -> pure |])
+
 -- parl    = $(sym "(")
 -- parl'   = $(sym' "(")
 parr    = $(sym ")")
@@ -67,7 +70,7 @@ semi    = $(sym' ";")
 --------------------------------------------------------------------------------
 
 atom' :: Parser Tm
-atom' = $(switch [| case _ of
+atom' = $(switch' [| case _ of
   "("      -> \(FP.Span l r) -> do {t <- tm; r <- rightPos <$> parr; pure $ Parens l t r}
   "<"      -> \(FP.Span l r) -> do {t <- tm; r <- rightPos <$> angler; pure $ Quote l t r}
   "Set"    -> \(FP.Span l r) -> pure $ Set l r
@@ -86,7 +89,8 @@ atom' = $(switch [| case _ of
   <|> (Ident <$> ident')
 
 atom :: Parser Tm
-atom = atom' `cut` ["atomic expression"]
+atom = do
+  atom' `cut` ["atomic expression"]
 
 projections :: Tm -> Parser Tm
 projections = go where
@@ -106,7 +110,9 @@ projection' :: Parser Tm
 projection' = projections =<< atom'
 
 projection :: Parser Tm
-projection = (projections =<< atom)
+projection = do
+  x <- atom
+  projections x
 
 splice' :: Parser Tm
 splice' = FP.withOption tilde'
@@ -165,17 +171,18 @@ bind' :: Parser Bind
 bind' = BName <$> ident'
 
 multiBindBase :: Parser MultiBind
-multiBindBase = $(switch [| case _ of
-  "{" -> \(FP.Span l _) -> do
-    x <- bind
-    a <- FP.optional (colon' *> tm)
-    r <- rightPos <$> bracer
-    pure $ MultiBind (Cons x Nil) (Pre.Impl l r) a
-  "(" -> \(FP.Span l _) -> do
-    x <- bind
-    a <- FP.optional (colon' *> tm)
-    r <- rightPos <$> parr
-    pure $ MultiBind (Cons x Nil) Pre.Expl a |])
+multiBindBase =
+  $(switch' [| case _ of
+    "{" -> \(FP.Span l _) -> do
+      x <- bind
+      a <- FP.optional (colon' *> tm)
+      r <- rightPos <$> bracer
+      pure $ MultiBind (Cons x Nil) (Pre.Impl l r) a
+    "(" -> \(FP.Span l _) -> do
+      x <- bind
+      a <- FP.optional (colon' *> tm)
+      r <- rightPos <$> parr
+      pure $ MultiBind (Cons x Nil) Pre.Expl a|])
 
 pi :: Parser Tm
 pi = do
@@ -187,13 +194,12 @@ pi = do
         pure $ Pi l binders t
     )
     (do a <- spine
-        FP.branch arr
+        FP.branch arr'
          (do b <- pi
              -- TODO: the BUnused contains an incorrect position
              pure $ Pi l (Single (MultiBind (Single (BUnused l)) Pre.Expl (Just a))) b)
          (pure a)
     )
-{-# noinline pi #-}
 
 plainLamBind' :: Parser MultiBind
 plainLamBind' = do
@@ -236,3 +242,31 @@ tm = $(switch [| case _ of
   |])
   <|>
   pi
+
+topEntry :: () -> Parser Top
+topEntry _ = do
+  x <- exactLvl' 0 *> bind'
+  localIndentation 1 do
+  l <- FP.ask
+  a <- FP.optional (colon' *> tm)
+  s <- assign
+  t <- tm
+  u <- localIndentation 0 $ top ()
+  pure $ TDef s x a t u
+
+topEof :: Parser Top
+topEof =
+  TNil <$ FP.eof
+  `cut` ["end of file", "top-level definition or declaration at column 1"]
+
+top :: () -> Parser Top
+top _ = do
+  topEntry () <|> topEof
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------

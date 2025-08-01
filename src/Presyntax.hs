@@ -82,10 +82,12 @@ data Tm
 
   | Rec Pos RecFields Pos                  -- rec (<fields>)
   | RecTy Pos RecTyFields Pos              -- Rec (<type fields>)
-
   deriving Show
 
-data RecordDecl
+data Record0Decl
+  deriving Show
+
+data Record1Decl
   deriving Show
 
 data RecTyFields = RecTyFields
@@ -93,8 +95,10 @@ data RecTyFields = RecTyFields
 
 data Top
   = TNil
-  | TDef Pos Stage Bind (Maybe Ty) Tm Top
-  | TRecord Pos Stage Name RecordDecl Top
+  | TDef Stage Bind (Maybe Ty) Tm Top
+  | TInductive0 Pos Name
+  | TRecord0 Pos Name Record0Decl Top
+  | TRecord1 Pos Name Record1Decl Top
   deriving Show
 
 instance SpanOf SpineEntry where
