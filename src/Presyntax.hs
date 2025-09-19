@@ -38,15 +38,20 @@ data Projection
   | PLvl Pos Lvl Pos  -- record field index
   deriving Show
 
-data SpineEntry
-  = SETm Tm
-  | SEOp Name
-  | SEProjOp Tm Name
-  deriving Show
-
 data Spine
   = SNil
-  | SCons SpineEntry Icit Spine
+  | SCons Tm Icit Spine
+  deriving Show
+
+data UnparsedEntry
+  = USETm Tm Icit
+  | USEOp Name
+  | USEProjOp Tm Name
+  deriving Show
+
+data UnparsedSpine
+  = USNil
+  | USCons UnparsedEntry UnparsedSpine
   deriving Show
 
 -- TODO
@@ -66,7 +71,7 @@ data Tm
   | Let Pos Stage Bind (Maybe Ty) Tm Tm    -- let x = t; u | let x : A = t; u
                                            --  | let x := t; u | let x : A := t; u
   | Spine Tm Spine
-  | Unparsed SpineEntry Spine
+  | Unparsed UnparsedEntry UnparsedSpine   -- invariant: must have at least one operator
 
   | Set Pos Pos                            -- Set
   | Ty Pos Pos                             -- Ty
@@ -108,16 +113,26 @@ data Top
   | TRecord1 Pos Name Record1Decl Top
   deriving Show
 
-instance SpanOf SpineEntry where
+instance SpanOf UnparsedSpine where
   leftPos = \case
-    SETm x       -> leftPos x
-    SEOp x       -> leftPos x
-    SEProjOp x _ -> leftPos x
+    USNil       -> impossible
+    USCons x xs -> leftPos x
 
   rightPos = \case
-    SETm x       -> rightPos x
-    SEOp x       -> rightPos x
-    SEProjOp _ x -> rightPos x
+    USCons x USNil -> rightPos x
+    USCons _ xs    -> rightPos xs
+    USNil          -> impossible
+
+instance SpanOf UnparsedEntry where
+  leftPos = \case
+    USETm x _     -> leftPos x
+    USEOp x       -> leftPos x
+    USEProjOp x _ -> leftPos x
+
+  rightPos = \case
+    USETm x _     -> rightPos x
+    USEOp x       -> rightPos x
+    USEProjOp _ x -> rightPos x
 
 instance SpanOf Spine where
   leftPos = \case

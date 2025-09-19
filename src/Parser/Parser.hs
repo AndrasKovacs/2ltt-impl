@@ -19,6 +19,17 @@ TODO
 - indentation-based let
 -}
 
+{-
+
+How to operator parsing?
+
+- Need an operator trie
+- Trie insertions
+- A trie-walking Pratt parser
+
+
+-}
+
 debug :: String -> Parser ()
 debug msg = do
   l <- FP.traceLine
@@ -139,45 +150,51 @@ splice = FP.withOption tilde'
   (\s -> Splice (leftPos s) <$> projection')
   projection
 
-spineEntry' :: Parser SpineEntry
-spineEntry' =
-      (do t <- splice'
-          case t of Dot t (POp x) -> pure $ SEProjOp t x
-                    t             -> pure $ SETm t)
-  <|> (SEOp <$> operator')
-
-spineEntry :: Parser SpineEntry
-spineEntry =
-      (do t <- splice
-          case t of Dot t (POp x) -> pure $ SEProjOp t x
-                    t             -> pure $ SETm t)
-  <|> (SEOp <$> operator)
-
 implicit :: Parser a -> Parser (a, Pre.Icit)
 implicit p = FP.withOption bracel'
   (\(FP.Span l r) -> do {a <- p; bracer; pure (a, Pre.Impl l r)})
   (do {a <- p; pure (a, Pre.Expl)})
 
-consSpine :: (SpineEntry, Pre.Icit) -> (Spine, Bool) -> (Spine, Bool)
-consSpine (t, !i) (!sp, !isParsed) = case t of
-  SETm{}     -> (SCons t i sp, isParsed)
-  SEOp{}     -> (SCons t i sp, False)
-  SEProjOp{} -> (SCons t i sp, False)
+spineEntry' :: Parser UnparsedEntry
+spineEntry' =
+      (do (t, i) <- implicit splice'
+          case t of Dot t (POp x) -> pure $ USEProjOp t x
+                    t             -> pure $ USETm t i)
+  <|> (USEOp <$> operator')
 
-spine0 :: Parser (Spine, Bool)
+spineEntry :: Parser UnparsedEntry
+spineEntry =
+      (do (t, i) <- implicit splice
+          case t of Dot t (POp x) -> pure $ USEProjOp t x
+                    t             -> pure $ USETm t i)
+  <|> (USEOp <$> operator)
+
+consSpine :: UnparsedEntry -> (UnparsedSpine, Bool) -> (UnparsedSpine, Bool)
+consSpine t (!sp, !isParsed) = case t of
+  USETm{}     -> (USCons t sp, isParsed)
+  USEOp{}     -> (USCons t sp, False)
+  USEProjOp{} -> (USCons t sp, False)
+
+spine0 :: Parser (UnparsedSpine, Bool)
 spine0 =
-  FP.withOption (implicit spineEntry')
+  FP.withOption spineEntry'
     (\x -> consSpine x <$> spine0)
-    (pure (SNil, True))
+    (pure (USNil, True))
+
+actuallyParsed :: UnparsedSpine -> Spine
+actuallyParsed = \case
+  USNil                 -> SNil
+  USCons (USETm t i) sp -> SCons t i (actuallyParsed sp)
+  _                     -> impossible
 
 spine :: Parser Tm
 spine = do
   hd <- spineEntry
   (sp, isParsed) <- spine0
   case (hd, sp, isParsed) of
-    (SETm t, SNil, True) -> pure t
-    (SETm t, sp  , True) -> pure $ Spine t sp
-    _                    -> pure $ Unparsed hd sp
+    (USETm t i, USNil, True) -> pure t
+    (USETm t i, sp   , True) -> pure $! Spine t (actuallyParsed sp)
+    _                        -> pure $ Unparsed hd sp
 
 prec :: Parser Precedence
 prec = coerce . fst <$> (anyWord' `cut` ["precedence number"])
@@ -275,14 +292,6 @@ pi = do
          (pure a)
     )
 
--- plainLamBind' :: Parser MultiBind
--- plainLamBind' = do
---   x <- bind'
---   pure $ MultiBind (Cons x Nil) Pre.Expl Nothing
-
--- lamBind' :: Parser MultiBind
--- lamBind' = bindBase
-
 lamBody :: Pos -> Parser Tm
 lamBody l = do
   x <- some lamBind `cut` ["binder"]
@@ -348,15 +357,6 @@ p1 =
   n5 : Nat = suc (suc (suc (suc (suc zero))))
   n10 : Nat = n5 + n5
   """
-
--- test :: String
--- test =
---  """
---  kek = Set
---  foo = Prop
---  """
-
-
 
 
 
