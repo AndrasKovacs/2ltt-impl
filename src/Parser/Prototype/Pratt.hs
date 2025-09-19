@@ -12,65 +12,6 @@ import Control.Monad
 import Debug.Trace
 import Data.String
 
--- import Common
--- import Parser.Lexer
--- import qualified FlatParse.Stateful as FP
-
--- data Exp a
---   = Atom a
---   | Op String [Exp a]
---   deriving Show
-
--- type Prec = Int
--- type Op = String
-
--- data Table a
---   = Branch
-
-
---       (Map Op (Table a)) -- ^ closed operators, revert to max precedence
-
---   | Leaf [a]
---   deriving Show
-
--- type Parser b a = StateT [Either String b] (Except String) a
-
--- parse :: Table a -> Prec -> Parser a (Exp a)
--- parse tbl p = StateT \s -> case s of
---   []   -> throwError ""
---   x:xs -> case x of
---     Left op -> _
---     Right a -> _
-
--- parse :: Table -> Parser (Exp a)
--- parse = _
-
-
-
--- _+_ 2
--- _*_ 1
--- (_)
-
--- closed = parens add <|> lit
--- mul    = chainl1 (*) atom
--- add    = chainl1 (+) mul
-
--- op 0 = parens (op 2) <|> lit
--- op 1 = chainr1 (*) (op 0)
--- op 2 = chainr1 (+) (op 1)
-
-{-
-
-op p = case _ of
-  (   -> op 2 <* )
-  +   -> _
-  *   -> _
-  lit -> _
-
-
--}
-
-
 -- Minimal
 --------------------------------------------------------------------------------
 
@@ -110,59 +51,91 @@ op p = case _ of
 -- run p s = runStateT p s
 
 
--- Prattification
+-- Transposing the recursive parser to get a Pratt parser
 --------------------------------------------------------------------------------
 
-type Op = String
+-- type Op = String
 
-data Exp = Lit Int | Add Exp Exp | Mul Exp Exp | Par Exp
-  deriving Show
+-- data Exp = Lit Int | Op Op [Exp]
+--   deriving Show
 
-type Parser a = StateT [Either Int Op] Maybe a
+-- type Parser a = StateT [Either Int Op] Maybe a
 
-instance IsString (Either a String) where
-  fromString = Right
+-- instance IsString (Either a String) where
+--   fromString = Right
 
-instance Num (Either Int a) where
-  fromInteger = Left . fromIntegral
-  (+) = undefined; (*) = undefined; abs = undefined
-  signum = undefined; negate = undefined
+-- instance Num (Either Int a) where
+--   fromInteger = Left . fromIntegral
+--   (+) = undefined; (*) = undefined; abs = undefined
+--   signum = undefined; negate = undefined
 
-peek :: Parser (Maybe (Either Int Op))
-peek = get >>= \case
-  []   -> pure Nothing
-  x:xs -> pure (Just x)
+-- peek :: Parser (Maybe (Either Int Op))
+-- peek = get >>= \case
+--   []   -> pure Nothing
+--   x:xs -> pure (Just x)
 
-pop :: Parser ()
-pop = modify (drop 1)
+-- pop :: Parser ()
+-- pop = modify (drop 1)
 
-op :: Op -> Parser ()
-op str = peek >>= \case
-  Just (Right str') | str == str' -> pop
-  _ -> empty
+-- op :: Op -> Parser ()
+-- op str = peek >>= \case
+--   Just (Right str') | str == str' -> pop
+--   _ -> empty
 
--- closed, prefix
-go :: Int -> Parser Exp
-go p = peek >>= \case
-  Just (Left i)    -> do pop; loop p (Lit i)
-  Just (Right "(") -> do pop; t <- go 2; op ")"; loop p (Par t)
-  _                -> empty
+-- -- closed, prefix
+-- go :: Int -> Parser Exp
+-- go p = do
+--   let ret = loop p Nothing
+--   peek >>= \case
+--     Just (Left i)    -> do pop; ret (Lit i)
+--     Just (Right "(") -> do pop; t <- go 20; op ")"; ret (Op "(_)" [t])
+--     Just (Right "!") -> do pop; t <- go 10; ret (Op "!" [t])
+--     Just (Right "[") -> do {pop; t <- go 20; peek >>= \case
+--       Just (Right "]1") -> ret (Op "[_]1" [t])
+--       Just (Right "]2") -> ret (Op "[_]2" [t])
+--       _                 -> empty}
+--     _ -> empty
 
--- infix, postfix
-loop :: Int -> Exp -> Parser Exp
-loop p t = peek >>= \case
-  Just (Right "+")
-    | p < 2 -> pure t
-    | True  -> do pop; u <- go 2; loop p (Add t u)
-  Just (Right "*")
-    | p < 1 -> pure t
-    | True  -> do pop; u <- go 1; loop p (Mul t u)
-  Just _  -> empty
-  Nothing -> pure t
+-- -- infix, postfix
+-- -- the extra (Maybe Int) arg is purely to detect chained nonfix
+-- loop :: Int -> Maybe Int -> Exp -> Parser Exp
+-- loop p nonfix t =
+--   peek >>= \case
+--     Just (Right "+")
+--       | p < 20 -> pure t
+--       | True  -> do pop; u <- go 20; loop p Nothing (Op "_+_" [t, u])
+--     Just (Right "*")
+--       | p < 10 -> pure t
+--       | True  -> do pop; u <- go 10; loop p Nothing (Op "_*_" [t, u])
+--     Just (Right "++")
+--       | p < 10 -> pure t
+--       | True  -> do pop; loop p Nothing (Op "_++" [t])
+--     Just (Right "==")
+--       | p < 15            -> pure t
+--       | nonfix == Just 15 -> empty
+--       | True              -> do pop; u <- go 10; loop p (Just 15) (Op "_==_" [t, u])
+--     Just _  -> empty
+--     Nothing -> pure t
 
-run :: Parser a -> [Either Int Op] -> Maybe (a, [Either Int Op])
-run p s = runStateT p s
-
-test s = run (go 2) s
+-- run :: Parser a -> [Either Int Op] -> Maybe (a, [Either Int Op])
+-- run p s = runStateT p s
+-- test s = run (go 20) s
 
 --------------------------------------------------------------------------------
+
+-- type Op = String
+
+-- data Exp = Lit Int | Op Op [Exp]
+--   deriving Show
+
+-- type Parser a = StateT [Either Int Op] Maybe a
+
+-- instance IsString (Either a String) where
+--   fromString = Right
+
+-- instance Num (Either Int a) where
+--   fromInteger = Left . fromIntegral
+--   (+) = undefined; (*) = undefined; abs = undefined
+--   signum = undefined; negate = undefined
+
+-- data Table

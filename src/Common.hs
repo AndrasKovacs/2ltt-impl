@@ -325,3 +325,12 @@ instance SpanOf Pos where
   rightPos x = x
 
 --------------------------------------------------------------------------------
+
+data family Sing (x :: a)
+data instance Sing (x :: Bool) where
+  STrue  :: Sing 'True
+  SFalse :: Sing 'False
+
+class FromSing (x :: a) where sing :: Sing x
+instance FromSing 'True  where sing = STrue
+instance FromSing 'False where sing = SFalse

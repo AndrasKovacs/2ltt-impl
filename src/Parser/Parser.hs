@@ -9,8 +9,8 @@ import Parser.Lexer
 import Presyntax
 import qualified Presyntax as Pre
 
-import Data.ByteString.Char8 (ByteString)
-import qualified Data.ByteString.Char8 as B
+-- import Data.ByteString.Char8 (ByteString)
+-- import qualified Data.ByteString.Char8 as B
 
 {-
 TODO
@@ -21,27 +21,6 @@ TODO
 - implicit let
 - indentation-based let
 -}
-
-{-
-
-How to operator parsing?
-
-- Need an operator trie
-- Trie insertions
-- A trie-walking Pratt parser
-
-
--}
-
---------------------------------------------------------------------------------
-
--- data OpTable =
---     ONil
---   | OBranch
-
-
-
---------------------------------------------------------------------------------
 
 debug :: String -> Parser ()
 debug msg = do
@@ -168,51 +147,48 @@ implicit p = FP.withOption bracel'
   (\(FP.Span l r) -> do {a <- p; bracer; pure (a, Pre.Impl l r)})
   (do {a <- p; pure (a, Pre.Expl)})
 
-spineEntry' :: Parser UnparsedEntry
-spineEntry' =
-      (do (t, i) <- implicit splice'
-          case t of Dot t (POp x) -> pure $ USEProjOp t x
-                    t             -> pure $ USETm t i)
-  <|> (USEOp <$> operator')
+data SomeSpine where
+  SomeSpine :: Sing b -> Spine b -> SomeSpine
 
-spineEntry :: Parser UnparsedEntry
-spineEntry =
-      (do (t, i) <- implicit splice
-          case t of Dot t (POp x) -> pure $ USEProjOp t x
-                    t             -> pure $ USETm t i)
-  <|> (USEOp <$> operator)
+spTail :: Parser SomeSpine
+spTail =
+  FP.withOption operator'
+    (\op -> do
+        SomeSpine b sp <- spTail
+        pure $ SomeSpine SFalse $ SOp op sp
+    )
+    (FP.withOption (implicit splice')
+      (\(t, i) -> do
+          SomeSpine b sp <- spTail
+          case (t, i) of
+            (Dot t (POp x), Pre.Expl) -> pure $ SomeSpine SFalse (SProjOp t x sp)
+            (t, i) -> pure $ SomeSpine b (STm t i sp)
+      )
+      (pure $ SomeSpine STrue SNil)
+    )
 
-consSpine :: UnparsedEntry -> (UnparsedSpine, Bool) -> (UnparsedSpine, Bool)
-consSpine t (!sp, !isParsed) = case t of
-  USETm{}     -> (USCons t sp, isParsed)
-  USEOp{}     -> (USCons t sp, False)
-  USEProjOp{} -> (USCons t sp, False)
-
-spine0 :: Parser (UnparsedSpine, Bool)
-spine0 =
-  FP.withOption spineEntry'
-    (\x -> consSpine x <$> spine0)
-    (pure (USNil, True))
-
-actuallyParsed :: UnparsedSpine -> Spine
-actuallyParsed = \case
-  USNil                 -> SNil
-  USCons (USETm t i) sp -> SCons t i (actuallyParsed sp)
-  _                     -> impossible
-
+-- TODO: errors
 spine :: Parser Tm
 spine = do
-  hd <- spineEntry
-  (sp, isParsed) <- spine0
-  case (hd, sp, isParsed) of
-    (USETm t i, USNil, True) -> pure t
-    (USETm t i, sp   , True) -> pure $! Spine t (actuallyParsed sp)
-    _                        -> pure $ Unparsed hd sp
+  FP.withOption operator'
+    (\op -> do
+        SomeSpine b sp <- spTail
+        pure $ Unparsed $ USOp op sp
+    )
+    (do
+      t <- splice
+      SomeSpine b sp <- spTail
+      case t of
+        Dot t (POp x) -> pure $ Unparsed $ USProjOp t x sp
+        t -> case b of
+          STrue  -> pure $ Spine t sp
+          SFalse -> pure $ Unparsed $ USTm t sp
+      )
 
 prec :: Parser Precedence
 prec = coerce . fst <$> (anyWord' `cut` ["precedence number"])
 
--- TODO: stricter rawparsers
+-- TODO: errors
 bind' :: Parser Bind
 bind' =
   FP.withOption ident'

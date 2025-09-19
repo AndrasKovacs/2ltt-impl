@@ -38,21 +38,18 @@ data Projection
   | PLvl Pos Lvl Pos  -- record field index
   deriving Show
 
-data Spine
-  = SNil
-  | SCons Tm Icit Spine
-  deriving Show
+data Spine (b :: Bool) where
+  SNil    :: Spine 'True
+  STm     :: Tm -> Icit -> Spine b -> Spine b
+  SOp     :: Name -> Spine b -> Spine 'False
+  SProjOp :: Tm -> Name -> Spine b -> Spine 'False
+deriving instance Show (Spine b)
 
-data UnparsedEntry
-  = USETm Tm Icit
-  | USEOp Name
-  | USEProjOp Tm Name
-  deriving Show
-
-data UnparsedSpine
-  = USNil
-  | USCons UnparsedEntry UnparsedSpine
-  deriving Show
+data UnparsedSpine where
+  USTm     :: Tm -> Spine 'False -> UnparsedSpine
+  USOp     :: Name -> Spine b -> UnparsedSpine
+  USProjOp :: Tm -> Name -> Spine b -> UnparsedSpine
+deriving instance Show UnparsedSpine
 
 -- TODO
 data RecField = RecField
@@ -70,8 +67,8 @@ data Tm
   = Lam Pos (List MultiBind) Tm
   | Let Pos Stage Bind (Maybe Ty) Tm Tm    -- let x = t; u | let x : A = t; u
                                            --  | let x := t; u | let x : A := t; u
-  | Spine Tm Spine
-  | Unparsed UnparsedEntry UnparsedSpine   -- invariant: must have at least one operator
+  | Spine Tm (Spine 'True)
+  | Unparsed UnparsedSpine
 
   | Set Pos Pos                            -- Set
   | Ty Pos Pos                             -- Ty
@@ -115,36 +112,27 @@ data Top
 
 instance SpanOf UnparsedSpine where
   leftPos = \case
-    USNil       -> impossible
-    USCons x xs -> leftPos x
+    USTm x _    -> leftPos x
+    USOp x _    -> leftPos x
+    USProjOp x _ _ -> leftPos x
 
   rightPos = \case
-    USCons x USNil -> rightPos x
-    USCons _ xs    -> rightPos xs
-    USNil          -> impossible
+    USTm _ x       -> rightPos x
+    USOp _ x       -> rightPos x
+    USProjOp _ _ x -> rightPos x
 
-instance SpanOf UnparsedEntry where
+instance SpanOf (Spine b) where
   leftPos = \case
-    USETm x _     -> leftPos x
-    USEOp x       -> leftPos x
-    USEProjOp x _ -> leftPos x
+    SNil          -> impossible
+    STm x _ _     -> leftPos x
+    SOp x _       -> leftPos x
+    SProjOp x _ _ -> leftPos x
 
   rightPos = \case
-    USETm x _     -> rightPos x
-    USEOp x       -> rightPos x
-    USEProjOp _ x -> rightPos x
-
-instance SpanOf Spine where
-  leftPos = \case
-    SCons _ (Impl x _) _ -> leftPos x
-    SCons x Expl _       -> leftPos x
-    SNil                 -> impossible
-
-  rightPos = \case
-    SCons _ (Impl _ x) SNil -> rightPos x
-    SCons x Expl SNil       -> rightPos x
-    SCons _ _ x             -> rightPos x
-    SNil                    -> impossible
+    SNil          -> impossible
+    STm _ _ x     -> rightPos x
+    SOp _ x       -> rightPos x
+    SProjOp _ _ x -> rightPos x
 
 instance SpanOf Projection where
   leftPos = \case
@@ -171,7 +159,7 @@ instance SpanOf Tm where
     Ident x         -> leftPos x
     LocalLvl x _ _  -> leftPos x
     Dot x _         -> leftPos x
-    Unparsed x _    -> leftPos x
+    Unparsed x      -> leftPos x
     ValTy x _       -> leftPos x
     CompTy x _      -> leftPos x
     ElVal x _       -> leftPos x
@@ -196,7 +184,7 @@ instance SpanOf Tm where
     Ident x         -> rightPos x
     LocalLvl _ _ x  -> rightPos x
     Dot _ x         -> rightPos x
-    Unparsed _ x    -> rightPos x
+    Unparsed  x     -> rightPos x
     ValTy _ x       -> rightPos x
     CompTy _ x      -> rightPos x
     ElVal _ x       -> rightPos x
