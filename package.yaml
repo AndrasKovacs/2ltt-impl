@@ -116,6 +116,7 @@ dependencies:
 - strict-impl-params == 1.1.0
 - template-haskell
 - time
+- mtl
 
 source-dirs: src
 

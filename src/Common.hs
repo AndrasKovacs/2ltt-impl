@@ -323,3 +323,5 @@ instance SpanOf Span where
 instance SpanOf Pos where
   leftPos  x = x
   rightPos x = x
+
+--------------------------------------------------------------------------------

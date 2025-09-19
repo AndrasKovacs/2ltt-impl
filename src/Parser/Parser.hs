@@ -9,6 +9,9 @@ import Parser.Lexer
 import Presyntax
 import qualified Presyntax as Pre
 
+import Data.ByteString.Char8 (ByteString)
+import qualified Data.ByteString.Char8 as B
+
 {-
 TODO
 - Grouped binders
@@ -29,6 +32,16 @@ How to operator parsing?
 
 
 -}
+
+--------------------------------------------------------------------------------
+
+-- data OpTable =
+--     ONil
+--   | OBranch
+
+
+
+--------------------------------------------------------------------------------
 
 debug :: String -> Parser ()
 debug msg = do
