@@ -10,19 +10,26 @@ type Ty = Tm
 data Icit = Impl Pos Pos | Expl
   deriving Show
 
-newtype Precedence = Precedence Int
-  deriving (Eq, Show, Num, Ord, Enum) via Int
+newtype Precedence = Precedence Word
+  deriving (Eq, Show, Num, Ord, Enum) via Word
 
-data Fixity = FLeft | FRight | FNon | FClosed
+data Fixity
+  = FInLeft Precedence   -- Infix left
+  | FInRight Precedence  -- Infix right
+  | FPre Precedence      -- Prefix
+  | FPost Precedence     -- Postfix
+  | FInNon Precedence    -- Infix non-associative
+  | FClosed              -- Closed
   deriving Show
 
-data OpDecl = OpDecl Fixity (List Name) Precedence
+data OpDecl = OpDecl Fixity (List Name)
   deriving Show
 
 data Bind
   = BOp OpDecl
   | BName Name
-  | BUnused Pos
+  | BUnused Pos   -- "_" as a binder
+  | BNonExistent  -- a binder which doesn't exist in source (like non-dependent fun domain binder)
   deriving Show
 
 data Projection

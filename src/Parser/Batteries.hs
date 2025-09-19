@@ -99,6 +99,11 @@ cut p exps = do
 runParser :: Parser a -> B.ByteString -> FP.Result Error a
 runParser p src = FP.runParser p 0 0 src
 
+rawString :: String -> Q Exp
+rawString str = [| FP.spanOf $(FP.string str) |]
+
+-- scanString ::
+
 -- | Run parser, print pretty error on failure.
 testParser :: Show a => Parser a -> String -> IO ()
 testParser p (FP.strToUtf8 -> str) = case runParser p str of
@@ -325,6 +330,9 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
 
     scanOperator :: Parser ()
     scanOperator = FP.skipSome inlineOpChar
+
+    rawOperator :: Parser FP.Span
+    rawOperator = FP.spanOf scanOperator
 
     operatorBase :: Parser FP.Span
     operatorBase = FP.withSpan scanOperator \_ span -> do

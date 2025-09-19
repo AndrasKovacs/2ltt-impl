@@ -10,7 +10,7 @@
 #      --ghci-options="-fprof-auto-calls"
 #   5. reload ghci
 
-resolver: nightly-2025-07-30
+resolver: nightly-2025-09-06
 
 packages:
 - .

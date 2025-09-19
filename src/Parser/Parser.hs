@@ -1,8 +1,9 @@
+{-# options_ghc -Wno-unused-top-binds #-}
 
 module Parser.Parser (tm, top) where
 
 import Prelude hiding (pi)
-import Common hiding (some, many)
+import Common hiding (some, many, debug)
 import qualified FlatParse.Stateful as FP
 import Parser.Lexer
 import Presyntax
@@ -10,13 +11,18 @@ import qualified Presyntax as Pre
 
 {-
 TODO
-- Operator binders
 - Grouped binders
 - ML-style definitions
-- Fixing sloppy positions.
 - Records.
-- Top level.
+- data types, case splits
+- implicit let
+- indentation-based let
 -}
+
+debug :: String -> Parser ()
+debug msg = do
+  l <- FP.traceLine
+  traceM $ msg ++ " | " ++ l
 
 many :: Parser a -> Parser (List a)
 many p = FP.chainr Cons p (pure Nil)
@@ -29,18 +35,23 @@ some p = do
   pure $ Cons a as
 {-# inline some #-}
 
-anyLvlBase' :: Parser (Lvl, FP.Span)
-anyLvlBase' = do
+anyWordBase' :: Parser (Word, FP.Span)
+anyWordBase' = do
   FP.withSpan FP.anyAsciiDecimalWord \n s -> do
-  let n' = fromIntegral n
   ws
-  pure (n' , s)
+  pure (n , s)
+
+anyWord' :: Parser (Word, FP.Span)
+anyWord' = lvl' *> anyWordBase'
 
 anyLvl' :: Parser (Lvl, FP.Span)
-anyLvl' = lvl *> anyLvlBase'
+anyLvl' = coerce anyWord'
 
--- anyLvl :: Parser (Lvl, FP.Span)
--- anyLvl = (lvl' *> anyLvlBase') `cut` ["positive integer"]
+anyWord :: Parser (Word, FP.Span)
+anyWord = (lvl' *> anyWordBase') `cut` ["positive integer"]
+
+anyLvl :: Parser (Lvl, FP.Span)
+anyLvl = coerce anyWord
 
 arr :: Parser FP.Span
 arr = $(switch [| case _ of "->" -> pure; "→" -> pure |])
@@ -51,7 +62,7 @@ arr' = $(switch' [| case _ of "->" -> pure; "→" -> pure |])
 -- parl    = $(sym "(")
 -- parl'   = $(sym' "(")
 parr    = $(sym ")")
--- parr'   = $(sym' ")")
+parr'   = $(sym' ")")
 -- bracel  = $(sym "{")
 bracel' = $(sym' "{")
 bracer  = $(sym "}")
@@ -66,6 +77,10 @@ tilde'  = $(sym' "~")
 colon'  = $(sym' ":")
 semi    = $(sym' ";")
 -- semi'   = $(sym  ";")
+
+rawUnderscore = $(rawString "_")
+rawLeft  = $(rawString "left")
+rawRight = $(rawString "right")
 
 --------------------------------------------------------------------------------
 
@@ -164,30 +179,90 @@ spine = do
     (SETm t, sp  , True) -> pure $ Spine t sp
     _                    -> pure $ Unparsed hd sp
 
-bind :: Parser Bind
-bind = BName <$> ident
+prec :: Parser Precedence
+prec = coerce . fst <$> (anyWord' `cut` ["precedence number"])
 
+-- TODO: stricter rawparsers
 bind' :: Parser Bind
-bind' = BName <$> ident'
+bind' =
+  FP.withOption ident'
+    (\id -> pure $ BName id)
+    (do
+      lvl'
+      FP.withOption rawUnderscore
+        (\(FP.Span l _) -> FP.withOption rawOperator
+          (\op -> do
+              ops <- many (rawUnderscore *> rawOperator)
+              FP.withOption rawUnderscore
+                (\_ -> do
+                  ws <* lvl
+                  fixity <- (rawLeft  *> ws *> (FInLeft <$> prec))
+                        <|> (rawRight *> ws *> (FInLeft <$> prec))
+                        <|> (FInNon <$> prec)
+                  pure $ BOp $ OpDecl fixity (Cons op ops)
+                )
+                (do
+                  prec <- ws *> prec
+                  pure $ BOp $ OpDecl (FPost prec) (Cons op ops)
+                )
+          )
+          (pure $ BUnused l)
+        )
+        (do op <- rawOperator
+            rawUnderscore
+            ops <- many (rawOperator <* rawUnderscore)
+            FP.withOption rawOperator
+              (\op' -> do
+                ws
+                pure $ BOp $ OpDecl FClosed (Cons op ops <> Single op')
+              )
+              (do
+                prec <- ws *> prec
+                pure $ BOp $ OpDecl (FPre prec) (Cons op ops)
+              )
+        )
+    )
 
-multiBindBase :: Parser MultiBind
-multiBindBase =
+bind :: Parser Bind
+bind = bind' `cut` ["binder"]
+
+
+piBindBase :: Parser MultiBind
+piBindBase =
   $(switch' [| case _ of
     "{" -> \(FP.Span l _) -> do
       x <- bind
       a <- FP.optional (colon' *> tm)
       r <- rightPos <$> bracer
-      pure $ MultiBind (Cons x Nil) (Pre.Impl l r) a
+      pure $ MultiBind (Single x) (Pre.Impl l r) a
+    "(" -> \(FP.Span l _) -> do
+      x <- bind'
+      a <- colon' *> tm -- we only learn at this colon that we're parsing a binder
+      r <- rightPos <$> parr
+      pure $ MultiBind (Single x) Pre.Expl (Just a)|])
+
+lamBind :: Parser MultiBind
+lamBind =
+  $(switch' [| case _ of
+    "{" -> \(FP.Span l _) -> do
+      x <- bind
+      a <- FP.optional (colon' *> tm)
+      r <- rightPos <$> bracer
+      pure $ MultiBind (Single x) (Pre.Impl l r) a
     "(" -> \(FP.Span l _) -> do
       x <- bind
       a <- FP.optional (colon' *> tm)
       r <- rightPos <$> parr
-      pure $ MultiBind (Cons x Nil) Pre.Expl a|])
+      pure $ MultiBind (Single x) Pre.Expl a
+    _ -> do
+      x <- bind'
+      pure $ MultiBind (Single x) Pre.Expl Nothing
+    |])
 
 pi :: Parser Tm
 pi = do
   l <- FP.getPos
-  FP.withOption (some multiBindBase)
+  FP.withOption (some piBindBase)
     (\binders -> do
         arr `cut` ["\"->\" or \"→\""]
         t <- pi
@@ -196,22 +271,21 @@ pi = do
     (do a <- spine
         FP.branch arr'
          (do b <- pi
-             -- TODO: the BUnused contains an incorrect position
-             pure $ Pi l (Single (MultiBind (Single (BUnused l)) Pre.Expl (Just a))) b)
+             pure $ Pi l (Single (MultiBind (Single BNonExistent) Pre.Expl (Just a))) b)
          (pure a)
     )
 
-plainLamBind' :: Parser MultiBind
-plainLamBind' = do
-  x <- bind'
-  pure $ MultiBind (Cons x Nil) Pre.Expl Nothing
+-- plainLamBind' :: Parser MultiBind
+-- plainLamBind' = do
+--   x <- bind'
+--   pure $ MultiBind (Cons x Nil) Pre.Expl Nothing
 
-lamBind' :: Parser MultiBind
-lamBind' = multiBindBase <|> plainLamBind'
+-- lamBind' :: Parser MultiBind
+-- lamBind' = bindBase
 
 lamBody :: Pos -> Parser Tm
 lamBody l = do
-  x <- some lamBind' `cut` ["binder"]
+  x <- some lamBind `cut` ["binder"]
   dot
   t <- tm
   pure $ Lam l x t
@@ -247,11 +321,10 @@ topEntry :: () -> Parser Top
 topEntry _ = do
   x <- exactLvl' 0 *> bind'
   localIndentation 1 do
-  l <- FP.ask
   a <- FP.optional (colon' *> tm)
   s <- assign
   t <- tm
-  u <- localIndentation 0 $ top ()
+  u <- localIndentation 0 $ top' ()
   pure $ TDef s x a t u
 
 topEof :: Parser Top
@@ -259,11 +332,29 @@ topEof =
   TNil <$ FP.eof
   `cut` ["end of file", "top-level definition or declaration at column 1"]
 
-top :: () -> Parser Top
-top _ = do
-  topEntry () <|> topEof
+top' :: () -> Parser Top
+top' _ = topEntry () <|> topEof
 
+top :: Parser Top
+top = ws *> top' ()
 
+p1 :: String
+p1 =
+  """
+  Nat  : Set = (N : Set) → (N → N) → N → N
+  zero : Nat = λ N s z. z
+  suc  : Nat → Nat = λ n N s z. s (n N s z)
+  _+_ left 10 : Nat → Nat → Nat = λ n m N s z. n N s (m N s z)
+  n5 : Nat = suc (suc (suc (suc (suc zero))))
+  n10 : Nat = n5 + n5
+  """
+
+-- test :: String
+-- test =
+--  """
+--  kek = Set
+--  foo = Prop
+--  """
 
 
 

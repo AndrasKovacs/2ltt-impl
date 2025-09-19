@@ -31,7 +31,8 @@ isOpChar c = case generalCategory c of
   ModifierSymbol       -> True
   OtherSymbol          -> True
   DashPunctuation      -> True
-  ConnectorPunctuation -> True
+  ConnectorPunctuation -> case c of '_' -> False
+                                    _   -> True
   OpenPunctuation      -> case c of '(' -> False
                                     '{' -> False
                                     '.' -> False

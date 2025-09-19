@@ -70,6 +70,7 @@ executable 2lttc
       LambdaCase
       MagicHash
       MultiParamTypeClasses
+      MultilineStrings
       NondecreasingIndentation
       OverloadedStrings
       PackageImports

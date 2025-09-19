@@ -51,6 +51,9 @@ import GHC.Stack
 #ifdef DEBUG
 type Dbg = HasCallStack
 
+debugM :: Monad m => [String] -> m ()
+debugM strs = traceM (intercalate " | " strs ++ " END")
+
 debug :: [String] -> IO ()
 debug strs = putStrLn (intercalate " | " strs ++ " END")
 
@@ -59,6 +62,10 @@ debugging act = act
 {-# inline debugging #-}
 #else
 type Dbg = () :: Constraint
+
+debugM :: Monad m => [String] -> m ()
+debugM _ = pure ()
+{-# inline debugM #-}
 
 debug :: [String] -> IO ()
 debug strs = pure ()
@@ -88,6 +95,22 @@ data List a = Nil | Cons a (List a)
   deriving Show
 
 pattern Single a = Cons a Nil
+
+instance Functor List where
+  fmap f = go where
+    go Nil = Nil
+    go (Cons a as) = Cons (f a) (go as)
+  {-# inline fmap #-}
+  (<$) a as = fmap (\_ -> a) as
+  {-# inline (<$) #-}
+
+instance Semigroup (List a) where
+  Nil <> as = as
+  Cons a as <> as' = Cons a (as <> as')
+
+instance Monoid (List a) where
+  mempty = Nil
+  {-# inline mempty #-}
 
 -- errors
 --------------------------------------------------------------------------------
