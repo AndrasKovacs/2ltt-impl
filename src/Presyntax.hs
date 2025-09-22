@@ -10,23 +10,8 @@ type Ty = Tm
 data Icit = Impl Pos Pos | Expl
   deriving Show
 
-newtype Precedence = Precedence Word
-  deriving (Eq, Show, Num, Ord, Enum) via Word
-
-data Fixity
-  = FInLeft Precedence   -- Infix left
-  | FInRight Precedence  -- Infix right
-  | FPre Precedence      -- Prefix
-  | FPost Precedence     -- Postfix
-  | FInNon Precedence    -- Infix non-associative
-  | FClosed              -- Closed
-  deriving Show
-
-data OpDecl = OpDecl Fixity (List Name)
-  deriving Show
-
 data Bind
-  = BOp OpDecl
+  = BOp Operator
   | BName Name
   | BUnused Pos   -- "_" as a binder
   | BNonExistent  -- a binder which doesn't exist in source (like non-dependent fun domain binder)
@@ -90,8 +75,8 @@ data Tm
   | LocalLvl Pos Lvl Pos                   -- @n (De Bruijn level)
   | Dot Tm Projection                      -- field name or qualified name or record field index
 
-  | Rec Pos RecFields Pos                  -- rec (<fields>)
-  | RecTy Pos (List (Bind, Ty)) Pos              -- Rec (<type fields>)
+  | Rec Pos RecFields Pos                  -- TODO
+  | RecTy Pos (List (Bind, Ty)) Pos        -- TODO
   deriving Show
 
 type Record0Decl = List (Bind, Ty)

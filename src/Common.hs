@@ -34,6 +34,7 @@ import IO (runIO)
 import Lens.Micro
 import Lens.Micro.TH
 import Text.Show
+import Data.Flat
 
 import qualified Data.ByteString.Char8 as B
 import qualified FlatParse.Stateful as FP
@@ -92,7 +93,7 @@ noinlineRunIO (IO f) = runRW# (\s -> case f s of (# _, a #) -> a)
 --------------------------------------------------------------------------------
 
 data List a = Nil | Cons a (List a)
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 pattern Single a = Cons a Nil
 
@@ -111,6 +112,28 @@ instance Semigroup (List a) where
 instance Monoid (List a) where
   mempty = Nil
   {-# inline mempty #-}
+
+instance Foldable List where
+  {-# inline foldr #-}
+  foldr f ~b as = go as where
+    go Nil = b
+    go (Cons a as) = f a (go as)
+
+  {-# inline foldl' #-}
+  foldl' f b as = go as b where
+    go Nil         b = b
+    go (Cons a as) b = go as (f b a)
+
+instance Traversable List where
+  {-# inline traverse #-}
+  traverse f = go where
+    go Nil         = pure Nil
+    go (Cons a as) = Cons <$> f a <*> go as
+
+  {-# inline mapM #-}
+  mapM f = go where
+    go Nil         = pure Nil
+    go (Cons a as) = Cons <$!> f a ∙ go as
 
 -- errors
 --------------------------------------------------------------------------------
@@ -147,6 +170,12 @@ w2i (W# n) = I# (word2Int# n)
 {-# inline ($$!) #-}
 infixl 9 $$!
 
+-- less annoying strict "idioms"
+infixl 4 !
+{-# inline (!) #-}
+(!) :: Monad m => (a -> b) -> m a -> m b
+(!) = (<$!>)
+
 infixl 4 ∙
 (∙) :: Monad m => m (a -> b) -> m a -> m b
 (∙) mf ma = do
@@ -155,6 +184,7 @@ infixl 4 ∙
   pure $! f a
 {-# inline (∙) #-}
 
+-- strict pair
 infixr 4 //
 (//) :: a -> b -> (a, b)
 a // b = (a, b)
@@ -165,6 +195,10 @@ ptrEq x y = isTrue# (reallyUnsafePtrEquality# x y)
 {-# inline ptrEq #-}
 
 data Box a = Box ~a deriving Show
+
+lam1 :: (a -> b) -> a -> b
+lam1 = oneShot
+{-# inline lam1 #-}
 
 -- Not printing stuff
 --------------------------------------------------------------------------------
@@ -183,6 +217,8 @@ newtype Ix = Ix {unIx :: Word}
 newtype Lvl = Lvl {unLvl :: Word}
   deriving (Eq, Ord, Show, Num, Enum, Bits, Integral, Real) via Word
 
+type LvlArg = (?lvl :: Lvl)
+
 lvlToIx :: Lvl -> Lvl -> Ix
 lvlToIx (Lvl envl) (Lvl x) = Ix (envl - x - 1)
 {-# inline lvlToIx #-}
@@ -190,6 +226,15 @@ lvlToIx (Lvl envl) (Lvl x) = Ix (envl - x - 1)
 ixToLvl :: Lvl -> Ix -> Lvl
 ixToLvl (Lvl envl) (Ix x) = Lvl (envl - x - 1)
 {-# inline ixToLvl #-}
+
+--------------------------------------------------------------------------------
+
+-- | Ordinary metavariable.
+newtype MetaVar = MkMetaVar Int
+  deriving (Eq, Ord, Num, Flat) via Int
+
+instance Show MetaVar where
+  showsPrec _ (MkMetaVar x) acc = '?': showsPrec 0 x acc
 
 --------------------------------------------------------------------------------
 
@@ -237,6 +282,7 @@ timedPure_ ~a = do
 
 data Name
   = NSpan {-# unpack #-} Span
+  | NOp {-# unpack #-} Operator
   | NGeneric B.ByteString
   | N_
   deriving (Eq)
@@ -245,12 +291,17 @@ instance Show Name where
   showsPrec p (NSpan x)    acc = showsPrec p x acc
   showsPrec p (NGeneric x) acc = B.unpack x ++ acc
   showsPrec p N_           acc = '_':acc
+  showsPrec p (NOp op)     acc = showsPrec p op acc
+
+opToBs :: SrcArg => Operator -> B.ByteString
+opToBs (Op f xs) = uf
 
 nameToBs :: SrcArg => Name -> B.ByteString
 nameToBs = \case
   NSpan x    -> spanToBs x
   NGeneric x -> x
   N_         -> "_"
+  NOp op     -> opToBs op
 
 data Src
   = SrcFile FilePath B.ByteString
@@ -290,6 +341,27 @@ u_ = NGeneric "u"
 x_ = NGeneric "x"
 y_ = NGeneric "y"
 z_ = NGeneric "z"
+
+newtype Precedence = Precedence Word
+  deriving (Eq, Show, Num, Ord, Enum) via Word
+
+data Fixity
+  = FInLeft Precedence   -- Infix left
+  | FInRight Precedence  -- Infix right
+  | FPre Precedence      -- Prefix
+  | FPost Precedence     -- Postfix
+  | FInNon Precedence    -- Infix non-associative
+  | FClosed              -- Closed
+  deriving (Eq, Show)
+
+data Operator = Op Fixity (List Span)
+  deriving (Eq, Show)
+
+-- projection
+data Proj
+  = PNoName Int
+  | PName Int Name
+  deriving Show
 
 -- source positions & spans
 --------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
+
 {-# options_ghc -Wno-unused-top-binds #-}
 
-module Parser.Parser (tm, top) where
+module Parser (tm, top) where
 
 import Prelude hiding (pi)
 import Common hiding (some, many, debug)
@@ -11,7 +12,6 @@ import qualified Presyntax as Pre
 
 {-
 TODO
-- Records decl.
 - Grouped binders
 - ML-style definitions
 - data types, case splits
@@ -204,11 +204,11 @@ bind' =
                   fixity <- (rawLeft  *> ws *> (FInLeft <$> prec))
                         <|> (rawRight *> ws *> (FInLeft <$> prec))
                         <|> (FInNon <$> prec)
-                  pure $ BOp $ OpDecl fixity (Cons op ops)
+                  pure $ BOp $ Op fixity (Cons op ops)
                 )
                 (do
                   prec <- ws *> prec
-                  pure $ BOp $ OpDecl (FPost prec) (Cons op ops)
+                  pure $ BOp $ Op (FPost prec) (Cons op ops)
                 )
           )
           (pure $ BUnused l)
@@ -219,11 +219,11 @@ bind' =
             FP.withOption rawOperator
               (\op' -> do
                 ws
-                pure $ BOp $ OpDecl FClosed (Cons op ops <> Single op')
+                pure $ BOp $ Op FClosed (Cons op ops <> Single op')
               )
               (do
                 prec <- ws *> prec
-                pure $ BOp $ OpDecl (FPre prec) (Cons op ops)
+                pure $ BOp $ Op (FPre prec) (Cons op ops)
               )
         )
     )
@@ -400,6 +400,10 @@ p1 =
   -- record Foo (A : Set)(B : Set) : Set where
   --   field1 : Nat
   --   field2 : Nat
+
+  -- record Pair (A : Ty)(B : Ty) : Ty where
+  --   fst : A
+  --   snd : B
 
   record Bar : Set where kuka : Nat
                          béka : Nat

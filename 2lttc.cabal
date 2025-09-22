@@ -39,14 +39,19 @@ executable 2lttc
   main-is: Main.hs
   other-modules:
       Common
+      Core
+      Elaboration
+      Elaboration.State
       MainInteraction
+      Parser
       Parser.Batteries
       Parser.Config
       Parser.Lexer
-      Parser.Parser
       Parser.Prototype.Pratt
       Parser.Prototype.Proto
       Presyntax
+      Utils.Fusion
+      Utils.State
       Paths_2lttc
   hs-source-dirs:
       src
@@ -87,6 +92,7 @@ executable 2lttc
       TypeApplications
       TypeFamilies
       TypeFamilyDependencies
+      TypeOperators
       UnboxedSums
       UnboxedTuples
       UndecidableInstances
