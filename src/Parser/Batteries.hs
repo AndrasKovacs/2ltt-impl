@@ -100,9 +100,9 @@ runParser :: Parser a -> B.ByteString -> FP.Result Error a
 runParser p src = FP.runParser p 0 0 src
 
 rawString :: String -> Q Exp
-rawString str = [| FP.spanOf $(FP.string str) |]
-
--- scanString ::
+rawString str =
+  let l = length str
+  in [| FP.spanOf $(FP.string str) <* FP.modify (+l) |]
 
 -- | Run parser, print pretty error on failure.
 testParser :: Show a => Parser a -> String -> IO ()
@@ -204,7 +204,8 @@ symBody symbols overlap cut s switch = let
   pcut p = if cut then [| $p `Parser.Batteries.cut` [Lit (show @String s)] |]
                   else p
   base = [| FP.spanOf $(FP.string s)|]
-  in pcut [| $plvl *> $base <* $(handleOverlap (overlap s)) <* ws |]
+  len  = length s
+  in pcut [| $plvl *> $base <* $(handleOverlap (overlap s)) <* FP.modify (+ len) <* ws |]
 
 switchBody :: S.Set String -> (String -> Overlap) -> Bool -> ([(String, Exp)], Maybe Exp) -> Q Exp
 switchBody symbols overlap cut (cases, deflt) =
@@ -212,10 +213,12 @@ switchBody symbols overlap cut (cases, deflt) =
             left <- FP.getPos
             $(FP.switch (FP.makeRawSwitch
                 (map (\(s, body) ->
+                        let len = length s in
                         if S.notMember s symbols then
                           notReservedError symbols s
                         else
                           (s, [| do {$(handleOverlap (overlap s));
+                                     FP.modify (+ len);
                                      right <- FP.getPos;
                                      ws;
                                      $(pure body) (FP.Span left right)} |])
@@ -281,13 +284,13 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     ------------------------------------------------------------
 
     identStartChar :: Parser Char
-    identStartChar = $(unTypeCode identStart)
+    identStartChar = $(unTypeCode identStart) <* FP.modify (+1)
 
     identRestChar :: Parser Char
-    identRestChar = $(unTypeCode identRest)
+    identRestChar = $(unTypeCode identRest) <* FP.modify (+1)
 
     inlineIdentRestChar :: Parser Char
-    inlineIdentRestChar = $(unTypeCode identRest)
+    inlineIdentRestChar = $(unTypeCode identRest) <* FP.modify (+1)
     {-# inline inlineIdentRestChar #-}
 
     scanIdent :: Parser ()
@@ -322,10 +325,10 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     ------------------------------------------------------------
 
     opChar :: Parser Char
-    opChar = $(unTypeCode op)
+    opChar = $(unTypeCode op) <* FP.modify (+1)
 
     inlineOpChar :: Parser Char
-    inlineOpChar = $(unTypeCode op)
+    inlineOpChar = $(unTypeCode op) <* FP.modify (+1)
     {-# inline inlineOpChar #-}
 
     scanOperator :: Parser ()

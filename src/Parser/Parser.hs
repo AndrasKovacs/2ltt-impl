@@ -343,9 +343,7 @@ alignMany pa pb = do
   let moreIndented p = localIndentation (lvl + 1) p
   FP.withOption pa
     (\a -> do
-        debug (show (lvl, a))
         b <- moreIndented pb
-        debug "mal"
         Cons (a, b) <$> many ((,) <$> aligned pa <*> moreIndented pb)
     )
     (pure Nil)
