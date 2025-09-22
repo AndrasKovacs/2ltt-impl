@@ -79,6 +79,7 @@ symbols = [
   , ":"
 
   , "let"
+  , "letrec"
   , ";"
 
   , "("
@@ -92,6 +93,7 @@ symbols = [
   , "."
   , "record"
   , "data"
+  , "where"
 
   , "\\"
   , "λ"

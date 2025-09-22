@@ -65,8 +65,9 @@ data MultiBind = MultiBind (List Bind) Icit (Maybe Ty)
 
 data Tm
   = Lam Pos (List MultiBind) Tm
-  | Let Pos Stage Bind (Maybe Ty) Tm Tm    -- let x = t; u | let x : A = t; u
-                                           --  | let x := t; u | let x : A := t; u
+  | Let Pos Stage Bind (Maybe Ty) Tm Tm  -- let x = t; u | let x : A = t; u | let x := t; u | let x : A := t; u
+  | Decl0 Pos Bind Ty Tm                 -- let x : a; t   (forward declaration)
+  | LetRec Pos Bind (Maybe Ty) Tm Tm     -- letrec x : a := t; u
   | Spine Tm (Spine 'True)
   | Unparsed UnparsedSpine
 
@@ -90,30 +91,25 @@ data Tm
   | Dot Tm Projection                      -- field name or qualified name or record field index
 
   | Rec Pos RecFields Pos                  -- rec (<fields>)
-  | RecTy Pos RecTyFields Pos              -- Rec (<type fields>)
+  | RecTy Pos (List (Bind, Ty)) Pos              -- Rec (<type fields>)
   deriving Show
 
-data Record0Decl
-  deriving Show
-
-data Record1Decl
-  deriving Show
-
-data RecTyFields = RecTyFields
-  deriving Show
+type Record0Decl = List (Bind, Ty)
+type Record1Decl = List (Bind, Ty)
 
 data Top
   = TNil
   | TDef Stage Bind (Maybe Ty) Tm Top
-  | TInductive0 Pos Name
-  | TRecord0 Pos Name Record0Decl Top
-  | TRecord1 Pos Name Record1Decl Top
+  | TDecl Bind Ty Top
+  | TInductive0 Pos Bind
+  | TInductive1 Pos Bind
+  | TRecord Pos Bind (List MultiBind) Ty Record0Decl Top
   deriving Show
 
 instance SpanOf UnparsedSpine where
   leftPos = \case
-    USTm x _    -> leftPos x
-    USOp x _    -> leftPos x
+    USTm x _       -> leftPos x
+    USOp x _       -> leftPos x
     USProjOp x _ _ -> leftPos x
 
   rightPos = \case
@@ -147,51 +143,55 @@ instance SpanOf Projection where
 
 instance SpanOf Tm where
   leftPos = \case
-    Lam x _ _       -> leftPos x
-    Let x _ _ _ _ _ -> leftPos x
-    Set x _         -> leftPos x
-    Ty x _          -> leftPos x
-    Pi x _ _        -> leftPos x
-    Parens x _ _    -> leftPos x
-    Hole x          -> leftPos x
-    Quote x _ _     -> leftPos x
-    Lift x _        -> leftPos x
-    Ident x         -> leftPos x
-    LocalLvl x _ _  -> leftPos x
-    Dot x _         -> leftPos x
-    Unparsed x      -> leftPos x
-    ValTy x _       -> leftPos x
-    CompTy x _      -> leftPos x
-    ElVal x _       -> leftPos x
-    ElComp x _      -> leftPos x
-    Prop x _        -> leftPos x
-    Inferred x      -> leftPos x
-    Splice x _      -> leftPos x
-    Rec x _ _       -> leftPos x
-    RecTy x _ _     -> leftPos x
-    Spine x _       -> leftPos x
+    Lam x _ _        -> leftPos x
+    Let x _ _ _ _ _  -> leftPos x
+    LetRec x _ _ _ _ -> leftPos x
+    Decl0 x _ _ _    -> leftPos x
+    Set x _          -> leftPos x
+    Ty x _           -> leftPos x
+    Pi x _ _         -> leftPos x
+    Parens x _ _     -> leftPos x
+    Hole x           -> leftPos x
+    Quote x _ _      -> leftPos x
+    Lift x _         -> leftPos x
+    Ident x          -> leftPos x
+    LocalLvl x _ _   -> leftPos x
+    Dot x _          -> leftPos x
+    Unparsed x       -> leftPos x
+    ValTy x _        -> leftPos x
+    CompTy x _       -> leftPos x
+    ElVal x _        -> leftPos x
+    ElComp x _       -> leftPos x
+    Prop x _         -> leftPos x
+    Inferred x       -> leftPos x
+    Splice x _       -> leftPos x
+    Rec x _ _        -> leftPos x
+    RecTy x _ _      -> leftPos x
+    Spine x _        -> leftPos x
 
   rightPos = \case
-    Lam _ _ x       -> rightPos x
-    Let _ _ _ _ _ x -> rightPos x
-    Set _ x         -> rightPos x
-    Ty _ x          -> rightPos x
-    Pi _ _ x        -> rightPos x
-    Parens _ _ x    -> rightPos x
-    Hole x          -> rightPos x
-    Quote _ _ x     -> rightPos x
-    Lift _ x        -> rightPos x
-    Ident x         -> rightPos x
-    LocalLvl _ _ x  -> rightPos x
-    Dot _ x         -> rightPos x
-    Unparsed  x     -> rightPos x
-    ValTy _ x       -> rightPos x
-    CompTy _ x      -> rightPos x
-    ElVal _ x       -> rightPos x
-    ElComp _ x      -> rightPos x
-    Prop _ x        -> rightPos x
-    Inferred x      -> rightPos x
-    Splice _ x      -> rightPos x
-    RecTy _ _ x     -> rightPos x
-    Rec _ _ x       -> rightPos x
-    Spine _ x       -> rightPos x
+    Lam _ _ x        -> rightPos x
+    Let _ _ _ _ _ x  -> rightPos x
+    LetRec _ _ _ _ x -> rightPos x
+    Decl0 _ _ _ x    -> rightPos x
+    Set _ x          -> rightPos x
+    Ty _ x           -> rightPos x
+    Pi _ _ x         -> rightPos x
+    Parens _ _ x     -> rightPos x
+    Hole x           -> rightPos x
+    Quote _ _ x      -> rightPos x
+    Lift _ x         -> rightPos x
+    Ident x          -> rightPos x
+    LocalLvl _ _ x   -> rightPos x
+    Dot _ x          -> rightPos x
+    Unparsed  x      -> rightPos x
+    ValTy _ x        -> rightPos x
+    CompTy _ x       -> rightPos x
+    ElVal _ x        -> rightPos x
+    ElComp _ x       -> rightPos x
+    Prop _ x         -> rightPos x
+    Inferred x       -> rightPos x
+    Splice _ x       -> rightPos x
+    RecTy _ _ x      -> rightPos x
+    Rec _ _ x        -> rightPos x
+    Spine _ x        -> rightPos x

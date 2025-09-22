@@ -9,14 +9,11 @@ import Parser.Lexer
 import Presyntax
 import qualified Presyntax as Pre
 
--- import Data.ByteString.Char8 (ByteString)
--- import qualified Data.ByteString.Char8 as B
-
 {-
 TODO
+- Records decl.
 - Grouped binders
 - ML-style definitions
-- Records.
 - data types, case splits
 - implicit let
 - indentation-based let
@@ -25,7 +22,7 @@ TODO
 debug :: String -> Parser ()
 debug msg = do
   l <- FP.traceLine
-  traceM $ msg ++ " | " ++ l
+  traceM $ msg ++ " |" ++ l
 
 many :: Parser a -> Parser (List a)
 many p = FP.chainr Cons p (pure Nil)
@@ -76,7 +73,7 @@ angler  = $(sym ">")
 -- angler' = $(sym' ">")
 -- tilde   = $(sym "~")
 tilde'  = $(sym' "~")
--- colon   = $(sym ":")
+colon   = $(sym ":")
 colon'  = $(sym' ":")
 semi    = $(sym' ";")
 -- semi'   = $(sym  ";")
@@ -181,7 +178,9 @@ spine = do
       case t of
         Dot t (POp x) -> pure $ Unparsed $ USProjOp t x sp
         t -> case b of
-          STrue  -> pure $ Spine t sp
+          STrue  -> case sp of
+            SNil -> pure t
+            sp   -> pure $ Spine t sp
           SFalse -> pure $ Unparsed $ USTm t sp
       )
 
@@ -289,41 +288,102 @@ lamBody l = do
   pure $ Lam l x t
 {-# noinline lamBody #-}
 
-assign :: Parser Stage
-assign = $(switch [| case _ of
+assign' :: Parser Stage
+assign' = $(switch' [| case _ of
   "="  -> \_ -> pure S1
   ":=" -> \_ -> pure S0
-  |]) `cut` ["\"=\" or \":=\""]
+  |])
 
 letBody :: Pos -> Parser Tm
 letBody l = do
   x <- bind
   a <- FP.optional (colon' *> tm)
-  s <- assign
+  FP.withOption ((,) <$> assign' <*> tm)
+    (\(s, t) -> do
+        semi
+        u <- tm
+        pure $ Let l s x a t u
+    )
+    (case a of
+       Just a -> do
+         semi
+         u <- tm
+         pure $ Decl0 l x a u
+       Nothing ->
+         err ["=", ":="]
+    )
+{-# noinline letBody #-}
+
+letrecBody :: Pos -> Parser Tm
+letrecBody l = do
+  x <- bind
+  a <- FP.optional (colon' *> tm)
+  $(sym ":=")
   t <- tm
   semi
   u <- tm
-  pure $ Let l s x a t u
-{-# noinline letBody #-}
+  pure $ LetRec l x a t u
+{-# noinline letrecBody #-}
 
 tm :: Parser Tm
 tm = $(switch [| case _ of
-  "\\"  -> \(FP.Span l _) -> lamBody l
-  "λ"   -> \(FP.Span l _) -> lamBody l
-  "let" -> \(FP.Span l _) -> letBody l
+  "\\"     -> \(FP.Span l _) -> lamBody l
+  "λ"      -> \(FP.Span l _) -> lamBody l
+  "let"    -> \(FP.Span l _) -> letBody l
+  "letrec" -> \(FP.Span l _) -> letrecBody l
   |])
   <|>
   pi
 
+{-# inline alignMany #-}
+alignMany :: Show a => Show b => Parser a -> Parser b -> Parser (List (a, b))
+alignMany pa pb = do
+  lvl <- FP.get
+  let aligned p      = exactLvl' lvl *> localIndentation lvl p
+  let moreIndented p = localIndentation (lvl + 1) p
+  FP.withOption pa
+    (\a -> do
+        debug (show (lvl, a))
+        b <- moreIndented pb
+        debug "mal"
+        Cons (a, b) <$> many ((,) <$> aligned pa <*> moreIndented pb)
+    )
+    (pure Nil)
+
 topEntry :: () -> Parser Top
-topEntry _ = do
-  x <- exactLvl' 0 *> bind'
-  localIndentation 1 do
-  a <- FP.optional (colon' *> tm)
-  s <- assign
-  t <- tm
-  u <- localIndentation 0 $ top' ()
-  pure $ TDef s x a t u
+topEntry _ =
+  -- records
+  FP.withOption (exactLvl' 0 *> $(sym' "record"))
+    (\(FP.Span l _) -> localIndentation 1 do
+       x <- bind
+       params <- many piBindBase
+       colon
+       a <- tm
+       $(sym "where")
+       fields <- alignMany bind' (colon *> tm)
+       u <- localIndentation 0 $ top' ()
+       pure $ TRecord l x params a fields u
+    )
+
+    -- definitions and forward declarations
+    (do
+       x <- exactLvl' 0 *> bind'
+       localIndentation 1 do
+       a <- FP.optional (colon' *> tm)
+       FP.withOption assign'
+         (\s -> do
+             t <- tm
+             u <- localIndentation 0 $ top' ()
+             pure $ TDef s x a t u
+         )
+         (case a of
+            Just a -> do
+              u <- localIndentation 0 $ top' ()
+              pure $ TDecl x a u
+            Nothing ->
+              err ["=", ":="]
+         )
+    )
 
 topEof :: Parser Top
 topEof =
@@ -339,12 +399,25 @@ top = ws *> top' ()
 p1 :: String
 p1 =
   """
-  Nat  : Set = (N : Set) → (N → N) → N → N
-  zero : Nat = λ N s z. z
-  suc  : Nat → Nat = λ n N s z. s (n N s z)
-  _+_ left 10 : Nat → Nat → Nat = λ n m N s z. n N s (m N s z)
-  n5 : Nat = suc (suc (suc (suc (suc zero))))
-  n10 : Nat = n5 + n5
+  -- record Foo (A : Set)(B : Set) : Set where
+  --   field1 : Nat
+  --   field2 : Nat
+
+  record Bar : Set where kuka : Nat
+                         béka : Nat
+
+  -- béka : Set
+  -- majom : Set
+  -- béka  : Set
+  -- majom := x
+  -- béka := y
+
+  -- Nat  : Set = (N : Set) → (N → N) → N → N
+  -- zero : Nat = λ N s z. z
+  -- suc  : Nat → Nat = λ n N s z. s (n N s z)
+  -- _+_ left 10 : Nat → Nat → Nat = λ n m N s z. n N s (m N s z)
+  -- n5 : Nat = suc (suc (suc (suc (suc zero))))
+  -- n10 : Nat = n5 + n5
   """
 
 
