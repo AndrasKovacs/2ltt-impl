@@ -2,7 +2,7 @@
 
 module Presyntax where
 
-import Common hiding (Name, Icit(..))
+import Common hiding (Name, Icit(..), Proj(..))
 
 type Name = Span
 type Ty = Tm

@@ -1,0 +1,5 @@
+
+Non-priorities:
+
+- Detecting defn contractibility in Prop
+- meta-level inductive families (+ fixpoints, case trees)

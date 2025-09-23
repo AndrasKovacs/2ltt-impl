@@ -52,6 +52,7 @@ executable 2lttc
       Presyntax
       Utils.Fusion
       Utils.State
+      Value
       Paths_2lttc
   hs-source-dirs:
       src

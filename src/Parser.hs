@@ -4,7 +4,7 @@
 module Parser (tm, top) where
 
 import Prelude hiding (pi)
-import Common hiding (some, many, debug)
+import Common hiding (some, many, debug, Proj(..))
 import qualified FlatParse.Stateful as FP
 import Parser.Lexer
 import Presyntax
