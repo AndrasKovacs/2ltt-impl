@@ -4,7 +4,14 @@ module Value where
 
 import GHC.Word
 import Common
-import {-# SOURCE #-} Core (TConInfo, DConInfo)
+import {-# SOURCE #-} Core (DefInfo, TConInfo, DConInfo, DCon0Info, Def0Info)
+
+infixl 8 ∘
+infixl 8 ∘~
+class Apply a b c | a -> b c where
+  (∘)  :: LvlArg => a -> b -> c  -- strict
+  (∘~) :: LvlArg => a -> b -> c  -- lazy
+  (∘~) = (∘)
 
 -- rigid neutral heads
 -- the things here can be eliminated further, but never computed
@@ -26,9 +33,9 @@ data FlexHead
 
 -- delayed unfoldings
 data UnfoldHead
-  = UHMeta MetaVar        -- solved meta
-  | UHTopDef Lvl ~Val     -- top definition
-  | UHCoe Val Val Val Val -- at least one of the values is an unfolding
+  = UHMeta MetaVar                          -- solved meta
+  | UHTopDef {-# nounpack #-} DefInfo ~Val  -- top definition
+  | UHCoe Val Val Val Val                   -- at least one of the values is an unfolding
   deriving Show
 
 data Spine
@@ -36,6 +43,10 @@ data Spine
   | SApp Spine Val Icit SP -- TODO: pack Icit and SP
   | SProj Spine Proj SP
   deriving Show
+
+instance Apply Spine (Val,Icit,SP) Spine where
+  {-# inline (∘) #-}
+  spn ∘ (v,i,sp) = SApp spn v i sp
 
 --------------------------------------------------------------------------------
 
@@ -52,12 +63,6 @@ pattern Cl f <- ((\(Cl# f) -> Wrap# (oneShot \v -> case ?lvl of Lvl (W# l) -> f 
   where Cl f = Cl# (oneShot \l -> lam1 \v -> let ?lvl = Lvl (W# l) in f v)
 {-# complete Cl #-}
 {-# inline Cl #-}
-
-infixl 8 ∘
-infixl 8 ∘~
-class Apply a b c | a -> b c where
-  (∘)  :: LvlArg => a -> b -> c  -- call by value
-  (∘~) :: LvlArg => a -> b -> c  -- lazy
 
 instance Show Closure where showsPrec _ _ acc = "<closure>" ++ acc
 
@@ -84,31 +89,60 @@ data NClosure = NCl {
   , nClosureClosure :: Closure
   } deriving Show
 
+instance Apply NClosure Val Val where
+  {-# inline (∘) #-}
+  NCl _ (Cl f) ∘ x = f x
+  {-# inline (∘~) #-}
+  NCl _ (Cl f) ∘~ ~x = f x
+
+data Closure0 = Cl0# Name (Word# -> Val0)
+instance Show Closure0 where showsPrec _ _ acc = "<closure>" ++ acc
+
+pattern Cl0 x f <- ((\(Cl0# x f) -> (x,(\x -> case x of Lvl (W# x) -> f x))) -> (x, f)) where
+  Cl0 x f = Cl0# x (\x -> f (Lvl (W# x)))
+{-# inline Cl0 #-}
+{-# complete Cl0 #-}
+
 --------------------------------------------------------------------------------
 
-type Ty = Val
+type VTy = Val
+
+data Val0
+  = LocalVar0 Lvl
+  | TopDef0 {-# nounpack #-} Def0Info
+  | DCon0   {-# nounpack #-} DCon0Info
+  | App0 Val0 Val0
+  | Lam0 VTy Closure0
+  | Decl0 VTy Closure0
+  | Record0 (List Val0)
+  | Proj0 Val0 Proj
+  | Splice Val
+  deriving Show
 
 data Val
   = Rigid RigidHead Spine
   | Flex FlexHead Spine
-  | Unfold UnfoldHead Spine
+  | Unfold UnfoldHead Spine ~Val
 
   -- canonicals
   | Set
   | Prop
   | Bot
   | Eq Val Val Val
-  | Pi Ty NIClosure
-  | Lam Ty NIClosure
+  | Lift VTy
+  | Ty
+  | ValTy
+  | CompTy
+  | ElVal VTy
+  | ElComp VTy
+  | Fun0 VTy VTy
+  | Pi VTy NIClosure
+  | Lam VTy NIClosure
+  | Record (List Val)
   | TCon {-# nounpack #-} TConInfo (List Val)  -- fully applied
   | DCon {-# nounpack #-} DConInfo (List Val)  -- fully applied
+  | Quote Val0
 
-  -- | RecTy {-# nounpack #-}
-  -- | Rec {-# nounpack #-} TConInfo (List Val)
-
-  -- object-level canonicals
-  | Decl Ty NClosure
-  | Let Ty SP Val NClosure
  deriving Show
 
 --------------------------------------------------------------------------------
@@ -132,13 +166,14 @@ sp :: SP -> Val
 sp S = Set
 sp P = Prop
 
-data Env = ENil | EDef Env Val deriving Show
+data Env = ENil | EDef Env ~Val | EDef0 Env Lvl deriving Show
 type EnvArg = (?env :: Env)
 
 instance Sized Env where
   size = go 0 where
-    go acc ENil       = acc
-    go acc (EDef e _) = go (acc + 1) e
+    go acc ENil        = acc
+    go acc (EDef e _)  = go (acc + 1) e
+    go acc (EDef0 e _) = go (acc + 1) e
 
 --------------------------------------------------------------------------------
 

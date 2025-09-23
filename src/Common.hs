@@ -93,9 +93,17 @@ noinlineRunIO (IO f) = runRW# (\s -> case f s of (# _, a #) -> a)
 --------------------------------------------------------------------------------
 
 data List a = Nil | Cons a (List a)
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show a => Show (List a) where
+  show = show . toList
 
 pattern Single a = Cons a Nil
+
+index :: List a -> Int -> a
+index (Cons a _)  0 = a
+index (Cons _ as) x = index as (x - 1)
+index _           _ = impossible
 
 instance Functor List where
   fmap f = go where
@@ -342,6 +350,11 @@ x_ = NGeneric "x"
 y_ = NGeneric "y"
 z_ = NGeneric "z"
 
+pattern A_ = NGeneric "A"
+pattern B_ = NGeneric "B"
+pattern C_ = NGeneric "C"
+pattern D_ = NGeneric "D"
+
 newtype Precedence = Precedence Word
   deriving (Eq, Show, Num, Ord, Enum) via Word
 
@@ -362,6 +375,9 @@ data Proj
   = PNoName Int
   | PName Int Name
   deriving Show
+
+projIndex :: Proj -> Int
+projIndex = \case PNoName i -> i; PName i _ -> i
 
 -- source positions & spans
 --------------------------------------------------------------------------------
