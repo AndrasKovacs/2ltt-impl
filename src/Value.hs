@@ -17,7 +17,7 @@ class Apply a b c | a -> b c where
 -- the things here can be eliminated further, but never computed
 data RigidHead
   = RHLocalVar Lvl
-  | RHCoe
+  | RHCoe Val Val Val Val
   | RHExfalso SP
   | RHRefl
   | RHSym
@@ -27,6 +27,7 @@ data RigidHead
   | RHLift
   | RHElVal
   | RHElComp
+  | RHFun0
   deriving Show
 
 -- flexible neutral heads: can be eliminated, can be unblocked
@@ -34,6 +35,11 @@ data FlexHead
   = FHMeta MetaVar
   | FHCoe MetaVar Val Val Val Val  -- coe blocked on single meta
   deriving Show
+
+blocker :: FlexHead -> MetaVar
+blocker = \case
+  FHMeta m -> m
+  FHCoe m _ _ _ _ -> m
 
 -- delayed unfoldings
 data UnfoldHead
@@ -135,7 +141,6 @@ data Val
   | Ty
   | ValTy
   | CompTy
-  | Fun0 VTy VTy
   | Pi VTy NIClosure
   | Lam VTy NIClosure
   | Record (List Val)
@@ -175,8 +180,14 @@ pattern Trans a x y z p q =
 pattern Ap a b f x y p =
   Rigid RHSym (SId `SAppIS` a `SAppIS` b `SAppIS` f `SAppIS` x `SAppIS` y `SAppEP` p)
 
-pattern Coe a b p x =
-  Rigid RHCoe (SId `SAppIS` a `SAppIS` b `SAppEP` p `SAppES` x)
+pattern RCoe a b p x = Rigid (RHCoe a b p x) SId
+pattern FCoe m a b p x = Flex (FHCoe m a b p x) SId
+
+{-# inline UCoe #-}
+pattern UCoe a b p x v <- Unfold (UHCoe a b p x) SId v where
+  UCoe a b p x ~v = Unfold (UHCoe a b p x) SId v
+
+pattern Fun0 a b = Rigid RHSym (SId `SAppIS` a `SAppIS` b)
 
 
 infixr 1 ==>

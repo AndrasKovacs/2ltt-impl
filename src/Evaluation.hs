@@ -71,9 +71,46 @@ instance Eval C.Prim Val where
                    LamE f_ (a ==> b) \f -> LamI x_ a \x -> LamI y_ a \y ->
                    LamE p_ (Eq a x y) \p ->
                    Ap a b f x y p
+    C.Fun0      -> LamE A_ ValTy \a -> LamE B_ Ty \b -> Fun0 a b
     C.Coe       -> LamI A_ Set \a -> LamI B_ Set \b -> LamE p_ (Eq Set a b) \p -> LamE x_ a \x ->
-                   Coe a b p x
+                   coe a b p x
 
+projPi1 = uf
+projPi2 = uf
+pick = uf
+
+coe :: LvlArg => Val -> Val -> Val -> Val -> Val
+coe a b p x = case (a, b) of
+
+  -- canonical match
+  (topA@(Pi a b), topB@(Pi a' b'))
+    | b^.icit /= b'^.icit -> RCoe topA topB p x
+    | True ->
+        let p1   = projPi1 p
+            l2   = projPi2 p
+            name = pick (b^.name) (b'^.name)
+        in uf
+
+  (Set,  Set)  -> x
+  (Prop, Prop) -> x
+
+  -- unfolding
+  (ua@(Unfold h sp a), b) -> UCoe ua b p x (coe a b p x)
+  (a, ub@(Unfold h sp b)) -> UCoe a ub p x (coe a b p x)
+
+  -- flex
+  (a@(Flex h sp), b) -> FCoe (blocker h) a b p x
+  (a, b@(Flex h sp)) -> FCoe (blocker h) a b p x
+
+  -- rigid neutral, try coe-refl
+  (a@Rigid{}, b) -> tryRefl a b p x
+  (a, b@Rigid{}) -> tryRefl a b p x
+
+  -- canonical mismatch
+  (a, b) -> RCoe a b p x
+
+tryRefl :: LvlArg => Val -> Val -> Val -> Val -> Val
+tryRefl = uf
 
 proj :: Val -> Proj -> SP -> Val
 proj t p sp = case t of
@@ -132,4 +169,3 @@ instance Eval C.Tm Val where
     C.Proj t p sp  -> proj (eval t) p sp
     C.Record ts    -> Record (eval ts)
     C.Quote t      -> quote (eval t)
-    C.Fun0 a b     -> Fun0 (eval a) (eval b)

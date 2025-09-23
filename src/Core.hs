@@ -71,6 +71,7 @@ data Prim
   | Trans
   | Ap
   | Coe
+  | Fun0
   deriving Show
 
 type Ty = Tm
@@ -81,7 +82,6 @@ data Tm
   | DCon   {-# nounpack #-} DConInfo
   | TopDef {-# nounpack #-} DefInfo
   | Let Ty SP Tm (Bind Tm)
-  | Fun0 Ty Ty
   | Record (List Tm)
   | Pi Ty (BindI Tm)
   | Prim Prim
