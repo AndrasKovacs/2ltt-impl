@@ -49,15 +49,31 @@ instance Eval a b => Eval (List a) (List b) where
 
 instance Eval C.Prim Val where
   eval = \case
-    C.Lift    -> LamE A_ Set Lift
-    C.Set     -> Set
-    C.Prop    -> Prop
-    C.Ty      -> Ty
-    C.ValTy   -> ValTy
-    C.CompTy  -> CompTy
-    C.ElVal   -> LamE A_ ValTy ElVal
-    C.ElComp  -> LamE A_ CompTy ElComp
-    C.Exfalso -> uf
+    C.Lift      -> LamE A_ Set Lift
+    C.Set       -> Set
+    C.Prop      -> Prop
+    C.Ty        -> Ty
+    C.ValTy     -> ValTy
+    C.CompTy    -> CompTy
+    C.ElVal     -> LamE A_ ValTy ElVal
+    C.ElComp    -> LamE A_ CompTy ElComp
+    C.Exfalso S -> LamI A_ Set \a -> LamE p_ Bot \p -> Exfalso a p
+    C.Exfalso P -> LamI A_ Prop \a -> LamE p_ Bot \p -> ExfalsoP a p
+    C.Eq        -> LamI A_ Set \a -> LamE x_ a \x -> LamE y_ a \y -> Eq a x y
+    C.Refl      -> LamI A_ Set \a -> LamI x_ a \x -> Refl a x
+    C.Sym       -> LamI A_ Set \a -> LamI x_ a \x -> LamI y_ a \y ->
+                   LamE p_ (Eq a x y) \p ->
+                   Sym a x y p
+    C.Trans     -> LamI A_ Set \a -> LamI x_ a \x -> LamI y_ a \y -> LamI z_ a \z ->
+                   LamE p_ (Eq a x y) \p -> LamE q_ (Eq a y z) \q ->
+                   Trans a x y z p q
+    C.Ap        -> LamI A_ Set \a -> LamI B_ Set \b ->
+                   LamE f_ (a ==> b) \f -> LamI x_ a \x -> LamI y_ a \y ->
+                   LamE p_ (Eq a x y) \p ->
+                   Ap a b f x y p
+    C.Coe       -> LamI A_ Set \a -> LamI B_ Set \b -> LamE p_ (Eq Set a b) \p -> LamE x_ a \x ->
+                   Coe a b p x
+
 
 proj :: Val -> Proj -> SP -> Val
 proj t p sp = case t of

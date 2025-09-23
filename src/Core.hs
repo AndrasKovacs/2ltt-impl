@@ -6,8 +6,6 @@ import {-# source #-} Value (Val)
 
 import Common
 
-type Ty = Tm
-
 data Bind a = Bind {
     bindName :: Name
   , bindBody :: a
@@ -18,24 +16,6 @@ data BindI a = BindI {
   , bindIIcit :: Icit
   , bindIBody :: a
   } deriving Show
-
-data Prim
-  = Lift
-  | Set
-  | Prop
-  | Ty
-  | ValTy
-  | CompTy
-  | ElVal
-  | ElComp
-  | Exfalso
-  | Id
-  | Refl
-  | Sym
-  | Trans
-  | Cong
-  | Coe
-  deriving Show
 
 data DefInfo = DI {
     defInfoValue :: ~Val
@@ -74,6 +54,26 @@ data Tm0
   | Lam0 Ty (Bind Tm0)
   | Decl0 Ty (Bind Tm0)
   | Splice Tm
+
+data Prim
+  = Lift
+  | Set
+  | Prop
+  | Ty
+  | ValTy
+  | CompTy
+  | ElVal
+  | ElComp
+  | Exfalso SP
+  | Eq
+  | Refl
+  | Sym
+  | Trans
+  | Ap
+  | Coe
+  deriving Show
+
+type Ty = Tm
 
 data Tm
   = LocalVar Ix

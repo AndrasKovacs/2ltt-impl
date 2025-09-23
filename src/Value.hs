@@ -13,22 +13,26 @@ class Apply a b c | a -> b c where
   (∘~) :: LvlArg => a -> b -> c  -- lazy
   (∘~) = (∘)
 
--- rigid neutral heads
+-- rigid heads
 -- the things here can be eliminated further, but never computed
 data RigidHead
   = RHLocalVar Lvl
-  | RHCoe Val Val Val Val
-  | RHExfalso Val Val
-  | RHRefl Val Val
-  | RHSym Val Val Val Val
-  | RHTrans Val Val Val Val Val Val
-  | RHAp Val Val Val Val Val Val
+  | RHCoe
+  | RHExfalso SP
+  | RHRefl
+  | RHSym
+  | RHTrans
+  | RHAp
+  | RHEq
+  | RHLift
+  | RHElVal
+  | RHElComp
   deriving Show
 
 -- flexible neutral heads: can be eliminated, can be unblocked
 data FlexHead
   = FHMeta MetaVar
-  | FHCoe MetaVar Val Val Val Val  -- coe blocked on meta
+  | FHCoe MetaVar Val Val Val Val  -- coe blocked on single meta
   deriving Show
 
 -- delayed unfoldings
@@ -128,13 +132,9 @@ data Val
   | Set
   | Prop
   | Bot
-  | Eq Val Val Val
-  | Lift VTy
   | Ty
   | ValTy
   | CompTy
-  | ElVal VTy
-  | ElComp VTy
   | Fun0 VTy VTy
   | Pi VTy NIClosure
   | Lam VTy NIClosure
@@ -152,6 +152,32 @@ pattern PiI x a b = Lam a (NICl x Impl (Cl b))
 
 pattern LamE x a t = Lam a (NICl x Expl (Cl t))
 pattern LamI x a t = Lam a (NICl x Impl (Cl t))
+
+pattern SAppES t u = SApp t u Expl S
+pattern SAppIS t u = SApp t u Impl S
+pattern SAppEP t u = SApp t u Expl P
+pattern SAppIP t u = SApp t u Impl P
+
+pattern Lift   a = Rigid RHLift   (SId `SAppES` a)
+pattern ElVal  a = Rigid RHElVal  (SId `SAppES` a)
+pattern ElComp a = Rigid RHElComp (SId `SAppES` a)
+
+pattern Exfalso  a t = Rigid (RHExfalso S) (SId `SAppIS` a `SAppEP` t)
+pattern ExfalsoP a t = Rigid (RHExfalso P) (SId `SAppIS` a `SAppEP` t)
+
+pattern Eq a x y = Rigid RHEq (SId `SAppIS` a `SAppES` x `SAppES` y)
+pattern Refl a x = Rigid RHRefl (SId `SAppIS` a `SAppIS` x)
+pattern Sym a x y p = Rigid RHSym (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppEP` p)
+
+pattern Trans a x y z p q =
+  Rigid RHSym (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppIS` z `SAppEP` p `SAppEP` q)
+
+pattern Ap a b f x y p =
+  Rigid RHSym (SId `SAppIS` a `SAppIS` b `SAppIS` f `SAppIS` x `SAppIS` y `SAppEP` p)
+
+pattern Coe a b p x =
+  Rigid RHCoe (SId `SAppIS` a `SAppIS` b `SAppEP` p `SAppES` x)
+
 
 infixr 1 ==>
 (==>) :: Val -> Val -> Val
