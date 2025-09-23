@@ -3,3 +3,49 @@ Non-priorities:
 
 - Detecting defn contractibility in Prop
 - meta-level inductive families (+ fixpoints, case trees)
+
+
+How to do Set/Prop?
+  - Want it to be minimally intrusive
+  - Sort-annotate neutrals?
+  - Have up/down operation for sort switch?
+
+
+Possible sort switches:
+
+  cast: Prop inside Set           (1 variant out of 2)
+  exfalso: Prop inside Set        (1 variant out of 2)
+  app:                            (only 2 variant is a switch out of 4)
+  proj:                           (only 1 variant is a switch out of 3)
+
+  let:                            (2 out of 4 is switch)
+  topdef:                         need to store S/P
+
+
+  lam:    no switch!
+  record: no switch!
+
+
+Not a huge amount of switches... A bit suspicious but we'll see
+
+- just make a "switch" variant for all of the above?
+  only need
+
+  cast sp       +1 variant
+  exfalso sp    +1 variant
+
+  app sp
+  proj sp
+  let sp
+
+- If we don't make new variants, we only need SP annotation like the following:
+
+  app       (arg)
+  proj      (result)
+  let       (definiens)
+
+  we don't need annotation on coe and exfalso, because we always
+  switch into Prop on the inside
+
+
+--------------------------------------------------------------------------------

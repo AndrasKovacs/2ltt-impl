@@ -4,7 +4,7 @@ module Value where
 
 import GHC.Word
 import Common
-import {-# SOURCE #-} Core (TyConInfo)
+import {-# SOURCE #-} Core (TConInfo, DConInfo)
 
 -- rigid neutral heads
 -- the things here can be eliminated further, but never computed
@@ -33,8 +33,8 @@ data UnfoldHead
 
 data Spine
   = SId
-  | SApp Spine Val Icit
-  | SProj Spine Proj
+  | SApp Spine Val Icit SP -- TODO: pack Icit and SP
+  | SProj Spine Proj SP
   deriving Show
 
 --------------------------------------------------------------------------------
@@ -48,8 +48,8 @@ newtype Closure = Cl# {unCl# :: Word# -> Val -> Val}
 newtype Wrap# = Wrap# (LvlArg => Val -> Val)
 
 pattern Cl :: (LvlArg => Val -> Val) -> Closure
-pattern Cl f <- ((\(Cl# f) -> Wrap# \v -> case ?lvl of Lvl (W# l) -> f l v) -> Wrap# f) where
-  Cl f = Cl# (oneShot \l -> lam1 \v -> let ?lvl = Lvl (W# l) in f v)
+pattern Cl f <- ((\(Cl# f) -> Wrap# (oneShot \v -> case ?lvl of Lvl (W# l) -> f l v)) -> Wrap# f)
+  where Cl f = Cl# (oneShot \l -> lam1 \v -> let ?lvl = Lvl (W# l) in f v)
 {-# complete Cl #-}
 {-# inline Cl #-}
 
@@ -67,17 +67,22 @@ instance (b ~ Val, c ~ Val) => Apply Closure b c where
   {-# inline (∘~) #-}
   Cl f ∘~ ~x = f x
 
-data NamedClosure = PCl {
-    namedClosureName    :: Name
-  , namedClosureIcit    :: Icit
-  , namedClosureClosure :: Closure
+data NIClosure = NICl {
+    nIClosureName    :: Name
+  , nIClosureIcit    :: Icit
+  , nIClosureClosure :: Closure
   } deriving Show
 
-instance Apply NamedClosure Val Val where
+instance Apply NIClosure Val Val where
   {-# inline (∘) #-}
-  PCl _ _ (Cl f) ∘ x = f x
+  NICl _ _ (Cl f) ∘ x = f x
   {-# inline (∘~) #-}
-  PCl _ _ (Cl f) ∘~ ~x = f x
+  NICl _ _ (Cl f) ∘~ ~x = f x
+
+data NClosure = NCl {
+    nClosureName    :: Name
+  , nClosureClosure :: Closure
+  } deriving Show
 
 --------------------------------------------------------------------------------
 
@@ -93,8 +98,49 @@ data Val
   | Prop
   | Bot
   | Eq Val Val Val
-  | Pi Ty NamedClosure
-  | Lam Ty NamedClosure
-  | RecTy {-# nounpack #-} TyConInfo Spine
-  | Rec {-# nounpack #-} TyConInfo Spine
+  | Pi Ty NIClosure
+  | Lam Ty NIClosure
+  | TCon {-# nounpack #-} TConInfo (List Val)  -- fully applied
+  | DCon {-# nounpack #-} DConInfo (List Val)  -- fully applied
+
+  -- | RecTy {-# nounpack #-}
+  -- | Rec {-# nounpack #-} TConInfo (List Val)
+
+  -- object-level canonicals
+  | Decl Ty NClosure
+  | Let Ty SP Val NClosure
  deriving Show
+
+--------------------------------------------------------------------------------
+
+pattern PiE x a b = Lam a (NICl x Expl (Cl b))
+pattern PiI x a b = Lam a (NICl x Impl (Cl b))
+
+pattern LamE x a t = Lam a (NICl x Expl (Cl t))
+pattern LamI x a t = Lam a (NICl x Impl (Cl t))
+
+infixr 1 ==>
+(==>) :: Val -> Val -> Val
+(==>) a b = PiE N_ a \_ -> b
+
+data G = G {g1 :: Val, g2 :: Val}
+
+gjoin :: Val -> G
+gjoin v = G v v
+
+sp :: SP -> Val
+sp S = Set
+sp P = Prop
+
+data Env = ENil | EDef Env Val deriving Show
+type EnvArg = (?env :: Env)
+
+instance Sized Env where
+  size = go 0 where
+    go acc ENil       = acc
+    go acc (EDef e _) = go (acc + 1) e
+
+--------------------------------------------------------------------------------
+
+makeFields ''NIClosure
+makeFields ''NClosure

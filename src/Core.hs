@@ -2,12 +2,22 @@
 
 module Core where
 
+import {-# source #-} Value (Val)
+
 import Common
 
 type Ty = Tm
 
-data Bind a = Bind Name a
-  deriving Show
+data Bind a = Bind {
+    bindName :: Name
+  , bindBody :: a
+  } deriving Show
+
+data BindI a = BindI {
+    bindIName :: Name
+  , bindIIcit :: Icit
+  , bindIBody :: a
+  } deriving Show
 
 data Prim
   = Lift
@@ -18,6 +28,7 @@ data Prim
   | CompTy
   | ElVal
   | ElComp
+  | Exfalso
   | Id
   | Refl
   | Sym
@@ -26,29 +37,50 @@ data Prim
   | Coe
   deriving Show
 
-data Spine
-  = SNil
-  | SCons Spine Tm Icit
-  deriving Show
+data DefInfo = DI {
+    defInfoValue :: ~Val
+  , defInfoName  :: Name
+  }
 
-data TopDefInfo = TopDefInfo
-  deriving Show
+data TConInfo = TCI {
+    tConInfoValue :: ~Val
+  , tConInfoName  :: Name
+  }
 
-data TyConInfo = TyConInfo
-  deriving Show
+data DConInfo = DCI {
+    dConInfoValue :: ~Val
+  , dConInfoName  :: Name
+  }
 
 data Tm
   = LocalVar Ix
-  | TyCon {-# nounpack #-} TyConInfo Spine
-  | TopDef {-# nounpack #-} TopDefInfo
-  | Decl Ty Tm (Bind Tm)  -- stage 0 forward declaration
-  | Let Ty Tm (Bind Tm)
-  | Pi Ty (Bind Tm)
+  | TCon {-# nounpack #-} TConInfo
+  | DCon {-# nounpack #-} DConInfo
+  | TopDef {-# nounpack #-} DefInfo
+  | Let Ty SP Tm (Bind Tm)
+  | Pi Ty (BindI Tm)
   | Prim Prim
-  | App Tm Tm Icit
-  | Lam
+  | App Tm Tm Icit SP -- TODO: pack Icit and SP
+  | Lam Ty (BindI Tm)
+
+  | Decl Ty (Bind Tm)  -- stage 0 forward declaration
+  | Let0 Ty Tm (Bind Tm)
+
+
   -- | Rec -- TODO
-  | Proj Tm Proj
+  -- | RecTy -- TODO
+
+  | Proj Tm Proj SP
   | Quote Tm
   | Splice Tm
-  deriving Show
+
+makeFields ''Bind
+makeFields ''BindI
+makeFields ''DefInfo
+makeFields ''TConInfo
+makeFields ''DConInfo
+
+instance Show DefInfo  where show x = show (x^.name)
+instance Show TConInfo where show x = show (x^.name)
+instance Show DConInfo where show x = show (x^.name)
+deriving instance Show Tm

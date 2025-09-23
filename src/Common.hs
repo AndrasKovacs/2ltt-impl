@@ -406,3 +406,37 @@ data instance Sing (x :: Bool) where
 class FromSing (x :: a) where sing :: Sing x
 instance FromSing 'True  where sing = STrue
 instance FromSing 'False where sing = SFalse
+
+
+-- Set/Prop
+--------------------------------------------------------------------------------
+
+newtype SP = SP# Int
+pattern S = SP# 0
+pattern P = SP# 1
+{-# complete S, P #-}
+
+instance Show SP where
+  show S = "S"
+  show P = "P"
+
+--------------------------------------------------------------------------------
+
+class Sized a where
+  size :: a -> Lvl
+
+class HasName s a | s -> a where
+  name :: Lens' s a
+  {-# minimal name #-}
+
+class HasValue s a | s -> a where
+  value :: Lens' s a
+  {-# minimal value #-}
+
+class HasIcit s a | s -> a where
+  icit :: Lens' s a
+  {-# minimal icit #-}
+
+class HasClosure s a | s -> a where
+  closure :: Lens' s a
+  {-# minimal closure #-}

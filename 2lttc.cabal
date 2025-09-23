@@ -42,6 +42,7 @@ executable 2lttc
       Core
       Elaboration
       Elaboration.State
+      Evaluation
       MainInteraction
       Parser
       Parser.Batteries
