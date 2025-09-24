@@ -1,7 +1,11 @@
 
+{-
+Parser where operators produce an "error value" for unparsed spines.
+-}
+
 module Parser.Prototype.Proto where
 
-import Common
+import Common hiding (name)
 import Parser.Lexer
 import qualified FlatParse.Stateful as FP
 

@@ -2,7 +2,7 @@
 
 module Presyntax where
 
-import Common hiding (Name, Icit(..), Proj(..))
+import Common hiding (Name, Icit(..), Proj(..), Prim(..))
 
 type Name = Span
 type Ty = Tm
@@ -63,6 +63,9 @@ data Tm
   | ElVal Pos Pos                          -- ElVal
   | ElComp Pos Pos                         -- ElComp
   | Prop Pos Pos                           -- Prop
+
+  | Bot Pos Pos                            -- Bot | ⊥
+  | Exfalso Pos Pos                        -- exfalso
 
   | Pi Pos (List MultiBind) Tm             -- (x : A) -> B | {x : A} -> B
   | Parens Pos Tm Pos                      -- (t)    -- used to correctly track spans
@@ -153,6 +156,8 @@ instance SpanOf Tm where
     Rec x _ _        -> leftPos x
     RecTy x _ _      -> leftPos x
     Spine x _        -> leftPos x
+    Bot x _          -> leftPos x
+    Exfalso x _      -> leftPos x
 
   rightPos = \case
     Lam _ _ x        -> rightPos x
@@ -180,3 +185,5 @@ instance SpanOf Tm where
     RecTy _ _ x      -> rightPos x
     Rec _ _ x        -> rightPos x
     Spine _ x        -> rightPos x
+    Bot _ x          -> rightPos x
+    Exfalso _ x      -> rightPos x

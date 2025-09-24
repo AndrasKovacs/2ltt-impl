@@ -2,7 +2,8 @@
 
 module Evaluation where
 
-import Common
+import Common hiding (Prim(..))
+import qualified Common as C
 import qualified Core as C
 import Value
 
@@ -49,75 +50,85 @@ instance Eval a b => Eval (List a) (List b) where
 
 instance Eval C.Prim Val where
   eval = \case
-    C.Lift      -> LamE A_ Set Lift
+    C.Lift      -> ΛE A_ Set Lift
+    C.Bot       -> Bot
     C.Set       -> Set
     C.Prop      -> Prop
     C.Ty        -> Ty
     C.ValTy     -> ValTy
     C.CompTy    -> CompTy
-    C.ElVal     -> LamE A_ ValTy ElVal
-    C.ElComp    -> LamE A_ CompTy ElComp
-    C.Exfalso S -> LamI A_ Set \a -> LamE p_ Bot \p -> Exfalso a p
-    C.Exfalso P -> LamI A_ Prop \a -> LamE p_ Bot \p -> ExfalsoP a p
-    C.Eq        -> LamI A_ Set \a -> LamE x_ a \x -> LamE y_ a \y -> Eq a x y
-    C.Refl      -> LamI A_ Set \a -> LamI x_ a \x -> Refl a x
-    C.Sym       -> LamI A_ Set \a -> LamI x_ a \x -> LamI y_ a \y ->
-                   LamE p_ (Eq a x y) \p ->
+    C.ElVal     -> ΛE A_ ValTy ElVal
+    C.ElComp    -> ΛE A_ CompTy ElComp
+    C.Exfalso   -> ΛI A_ Set \a -> ΛE p_ Bot \p -> Exfalso a p
+    C.ExfalsoP  -> ΛI A_ Prop \a -> ΛE p_ Bot \p -> ExfalsoP a p
+    C.Eq        -> ΛI A_ Set \a -> ΛE x_ a \x -> ΛE y_ a \y -> Eq a x y
+    C.Refl      -> ΛI A_ Set \a -> ΛI x_ a \x -> Refl a x
+    C.Sym       -> ΛI A_ Set \a -> ΛI x_ a \x -> ΛI y_ a \y ->
+                   ΛE p_ (Eq a x y) \p ->
                    Sym a x y p
-    C.Trans     -> LamI A_ Set \a -> LamI x_ a \x -> LamI y_ a \y -> LamI z_ a \z ->
-                   LamE p_ (Eq a x y) \p -> LamE q_ (Eq a y z) \q ->
+    C.Trans     -> ΛI A_ Set \a -> ΛI x_ a \x -> ΛI y_ a \y -> ΛI z_ a \z ->
+                   ΛE p_ (Eq a x y) \p -> ΛE q_ (Eq a y z) \q ->
                    Trans a x y z p q
-    C.Ap        -> LamI A_ Set \a -> LamI B_ Set \b ->
-                   LamE f_ (a ==> b) \f -> LamI x_ a \x -> LamI y_ a \y ->
-                   LamE p_ (Eq a x y) \p ->
+    C.Ap        -> ΛI A_ Set \a -> ΛI B_ Set \b ->
+                   ΛE f_ (a ==> b) \f -> ΛI x_ a \x -> ΛI y_ a \y ->
+                   ΛE p_ (Eq a x y) \p ->
                    Ap a b f x y p
-    C.Fun0      -> LamE A_ ValTy \a -> LamE B_ Ty \b -> Fun0 a b
-    C.Coe       -> LamI A_ Set \a -> LamI B_ Set \b -> LamE p_ (Eq Set a b) \p -> LamE x_ a \x ->
+    C.Fun0      -> ΛE A_ ValTy \a -> ΛE B_ Ty \b -> Fun0 a b
+    C.Coe       -> ΛI A_ Set \a -> ΛI B_ Set \b -> ΛE p_ (Eq Set a b) \p -> ΛE x_ a \x ->
                    coe a b p x
 
-projPi1 = uf
-projPi2 = uf
-pick = uf
+pi0P :: Val -> Val
+pi0P v = proj v (Proj 0 N_ P)
 
+pi1P :: Val -> Val
+pi1P v = proj v (Proj 1 N_ P)
+
+coeSP :: LvlArg => SP -> Val -> Val -> Val -> Val -> Val
+coeSP P a b p t = pi0P p ∘ (t, Expl, P)
+coeSP S a b p t = coe a b p t
+
+-- Set coercion
 coe :: LvlArg => Val -> Val -> Val -> Val -> Val
-coe a b p x = case (a, b) of
+coe a b p t = case (a, b) of
 
   -- canonical match
-  (topA@(Pi a b), topB@(Pi a' b'))
-    | b^.icit /= b'^.icit -> RCoe topA topB p x
+  (topA@(Pi a sp b), topB@(Pi a' sp' b'))
+    | b^.icit /= b'^.icit || sp /= sp' -> RCoe topA topB p t
     | True ->
-        let p1   = projPi1 p
-            l2   = projPi2 p
-            name = pick (b^.name) (b'^.name)
-        in uf
+      let i  = b^.icit
+          p0 = pi0P p
+          p1 = pi1P p
+      in Λ (pick (b^.name) (b'^.name)) i a' \x' ->
+           let x = coeSP sp a' a (Sym Set a a' p0) x'
+           in coe (b ∘ x) (b' ∘ x') (p1 ∘ (x, Expl, sp)) (t ∘ (x, i, sp))
 
-  (Set,  Set)  -> x
-  (Prop, Prop) -> x
+  (Set,  Set)  -> t
+  (Prop, Prop) -> t
 
   -- unfolding
-  (ua@(Unfold h sp a), b) -> UCoe ua b p x (coe a b p x)
-  (a, ub@(Unfold h sp b)) -> UCoe a ub p x (coe a b p x)
+  (ua@(Unfold h sp a), b) -> UCoe ua b p t (coe a b p t)
+  (a, ub@(Unfold h sp b)) -> UCoe a ub p t (coe a b p t)
 
   -- flex
-  (a@(Flex h sp), b) -> FCoe (blocker h) a b p x
-  (a, b@(Flex h sp)) -> FCoe (blocker h) a b p x
+  (a@(Flex h sp), b) -> FCoe (blocker h) a b p t
+  (a, b@(Flex h sp)) -> FCoe (blocker h) a b p t
 
   -- rigid neutral, try coe-refl
-  (a@Rigid{}, b) -> tryRefl a b p x
-  (a, b@Rigid{}) -> tryRefl a b p x
+  (a@Rigid{}, b) -> tryRefl a b p t
+  (a, b@Rigid{}) -> tryRefl a b p t
 
   -- canonical mismatch
-  (a, b) -> RCoe a b p x
+  (a, b) -> RCoe a b p t
 
 tryRefl :: LvlArg => Val -> Val -> Val -> Val -> Val
 tryRefl = uf
 
-proj :: Val -> Proj -> SP -> Val
-proj t p sp = case t of
-  Record vs      -> index vs (projIndex p)
-  Rigid h spn    -> Rigid h (SProj spn p sp)
-  Flex h spn     -> Flex h (SProj spn p sp)
-  Unfold h spn v -> Unfold h (SProj spn p sp) (proj v p sp)
+proj :: Val -> C.Proj -> Val
+proj t p = case t of
+  Record vs      -> index vs (p^.lvl)
+  Rigid h spn    -> Rigid  h (SProject spn p)
+  Flex h spn     -> Flex   h (SProject spn p)
+  Unfold h spn v -> Unfold h (SProject spn p) (proj v p)
   _              -> impossible
 
 quote :: Val0 -> Val
@@ -146,14 +157,14 @@ instance Eval C.Tm0 Val0 where
        go (EDef e _)  x = go e (x - 1)
        go (EDef0 e _) x = go e (x - 1)
        go _           _ = impossible
-    C.TopDef0 di -> TopDef0 di
-    C.DCon0 di   -> DCon0 di
-    C.Record0 ts -> Record0 (eval ts)
-    C.Proj0 t p  -> Proj0 (eval t) p
-    C.App0 t u   -> App0 (eval t) (eval u)
-    C.Lam0 a t   -> Lam0 (eval a) (eval t)
-    C.Decl0 a t  -> Decl0 (eval a) (eval t)
-    C.Splice t   -> splice (eval t)
+    C.TopDef0 di     -> TopDef0 di
+    C.DCon0 di       -> DCon0 di
+    C.Record0 ts     -> Record0 (eval ts)
+    C.Project0 t p   -> Project0 (eval t) p
+    C.App0 t u       -> App0 (eval t) (eval u)
+    C.Lam0 a t       -> Lam0 (eval a) (eval t)
+    C.Decl0 a t      -> Decl0 (eval a) (eval t)
+    C.Splice t       -> splice (eval t)
 
 instance Eval C.Tm Val where
   eval = \case
@@ -162,10 +173,31 @@ instance Eval C.Tm Val where
     C.DCon ci      -> eval ci
     C.TopDef di    -> eval di
     C.Let _ _ t u  -> def (eval t) \v -> eval u ∘ v
-    C.Pi a b       -> Pi (eval a) (eval b)
+    C.Pi a sp b    -> Pi (eval a) sp (eval b)
     C.Prim p       -> eval p
     C.App t u i sp -> eval t ∘ (eval u, i, sp)
     C.Lam a t      -> Lam (eval a) (eval t)
-    C.Proj t p sp  -> proj (eval t) p sp
+    C.Project t p  -> proj (eval t) p
     C.Record ts    -> Record (eval ts)
     C.Quote t      -> quote (eval t)
+
+-- Forcing
+--------------------------------------------------------------------------------
+
+
+-- Conversion for the purpose of coe-refl
+--------------------------------------------------------------------------------
+
+data ConvRes = Same | Diff | BlockOn MetaVar
+  deriving Show
+
+instance Exception ConvRes
+
+class Conv a where
+  conv :: LvlArg => a -> a -> IO ()
+
+-- instance Conv Val where
+--   conv t u =
+
+
+--------------------------------------------------------------------------------

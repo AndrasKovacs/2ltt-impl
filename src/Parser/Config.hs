@@ -58,6 +58,8 @@ symbols = [
   , "ValTy"
   , "ElVal"
   , "ElComp"
+  , "Bot"
+  , "⊥"
 
   , "Prop"
   , "refl"

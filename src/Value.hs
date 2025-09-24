@@ -3,7 +3,8 @@
 module Value where
 
 import GHC.Word
-import Common
+import Common hiding (Set, Prop)
+import qualified Common as C
 import {-# SOURCE #-} Core (DefInfo, TConInfo, DConInfo, DCon0Info, Def0Info)
 
 infixl 8 ∘
@@ -18,16 +19,7 @@ class Apply a b c | a -> b c where
 data RigidHead
   = RHLocalVar Lvl
   | RHCoe Val Val Val Val
-  | RHExfalso SP
-  | RHRefl
-  | RHSym
-  | RHTrans
-  | RHAp
-  | RHEq
-  | RHLift
-  | RHElVal
-  | RHElComp
-  | RHFun0
+  | RHPrim Prim
   deriving Show
 
 -- flexible neutral heads: can be eliminated, can be unblocked
@@ -51,7 +43,7 @@ data UnfoldHead
 data Spine
   = SId
   | SApp Spine Val Icit SP -- TODO: pack Icit and SP
-  | SProj Spine Proj SP
+  | SProject Spine Proj
   deriving Show
 
 instance Apply Spine (Val,Icit,SP) Spine where
@@ -125,7 +117,7 @@ data Val0
   | Lam0 VTy Closure0
   | Decl0 VTy Closure0
   | Record0 (List Val0)
-  | Proj0 Val0 Proj
+  | Project0 Val0 Proj0
   | Splice Val
   deriving Show
 
@@ -133,52 +125,60 @@ data Val
   = Rigid RigidHead Spine
   | Flex FlexHead Spine
   | Unfold UnfoldHead Spine ~Val
-
-  -- canonicals
-  | Set
-  | Prop
-  | Bot
-  | Ty
-  | ValTy
-  | CompTy
-  | Pi VTy NIClosure
+  | Pi VTy SP NIClosure
   | Lam VTy NIClosure
   | Record (List Val)
   | TCon {-# nounpack #-} TConInfo (List Val)  -- fully applied
   | DCon {-# nounpack #-} DConInfo (List Val)  -- fully applied
   | Quote Val0
-
  deriving Show
 
 --------------------------------------------------------------------------------
 
+pattern Λ x i a t = Lam a (NICl x i (Cl t))
+
 pattern PiE x a b = Lam a (NICl x Expl (Cl b))
 pattern PiI x a b = Lam a (NICl x Impl (Cl b))
 
-pattern LamE x a t = Lam a (NICl x Expl (Cl t))
-pattern LamI x a t = Lam a (NICl x Impl (Cl t))
+pattern ΛE x a t = Lam a (NICl x Expl (Cl t))
+pattern ΛI x a t = Lam a (NICl x Impl (Cl t))
 
 pattern SAppES t u = SApp t u Expl S
 pattern SAppIS t u = SApp t u Impl S
 pattern SAppEP t u = SApp t u Expl P
 pattern SAppIP t u = SApp t u Impl P
 
-pattern Lift   a = Rigid RHLift   (SId `SAppES` a)
-pattern ElVal  a = Rigid RHElVal  (SId `SAppES` a)
-pattern ElComp a = Rigid RHElComp (SId `SAppES` a)
+-- statically allocated constants, for sharing
+sSet    = Rigid (RHPrim C.Set) SId; {-# noinline sSet #-}
+sProp   = Rigid (RHPrim C.Prop) SId; {-# noinline sProp #-}
+sTy     = Rigid (RHPrim C.Ty) SId; {-# noinline sTy #-}
+sBot    = Rigid (RHPrim C.Bot) SId; {-# noinline sBot #-}
+sValTy  = Rigid (RHPrim C.ValTy) SId; {-# noinline sValTy #-}
+sCompTy = Rigid (RHPrim C.CompTy) SId; {-# noinline sCompTy #-}
 
-pattern Exfalso  a t = Rigid (RHExfalso S) (SId `SAppIS` a `SAppEP` t)
-pattern ExfalsoP a t = Rigid (RHExfalso P) (SId `SAppIS` a `SAppEP` t)
+pattern Lift a            = Rigid (RHPrim C.Lift) (SId `SAppES` a)
+pattern Set               <- Rigid (RHPrim C.Set)    SId where Set    = sSet
+pattern Bot               <- Rigid (RHPrim C.Bot)    SId where Bot    = sBot
+pattern Prop              <- Rigid (RHPrim C.Prop)   SId where Prop   = sProp
+pattern Ty                <- Rigid (RHPrim C.Ty)     SId where Ty     = sTy
+pattern ValTy             <- Rigid (RHPrim C.ValTy)  SId where ValTy  = sValTy
+pattern CompTy            <- Rigid (RHPrim C.CompTy) SId where CompTy = sCompTy
+pattern ElVal  a          = Rigid (RHPrim C.ElVal) (SId `SAppES` a)
+pattern ElComp a          = Rigid (RHPrim C.ElComp) (SId `SAppES` a)
+pattern Exfalso  a t      = Rigid (RHPrim C.Exfalso) (SId `SAppIS` a `SAppEP` t)
+pattern ExfalsoP a t      = Rigid (RHPrim C.ExfalsoP) (SId `SAppIS` a `SAppEP` t)
+pattern Eq a x y          = Rigid (RHPrim C.Eq) (SId `SAppIS` a `SAppES` x `SAppES` y)
+pattern Refl a x          = Rigid (RHPrim C.Refl) (SId `SAppIS` a `SAppIS` x)
+pattern Sym a x y p       = Rigid (RHPrim C.Sym) (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppEP` p)
+pattern Trans a x y z p q = Rigid (RHPrim C.Sym) (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppIS` z `SAppEP` p `SAppEP` q)
+pattern Ap a b f x y p    = Rigid (RHPrim C.Ap) (SId `SAppIS` a `SAppIS` b `SAppIS` f `SAppIS` x `SAppIS` y `SAppEP` p)
+pattern Fun0 a b          = Rigid (RHPrim C.Fun0) (SId `SAppIS` a `SAppIS` b)
 
-pattern Eq a x y = Rigid RHEq (SId `SAppIS` a `SAppES` x `SAppES` y)
-pattern Refl a x = Rigid RHRefl (SId `SAppIS` a `SAppIS` x)
-pattern Sym a x y p = Rigid RHSym (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppEP` p)
-
-pattern Trans a x y z p q =
-  Rigid RHSym (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppIS` z `SAppEP` p `SAppEP` q)
-
-pattern Ap a b f x y p =
-  Rigid RHSym (SId `SAppIS` a `SAppIS` b `SAppIS` f `SAppIS` x `SAppIS` y `SAppEP` p)
+{-# inline Set #-}
+{-# inline Prop #-}
+{-# inline Ty #-}
+{-# inline ValTy #-}
+{-# inline CompTy #-}
 
 pattern RCoe a b p x = Rigid (RHCoe a b p x) SId
 pattern FCoe m a b p x = Flex (FHCoe m a b p x) SId
@@ -186,9 +186,6 @@ pattern FCoe m a b p x = Flex (FHCoe m a b p x) SId
 {-# inline UCoe #-}
 pattern UCoe a b p x v <- Unfold (UHCoe a b p x) SId v where
   UCoe a b p x ~v = Unfold (UHCoe a b p x) SId v
-
-pattern Fun0 a b = Rigid RHSym (SId `SAppIS` a `SAppIS` b)
-
 
 infixr 1 ==>
 (==>) :: Val -> Val -> Val

@@ -2,6 +2,7 @@
 module Common (
     module Common
   , module Control.Applicative
+  , module Control.Exception
   , module Control.Monad
   , module Data.Bits
   , module Data.Foldable
@@ -21,6 +22,7 @@ module Common (
 
 import Control.Applicative
 import Control.Monad
+import Control.Exception
 import Data.Bits
 import Data.Foldable
 import Data.IORef
@@ -100,7 +102,7 @@ instance Show a => Show (List a) where
 
 pattern Single a = Cons a Nil
 
-index :: List a -> Int -> a
+index :: List a -> Lvl -> a
 index (Cons a _)  0 = a
 index (Cons _ as) x = index as (x - 1)
 index _           _ = impossible
@@ -252,6 +254,10 @@ data Stage = S0 | S1
 data Icit = Impl | Expl
   deriving (Eq, Show, Ord, Enum)
 
+-- | Set/Prop
+data SP = S | P
+  deriving (Eq, Show, Ord, Enum)
+
 -- Time measurement
 --------------------------------------------------------------------------------
 
@@ -285,7 +291,24 @@ timedPure_ ~a = do
     pure diff
 {-# noinline timedPure_ #-}
 
--- names
+-- Source files
+--------------------------------------------------------------------------------
+
+data Src
+  = SrcFile FilePath B.ByteString
+  | SrcDontUnbox
+
+instance Show Src where
+  show (SrcFile fp _) = "File " ++ fp
+  show SrcDontUnbox   = impossible
+
+srcToBs :: Src -> B.ByteString
+srcToBs (SrcFile _ bs) = bs
+srcToBs SrcDontUnbox   = impossible
+
+type SrcArg = (?src :: Src)
+
+-- Names and operators
 --------------------------------------------------------------------------------
 
 data Name
@@ -310,20 +333,6 @@ nameToBs = \case
   NGeneric x -> x
   N_         -> "_"
   NOp op     -> opToBs op
-
-data Src
-  = SrcFile FilePath B.ByteString
-  | SrcDontUnbox
-
-instance Show Src where
-  show (SrcFile fp _) = "File " ++ fp
-  show SrcDontUnbox   = impossible
-
-srcToBs :: Src -> B.ByteString
-srcToBs (SrcFile _ bs) = bs
-srcToBs SrcDontUnbox   = impossible
-
-type SrcArg = (?src :: Src)
 
 a_ = NGeneric "a"
 b_ = NGeneric "b"
@@ -370,16 +379,13 @@ data Fixity
 data Operator = Op Fixity (List Span)
   deriving (Eq, Show)
 
--- projection
-data Proj
-  = PNoName Int
-  | PName Int Name
-  deriving Show
+pick :: Name -> Name -> Name
+pick N_ N_ = x_
+pick x  N_ = x
+pick _  y  = y
 
-projIndex :: Proj -> Int
-projIndex = \case PNoName i -> i; PName i _ -> i
 
--- source positions & spans
+-- Source positions & spans
 --------------------------------------------------------------------------------
 
 type Pos = FP.Pos
@@ -412,6 +418,8 @@ instance SpanOf Pos where
   leftPos  x = x
   rightPos x = x
 
+
+-- Singletons
 --------------------------------------------------------------------------------
 
 data family Sing (x :: a)
@@ -424,18 +432,32 @@ instance FromSing 'True  where sing = STrue
 instance FromSing 'False where sing = SFalse
 
 
--- Set/Prop
+-- Primitives
 --------------------------------------------------------------------------------
 
-newtype SP = SP# Int
-pattern S = SP# 0
-pattern P = SP# 1
-{-# complete S, P #-}
+data Prim
+  = Lift
+  | Set
+  | Prop
+  | Ty
+  | ValTy
+  | CompTy
+  | ElVal
+  | ElComp
+  | Bot
+  | Exfalso
+  | ExfalsoP
+  | Eq
+  | Refl
+  | Sym
+  | Trans
+  | Ap
+  | Coe
+  | Fun0
+  deriving Show
 
-instance Show SP where
-  show S = "S"
-  show P = "P"
 
+-- Overloaded accessors
 --------------------------------------------------------------------------------
 
 class Sized a where
@@ -456,3 +478,19 @@ class HasIcit s a | s -> a where
 class HasClosure s a | s -> a where
   closure :: Lens' s a
   {-# minimal closure #-}
+
+-- Projections
+--------------------------------------------------------------------------------
+
+data Proj = Proj {
+    projLvl  :: Lvl
+  , projName :: Name
+  , projSort :: SP
+  } deriving Show
+
+data Proj0 = Proj0 {
+    proj0Lvl  :: Lvl
+  , proj0Name :: Name
+  } deriving Show
+
+makeFields ''Proj

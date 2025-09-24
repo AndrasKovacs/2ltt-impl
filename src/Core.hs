@@ -49,30 +49,11 @@ data Tm0
   | TopDef0 {-# nounpack #-} Def0Info
   | DCon0   {-# nounpack #-} DCon0Info
   | Record0 (List Tm0)
-  | Proj0 Tm0 Proj
+  | Project0 Tm0 Proj0
   | App0 Tm0 Tm0
   | Lam0 Ty (Bind Tm0)
   | Decl0 Ty (Bind Tm0)
   | Splice Tm
-
-data Prim
-  = Lift
-  | Set
-  | Prop
-  | Ty
-  | ValTy
-  | CompTy
-  | ElVal
-  | ElComp
-  | Exfalso SP
-  | Eq
-  | Refl
-  | Sym
-  | Trans
-  | Ap
-  | Coe
-  | Fun0
-  deriving Show
 
 type Ty = Tm
 
@@ -83,11 +64,11 @@ data Tm
   | TopDef {-# nounpack #-} DefInfo
   | Let Ty SP Tm (Bind Tm)
   | Record (List Tm)
-  | Pi Ty (BindI Tm)
+  | Pi Ty SP (BindI Tm)
   | Prim Prim
   | App Tm Tm Icit SP -- TODO: pack Icit and SP
   | Lam Ty (BindI Tm)
-  | Proj Tm Proj SP
+  | Project Tm Proj
   | Quote Tm0
 
 makeFields ''Bind

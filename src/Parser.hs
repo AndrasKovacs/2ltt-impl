@@ -4,7 +4,7 @@
 module Parser (tm, top) where
 
 import Prelude hiding (pi)
-import Common hiding (some, many, debug, Proj(..))
+import Common hiding (some, many, debug, Proj(..), Prim(..), lvl, name)
 import qualified FlatParse.Stateful as FP
 import Parser.Lexer
 import Presyntax
@@ -95,6 +95,8 @@ atom' = $(switch' [| case _ of
   "ElVal"  -> \(FP.Span l r) -> pure $ ElVal l r
   "ElComp" -> \(FP.Span l r) -> pure $ ElComp l r
   "Prop"   -> \(FP.Span l r) -> pure $ Prop l r
+  "Bot"    -> \(FP.Span l r) -> pure $ Bot l r
+  "⊥"      -> \(FP.Span l r) -> pure $ Bot l r
   "_"      -> \(FP.Span l r) -> pure $ Inferred l
   "?"      -> \(FP.Span l r) -> pure $ Hole l
   "↑"      -> \(FP.Span l r) -> pure $ Lift l r
