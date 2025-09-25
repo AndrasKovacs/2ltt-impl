@@ -127,6 +127,8 @@ coe a b p t = case (a, b) of
            let x = coeSP sp a' a (Sym Set a a' p0) x'
            in coe (b ∘ x) (b' ∘ x') (p1 ∘ (x, Expl, sp)) (t ∘ (x, i, sp))
 
+  (topA@(
+
   (Set,  Set)  -> t
   (Prop, Prop) -> t
 
@@ -146,7 +148,10 @@ coe a b p t = case (a, b) of
   (a, b) -> RCoe a b p t
 
 coeRefl :: LvlArg => Val -> Val -> Val -> Val -> Val
-coeRefl a b p t = uf
+coeRefl a b p t = case runIO (catch (Same <$ conv a b) pure) of
+  Same      -> t
+  Diff      -> RCoe a b p t
+  BlockOn m -> Flex (FHCoe m a b p t) SId
 
 proj :: Val -> C.Proj -> Val
 proj t p = case t of
@@ -226,6 +231,7 @@ instance Eval C.Tm Val where
     C.Record ts    -> Record (eval ts)
     C.Quote t      -> quote (eval t)
 
+
 -- Forcing
 --------------------------------------------------------------------------------
 
@@ -265,7 +271,7 @@ instance Exception ConvRes
 
 class Conv a where conv :: LvlArg => a -> a -> IO ()
 
-instance {-# OVERLAPPABLE #-} Eq a => Conv a where
+instance {-# overlappable #-} Eq a => Conv a where
   {-# inline conv #-}
   conv x y = unless (x == y) $ throwIO Diff
 
@@ -311,7 +317,7 @@ instance Conv Val where
       -- canonical & rigid match
       (Pi a as b , Pi a' as' b') -> do conv as as'; conv a a'; conv b b'
       (Rigid h sp, Rigid h' sp') -> do conv h h'; conv sp sp'
-      (Lam _ _ t   , Lam _ _ t') -> do conv t t'
+      (Lam _ _ t , Lam _ _ t'  ) -> do conv t t'
       (Record ts , Record ts'  ) -> do conv ts ts'
 
       -- syntax-directed eta

@@ -1,4 +1,8 @@
 
+Immediate todos:
+  make TCon-s and DCon-s Rigid values
+
+
 Non-priorities:
 
 - Detecting defn contractibility in Prop
