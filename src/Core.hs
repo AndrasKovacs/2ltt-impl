@@ -1,4 +1,3 @@
-{-# options_ghc -funbox-strict-fields #-}
 
 module Core where
 

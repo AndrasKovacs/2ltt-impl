@@ -454,6 +454,9 @@ data Prim
   | Ap
   | Coe
   | Fun0
+  | PropExt
+  | FunExt
+  | FunExtP
   deriving Show
 
 

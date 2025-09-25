@@ -1,4 +1,3 @@
-{-# options_ghc -funbox-strict-fields #-}
 
 module Value where
 
@@ -137,8 +136,10 @@ data Val
 
 pattern Λ x i a t = Lam a (NICl x i (Cl t))
 
-pattern PiE x a b = Lam a (NICl x Expl (Cl b))
-pattern PiI x a b = Lam a (NICl x Impl (Cl b))
+pattern PiES x a b = Pi a S (NICl x Expl (Cl b))
+pattern PiEP x a b = Pi a P (NICl x Expl (Cl b))
+pattern PiIS x a b = Pi a S (NICl x Impl (Cl b))
+pattern PiIP x a b = Pi a P (NICl x Impl (Cl b))
 
 pattern ΛE x a t = Lam a (NICl x Expl (Cl t))
 pattern ΛI x a t = Lam a (NICl x Impl (Cl t))
@@ -157,12 +158,12 @@ sValTy  = Rigid (RHPrim C.ValTy) SId; {-# noinline sValTy #-}
 sCompTy = Rigid (RHPrim C.CompTy) SId; {-# noinline sCompTy #-}
 
 pattern Lift a            = Rigid (RHPrim C.Lift) (SId `SAppES` a)
-pattern Set               <- Rigid (RHPrim C.Set)    SId where Set    = sSet
-pattern Bot               <- Rigid (RHPrim C.Bot)    SId where Bot    = sBot
-pattern Prop              <- Rigid (RHPrim C.Prop)   SId where Prop   = sProp
-pattern Ty                <- Rigid (RHPrim C.Ty)     SId where Ty     = sTy
-pattern ValTy             <- Rigid (RHPrim C.ValTy)  SId where ValTy  = sValTy
-pattern CompTy            <- Rigid (RHPrim C.CompTy) SId where CompTy = sCompTy
+pattern Set              <- Rigid (RHPrim C.Set)    SId where Set    = sSet
+pattern Bot              <- Rigid (RHPrim C.Bot)    SId where Bot    = sBot
+pattern Prop             <- Rigid (RHPrim C.Prop)   SId where Prop   = sProp
+pattern Ty               <- Rigid (RHPrim C.Ty)     SId where Ty     = sTy
+pattern ValTy            <- Rigid (RHPrim C.ValTy)  SId where ValTy  = sValTy
+pattern CompTy           <- Rigid (RHPrim C.CompTy) SId where CompTy = sCompTy
 pattern ElVal  a          = Rigid (RHPrim C.ElVal) (SId `SAppES` a)
 pattern ElComp a          = Rigid (RHPrim C.ElComp) (SId `SAppES` a)
 pattern Exfalso  a t      = Rigid (RHPrim C.Exfalso) (SId `SAppIS` a `SAppEP` t)
@@ -173,6 +174,9 @@ pattern Sym a x y p       = Rigid (RHPrim C.Sym) (SId `SAppIS` a `SAppIS` x `SAp
 pattern Trans a x y z p q = Rigid (RHPrim C.Sym) (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppIS` z `SAppEP` p `SAppEP` q)
 pattern Ap a b f x y p    = Rigid (RHPrim C.Ap) (SId `SAppIS` a `SAppIS` b `SAppIS` f `SAppIS` x `SAppIS` y `SAppEP` p)
 pattern Fun0 a b          = Rigid (RHPrim C.Fun0) (SId `SAppIS` a `SAppIS` b)
+pattern PropExt a b f g   = Rigid (RHPrim C.PropExt) (SId `SAppIS` a `SAppIS` b `SAppEP` f `SAppEP` g)
+pattern FunExt a b f g p  = Rigid (RHPrim C.FunExt) (SId `SAppIS` a `SAppIS` b `SAppES` f `SAppES` g `SAppEP` p)
+pattern FunExtP a b f g p = Rigid (RHPrim C.FunExtP) (SId `SAppIS` a `SAppIS` b `SAppES` f `SAppES` g `SAppEP` p)
 
 {-# inline Set #-}
 {-# inline Prop #-}
@@ -187,18 +191,30 @@ pattern FCoe m a b p x = Flex (FHCoe m a b p x) SId
 pattern UCoe a b p x v <- Unfold (UHCoe a b p x) SId v where
   UCoe a b p x ~v = Unfold (UHCoe a b p x) SId v
 
-infixr 1 ==>
-(==>) :: Val -> Val -> Val
-(==>) a b = PiE N_ a \_ -> b
+infixr 1 ∙∙>
+(∙∙>) :: Val -> Val -> Val
+(∙∙>) a b = PiES N_ a \_ -> b
+
+infixr 1 ∙∘>
+(∙∘>) :: Val -> Val -> Val
+(∙∘>) a b = PiEP N_ a \_ -> b
+
+infixr 1 ∘∙>
+(∘∙>) :: Val -> Val -> Val
+(∘∙>) a b = PiIS N_ a \_ -> b
+
+infixr 1 ∘∘>
+(∘∘>) :: Val -> Val -> Val
+(∘∘>) a b = PiIP N_ a \_ -> b
 
 data G = G {g1 :: Val, g2 :: Val}
 
 gjoin :: Val -> G
 gjoin v = G v v
 
-sp :: SP -> Val
-sp S = Set
-sp P = Prop
+spVal :: SP -> Val
+spVal S = Set
+spVal P = Prop
 
 data Env = ENil | EDef Env ~Val | EDef0 Env Lvl deriving Show
 type EnvArg = (?env :: Env)

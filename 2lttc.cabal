@@ -101,12 +101,13 @@ executable 2lttc
       UndecidableInstances
       UnicodeSyntax
       ViewPatterns
-  ghc-options: -fdicts-strict -fmax-worker-args=18 -fspecialise-aggressively -fexpose-all-unfoldings -fplugin StrictImplParams -fworker-wrapper-cbv -rtsopts -threaded -with-rtsopts= "-N4 -A8M -qb0" -Wall -Wno-name-shadowing -Wno-missing-signatures -Wno-unused-do-bind -Wno-unused-matches -Wno-missing-pattern-synonym-signatures -fmax-relevant-binds=3 -fmax-valid-hole-fits=0
+  ghc-options: -fdicts-strict -funbox-strict-fields -fmax-worker-args=18 -fspecialise-aggressively -fexpose-all-unfoldings -fplugin StrictImplParams -fworker-wrapper-cbv -rtsopts -threaded -with-rtsopts= "-N4 -A8M -qb0" -Wall -Wno-name-shadowing -Wno-missing-signatures -Wno-unused-do-bind -Wno-unused-matches -Wno-missing-pattern-synonym-signatures -fmax-relevant-binds=3 -fmax-valid-hole-fits=0
   build-depends:
       base >=4.7 && <5
     , bytestring
     , containers
     , directory
+    , dynamic-array
     , filepath
     , flatparse
     , ghc-prim

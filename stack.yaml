@@ -23,5 +23,6 @@ ghc-options:
 #   executable-profiling: true
 
 extra-deps:
-- primdata-0.1.2.2
+- primdata-0.1.2.3
+- dynamic-array-0.1.3
 - strict-impl-params-1.1.0

@@ -86,6 +86,7 @@ default-extensions:
 
 ghc-options:
 - -fdicts-strict
+- -funbox-strict-fields
 - -fmax-worker-args=18
 - -fspecialise-aggressively
 - -fexpose-all-unfoldings
@@ -108,16 +109,17 @@ dependencies:
 - bytestring
 - containers
 - directory
+- dynamic-array
 - filepath
 - flatparse
 - ghc-prim
 - microlens
 - microlens-th
+- mtl
 - primdata
 - strict-impl-params == 1.1.0
 - template-haskell
 - time
-- mtl
 
 source-dirs: src
 

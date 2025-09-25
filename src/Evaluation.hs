@@ -70,12 +70,24 @@ instance Eval C.Prim Val where
                    ΛE p_ (Eq a x y) \p -> ΛE q_ (Eq a y z) \q ->
                    Trans a x y z p q
     C.Ap        -> ΛI A_ Set \a -> ΛI B_ Set \b ->
-                   ΛE f_ (a ==> b) \f -> ΛI x_ a \x -> ΛI y_ a \y ->
+                   ΛE f_ (a ∙∙> b) \f -> ΛI x_ a \x -> ΛI y_ a \y ->
                    ΛE p_ (Eq a x y) \p ->
                    Ap a b f x y p
     C.Fun0      -> ΛE A_ ValTy \a -> ΛE B_ Ty \b -> Fun0 a b
     C.Coe       -> ΛI A_ Set \a -> ΛI B_ Set \b -> ΛE p_ (Eq Set a b) \p -> ΛE x_ a \x ->
                    coe a b p x
+    C.PropExt   -> ΛI A_ Prop \a -> ΛI B_ Prop \b -> ΛE f_ (a ∙∙> b) \f -> ΛE g_ (b ∙∙> a) \g ->
+                   PropExt a b f g
+    C.FunExt    -> ΛI A_ Set \a -> ΛI B_ (a ∙∙> Set) \b ->
+                   let funtype = PiES a_ a (b ∙∙) in
+                   ΛI f_ funtype \f -> ΛI g_ funtype \g ->
+                   ΛE p_ (PiES a_ a \x -> Eq (b ∙∙ x) (f ∙∙ x) (g ∙∙ x)) \p ->
+                   FunExt a b f g p
+    C.FunExtP   -> ΛI A_ Prop \a -> ΛI B_ (a ∙∘> Set) \b ->
+                   let funtype = PiEP a_ a (b ∙∘) in
+                   ΛI f_ funtype \f -> ΛI g_ funtype \g ->
+                   ΛE p_ (PiEP a_ a \x -> Eq (b ∙∘ x) (f ∙∘ x) (g ∙∘ x)) \p ->
+                   FunExtP a b f g p
 
 pi0P :: Val -> Val
 pi0P v = proj v (Proj 0 N_ P)
@@ -150,6 +162,26 @@ instance Apply Val (Val, Icit, SP) Val where
     Unfold h spn v -> Unfold h (spn ∘ arg) (v ∘ arg)
     _              -> impossible
 
+infixl 8 ∙∙
+(∙∙) :: LvlArg => Val -> Val -> Val
+(∙∙) t u = t ∘ (u, Expl, S)
+{-# inline (∙∙) #-}
+
+infixl 8 ∙∘
+(∙∘) :: LvlArg => Val -> Val -> Val
+(∙∘) t u = t ∘ (u, Expl, P)
+{-# inline (∙∘) #-}
+
+infixl 8 ∘∙
+(∘∙) :: LvlArg => Val -> Val -> Val
+(∘∙) t u = t ∘ (u, Impl, S)
+{-# inline (∘∙) #-}
+
+infixl 8 ∘∘
+(∘∘) :: LvlArg => Val -> Val -> Val
+(∘∘) t u = t ∘ (u, Impl, P)
+{-# inline (∘∘) #-}
+
 instance Eval C.Tm0 Val0 where
   eval = \case
     C.LocalVar0 x -> go ?env x where
@@ -184,6 +216,12 @@ instance Eval C.Tm Val where
 -- Forcing
 --------------------------------------------------------------------------------
 
+-- whnf :: LvlArg => Val -> Val
+-- whnf = \case
+--   Flex h sp    -> case h of FHMeta m -> _
+--                             FHCoe m a b p t -> _
+--   Unfold _ _ v -> whnf v
+--   t            -> t
 
 -- Conversion for the purpose of coe-refl
 --------------------------------------------------------------------------------
