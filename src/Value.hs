@@ -4,7 +4,7 @@ module Value where
 import GHC.Word
 import Common hiding (Set, Prop)
 import qualified Common as C
-import {-# SOURCE #-} Core (DefInfo, TConInfo, DConInfo, DCon0Info, Def0Info)
+import {-# SOURCE #-} Core (DefInfo, TConInfo, DConInfo, DCon0Info, Def0Info, RecInfo)
 
 infixl 8 ∘
 infixl 8 ∘~
@@ -13,12 +13,35 @@ class Apply a b c | a -> b c where
   (∘~) :: LvlArg => a -> b -> c  -- lazy
   (∘~) = (∘)
 
+infixl 8 ∙∙
+(∙∙) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
+(∙∙) t u = t ∘ (u, Expl, S)
+{-# inline (∙∙) #-}
+
+infixl 8 ∙∘
+(∙∘) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
+(∙∘) t u = t ∘ (u, Expl, P)
+{-# inline (∙∘) #-}
+
+infixl 8 ∘∙
+(∘∙) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
+(∘∙) t u = t ∘ (u, Impl, S)
+{-# inline (∘∙) #-}
+
+infixl 8 ∘∘
+(∘∘) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
+(∘∘) t u = t ∘ (u, Impl, P)
+{-# inline (∘∘) #-}
+
 -- rigid heads
 -- the things here can be eliminated further, but never computed
 data RigidHead
   = RHLocalVar Lvl
-  | RHCoe Val Val Val Val
-  | RHPrim Prim -- invariant: not Coe
+  | RHPrim Prim
+  | RHDCon  {-# nounpack #-} DConInfo
+  | RHTCon  {-# nounpack #-} TConInfo
+  | RHRecTy {-# nounpack #-} RecInfo
+  | RHRec   {-# nounpack #-} RecInfo
   deriving Show
 
 -- flexible neutral heads: can be eliminated, can be unblocked
@@ -48,6 +71,13 @@ data Spine
 instance Apply Spine (Val,Icit,SP) Spine where
   {-# inline (∘) #-}
   spn ∘ (v,i,sp) = SApp spn v i sp
+
+{-# inline spineApps #-}
+spineApps :: Traversal' Spine (Ix, Val,Icit,SP)
+spineApps f = go 0 where
+  go ix SId            = pure SId
+  go ix (SApp t u i s) = (\t (!_,!u,!i,!s) -> SApp t u i s) <$> go (ix - 1) t <*> f (ix,u,i,s)
+  go ix (SProject t p) = (\t -> SProject t p) <$> go ix t
 
 --------------------------------------------------------------------------------
 
@@ -115,7 +145,6 @@ data Val0
   | App0 Val0 Val0
   | Lam0 VTy Closure0
   | Decl0 VTy Closure0
-  | Record0 (List Val0)
   | Project0 Val0 Proj
   | Splice Val
   deriving Show
@@ -126,9 +155,6 @@ data Val
   | Unfold UnfoldHead Spine ~Val
   | Pi VTy SP NIClosure
   | Lam VTy SP NIClosure
-  | Record (List Val)
-  | TCon {-# nounpack #-} TConInfo (List Val)  -- fully applied
-  | DCon {-# nounpack #-} DConInfo (List Val)  -- fully applied
   | Quote Val0
  deriving Show
 
@@ -152,6 +178,9 @@ pattern SAppES t u = SApp t u Expl S
 pattern SAppIS t u = SApp t u Impl S
 pattern SAppEP t u = SApp t u Expl P
 pattern SAppIP t u = SApp t u Impl P
+
+pattern RecTy i sp = Rigid (RHRecTy i) sp
+pattern Rec i sp = Rigid (RHRec i) sp
 
 -- statically allocated constants, for sharing
 sSet    = Rigid (RHPrim C.Set) SId; {-# noinline sSet #-}
@@ -181,14 +210,13 @@ pattern Fun0 a b          = Rigid (RHPrim C.Fun0) (SId `SAppIS` a `SAppIS` b)
 pattern PropExt a b f g   = Rigid (RHPrim C.PropExt) (SId `SAppIS` a `SAppIS` b `SAppEP` f `SAppEP` g)
 pattern FunExt a b f g p  = Rigid (RHPrim C.FunExt) (SId `SAppIS` a `SAppIS` b `SAppES` f `SAppES` g `SAppEP` p)
 pattern FunExtP a b f g p = Rigid (RHPrim C.FunExtP) (SId `SAppIS` a `SAppIS` b `SAppES` f `SAppES` g `SAppEP` p)
-
+pattern RCoe a b p x      = Rigid (RHPrim C.Coe) (SId `SAppIS` a `SAppIS` b `SAppEP` p `SAppES` x)
 {-# inline Set #-}
 {-# inline Prop #-}
 {-# inline Ty #-}
 {-# inline ValTy #-}
 {-# inline CompTy #-}
 
-pattern RCoe a b p x = Rigid (RHCoe a b p x) SId
 pattern FCoe m a b p x = Flex (FHCoe m a b p x) SId
 
 {-# inline UCoe #-}
@@ -212,6 +240,7 @@ infixr 1 ∘∘>
 (∘∘>) a b = PiIP N_ a \_ -> b
 
 data G = G {g1 :: Val, g2 :: Val}
+type GTy = G
 
 gjoin :: Val -> G
 gjoin v = G v v

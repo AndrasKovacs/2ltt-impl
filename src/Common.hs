@@ -102,11 +102,6 @@ instance Show a => Show (List a) where
 
 pattern Single a = Cons a Nil
 
-index :: List a -> Lvl -> a
-index (Cons a _)  0 = a
-index (Cons _ as) x = index as (x - 1)
-index _           _ = impossible
-
 instance Functor List where
   fmap f = go where
     go Nil = Nil
@@ -513,8 +508,8 @@ class HasClosure s a | s -> a where
 --------------------------------------------------------------------------------
 
 data Proj = Proj {
-    projLvl  :: Lvl
-  , projName :: Name
+    projIndex :: Ix
+  , projName  :: Name
   } deriving Show
 
 makeFields ''Proj

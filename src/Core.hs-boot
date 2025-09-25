@@ -6,9 +6,11 @@ type Ty = Tm
 data DefInfo
 data TConInfo
 data DConInfo
+data RecInfo
 instance Show DefInfo
 instance Show TConInfo
 instance Show DConInfo
+instance Show RecInfo
 
 data Def0Info
 data TCon0Info

@@ -55,7 +55,6 @@ data Tm0
   = LocalVar0 Ix
   | TopDef0 {-# nounpack #-} Def0Info
   | DCon0   {-# nounpack #-} DCon0Info
-  | Record0 (List Tm0)
   | Project0 Tm0 Proj
   | App0 Tm0 Tm0
   | Lam0 Ty (Bind Tm0)
@@ -70,7 +69,6 @@ data Tm
   | DCon   {-# nounpack #-} DConInfo
   | TopDef {-# nounpack #-} DefInfo
   | Let Ty SP Tm (Bind Tm)
-  | Record (List Tm)
   | Pi Ty SP (BindI Tm)
   | Prim Prim
   | App Tm Tm Icit SP -- TODO: pack Icit and SP

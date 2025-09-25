@@ -127,7 +127,7 @@ coe a b p t = case (a, b) of
            let x = coeSP sp a' a (Sym Set a a' p0) x'
            in coe (b ∘ x) (b' ∘ x') (p1 ∘ (x, Expl, sp)) (t ∘ (x, i, sp))
 
-  (topA@(
+
 
   (Set,  Set)  -> t
   (Prop, Prop) -> t
@@ -153,9 +153,15 @@ coeRefl a b p t = case runIO (catch (Same <$ conv a b) pure) of
   Diff      -> RCoe a b p t
   BlockOn m -> Flex (FHCoe m a b p t) SId
 
+projFromSpine :: Spine -> Ix -> Val
+projFromSpine sp x = case (sp, x) of
+  (SApp _ u _ _, 0)  -> u
+  (SApp sp _ _ _, x) -> projFromSpine sp (x - 1)
+  _                  -> impossible
+
 proj :: Val -> C.Proj -> Val
 proj t p = case t of
-  Record vs      -> index vs (p^.lvl)
+  Rec _ spn      -> projFromSpine spn (p^.index)
   Rigid h spn    -> Rigid  h (SProject spn p)
   Flex h spn     -> Flex   h (SProject spn p)
   Unfold h spn v -> Unfold h (SProject spn p) (proj v p)
@@ -180,26 +186,6 @@ instance Apply Val (Val, Icit, SP) Val where
     Unfold h spn v -> Unfold h (spn ∘ arg) (v ∘ arg)
     _              -> impossible
 
-infixl 8 ∙∙
-(∙∙) :: LvlArg => Val -> Val -> Val
-(∙∙) t u = t ∘ (u, Expl, S)
-{-# inline (∙∙) #-}
-
-infixl 8 ∙∘
-(∙∘) :: LvlArg => Val -> Val -> Val
-(∙∘) t u = t ∘ (u, Expl, P)
-{-# inline (∙∘) #-}
-
-infixl 8 ∘∙
-(∘∙) :: LvlArg => Val -> Val -> Val
-(∘∙) t u = t ∘ (u, Impl, S)
-{-# inline (∘∙) #-}
-
-infixl 8 ∘∘
-(∘∘) :: LvlArg => Val -> Val -> Val
-(∘∘) t u = t ∘ (u, Impl, P)
-{-# inline (∘∘) #-}
-
 instance Eval C.Tm0 Val0 where
   eval = \case
     C.LocalVar0 x -> go ?env x where
@@ -209,7 +195,6 @@ instance Eval C.Tm0 Val0 where
        go _           _ = impossible
     C.TopDef0 di     -> TopDef0 di
     C.DCon0 di       -> DCon0 di
-    C.Record0 ts     -> Record0 (eval ts)
     C.Project0 t p   -> Project0 (eval t) p
     C.App0 t u       -> App0 (eval t) (eval u)
     C.Lam0 a t       -> Lam0 (eval a) (eval t)
@@ -223,14 +208,12 @@ instance Eval C.Tm Val where
     C.DCon ci      -> eval ci
     C.TopDef di    -> eval di
     C.Let _ _ t u  -> def (eval t) \v -> eval u ∘ v
-    C.Pi a sp b    -> Pi (eval a) sp (eval b)
+    C.Pi a as b    -> Pi (eval a) as (eval b)
     C.Prim p       -> eval p
     C.App t u i sp -> eval t ∘ (eval u, i, sp)
     C.Lam a s t    -> Lam (eval a) s (eval t)
     C.Project t p  -> proj (eval t) p
-    C.Record ts    -> Record (eval ts)
     C.Quote t      -> quote (eval t)
-
 
 -- Forcing
 --------------------------------------------------------------------------------
@@ -265,8 +248,7 @@ force = \case
 -- Conversion for the purpose of coe-refl
 --------------------------------------------------------------------------------
 
-data ConvRes = Same | Diff | BlockOn MetaVar
-  deriving Show
+data ConvRes = Same | Diff | BlockOn MetaVar deriving Show
 instance Exception ConvRes
 
 class Conv a where conv :: LvlArg => a -> a -> IO ()
@@ -282,13 +264,12 @@ convSP sp x y = case sp of S -> conv x y
 
 instance Conv RigidHead where
   conv h h' = case (h, h') of
-    (RHLocalVar x  , RHLocalVar x'    ) -> conv x x'
-    (RHCoe a b p t , RHCoe a' b' p' t') -> do conv a a'; conv t t'; conv b b'
-    (RHPrim p      , RHPrim p'        ) -> conv p p'
-    _                                   -> throwIO Diff
+    (RHLocalVar x, RHLocalVar x') -> conv x x'
+    (RHPrim p    , RHPrim p'    ) -> conv p p'
+    _                             -> throwIO Diff
 
 instance Conv Proj where
-  conv p p' = conv (p^.lvl) (p'^.lvl)
+  conv p p' = conv (p^.index) (p'^.index)
 
 instance Conv Spine where
   conv t u = case (t, u) of
@@ -302,12 +283,6 @@ instance Conv NIClosure where
     conv (t^.icit) (u^.icit)
     fresh \v -> conv (t ∘ v) (u ∘ v)
 
-instance Conv a => Conv (List a) where
-  conv ts ts' = case (ts, ts') of
-    (Nil      , Nil        ) -> pure ()
-    (Cons t ts, Cons t' ts') -> do conv t t'; conv ts ts'
-    _                        -> throwIO Diff
-
 instance Conv Val where
   conv t t' = do
     t  <- whnf t
@@ -318,13 +293,12 @@ instance Conv Val where
       (Pi a as b , Pi a' as' b') -> do conv as as'; conv a a'; conv b b'
       (Rigid h sp, Rigid h' sp') -> do conv h h'; conv sp sp'
       (Lam _ _ t , Lam _ _ t'  ) -> do conv t t'
-      (Record ts , Record ts'  ) -> do conv ts ts'
 
       -- syntax-directed eta
-      (t, Lam _ s' t')         -> fresh \v -> conv (t ∘ (v, t'^.icit, s')) (t' ∘ v)
-      (Lam _ s t, t')          -> fresh \v -> conv (t ∘ v) (t' ∘ (v, t^.icit, s))
-      (Record ts@(Cons{}), t') -> for ts  \i t  -> conv t (proj t' (Proj i N_))
-      (t, Record ts'@(Cons{})) -> for ts' \i t' -> conv (proj t (Proj i N_)) t'
+      (t, Lam _ s' t')      -> fresh \v -> conv (t ∘ (v, t'^.icit, s')) (t' ∘ v)
+      (Lam _ s t, t')       -> fresh \v -> conv (t ∘ v) (t' ∘ (v, t^.icit, s))
+      (Rec _ sp@SApp{}, t') -> forOf_ spineApps sp  \(ix, t , _, s) -> convSP s t (proj t' (Proj ix N_))
+      (t, Rec _ sp'@SApp{}) -> forOf_ spineApps sp' \(ix, t', _, s) -> convSP s (proj t (Proj ix N_)) t'
 
       -- flex
       (Flex h _, _) -> throwIO $! BlockOn (blocker h)
