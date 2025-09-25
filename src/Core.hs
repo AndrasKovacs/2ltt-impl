@@ -1,7 +1,7 @@
 
 module Core where
 
-import {-# source #-} Value (Val)
+import {-# source #-} Value
 
 import Common
 
@@ -21,6 +21,10 @@ data DefInfo = DI {
   , defInfoName  :: Name
   }
 
+data RecInfo = RI {
+    recInfoName  :: Name
+  }
+
 data TConInfo = TCI {
     tConInfoValue :: ~Val
   , tConInfoName  :: Name
@@ -33,6 +37,10 @@ data DConInfo = DCI {
 
 data Def0Info = D0I {
     def0InfoName  :: Name
+  }
+
+data Rec0Info = R0I {
+    rec0InfoName  :: Name
   }
 
 data TCon0Info = TC0I {
@@ -48,7 +56,7 @@ data Tm0
   | TopDef0 {-# nounpack #-} Def0Info
   | DCon0   {-# nounpack #-} DCon0Info
   | Record0 (List Tm0)
-  | Project0 Tm0 Proj0
+  | Project0 Tm0 Proj
   | App0 Tm0 Tm0
   | Lam0 Ty (Bind Tm0)
   | Decl0 Ty (Bind Tm0)
@@ -66,24 +74,37 @@ data Tm
   | Pi Ty SP (BindI Tm)
   | Prim Prim
   | App Tm Tm Icit SP -- TODO: pack Icit and SP
-  | Lam Ty (BindI Tm)
+  | Lam Ty SP (BindI Tm)
   | Project Tm Proj
   | Quote Tm0
 
 makeFields ''Bind
 makeFields ''BindI
 makeFields ''DefInfo
+makeFields ''RecInfo
 makeFields ''TConInfo
 makeFields ''DConInfo
 makeFields ''Def0Info
+makeFields ''Rec0Info
 makeFields ''TCon0Info
 makeFields ''DCon0Info
 
 instance Show DefInfo   where show x = show (x^.name)
+instance Show RecInfo   where show x = show (x^.name)
 instance Show TConInfo  where show x = show (x^.name)
 instance Show DConInfo  where show x = show (x^.name)
 instance Show Def0Info  where show x = show (x^.name)
+instance Show Rec0Info  where show x = show (x^.name)
 instance Show TCon0Info where show x = show (x^.name)
 instance Show DCon0Info where show x = show (x^.name)
 deriving instance Show Tm
 deriving instance Show Tm0
+
+data Locals
+  = LNil
+  | LDef Locals Name Tm Ty
+  | LBind Locals Name Ty
+  | LBind0 Locals Name Ty
+  deriving Show
+
+type LocalsArg = (?locals :: Locals)

@@ -4,6 +4,18 @@ Non-priorities:
 - Detecting defn contractibility in Prop
 - meta-level inductive families (+ fixpoints, case trees)
 
+Preliminary designs
+
+  - single file, no modules
+  - we do top-level unshadowing by "Main.<topname>"
+    - later we may move to a trie-like structure for module scope
+    - trie for qualified scope + flat hashmap for unqualified scope
+    - unqualified scope is O(N) time extended on every import
+    - this is OK if we always merge the smaller table into the larger table
+
+  - Overloaded data constructors are disambiguated by "TypeName.ConName"
+  - Top things can't shadow except for overloaded data constructors
+
 
 How to do Set/Prop?
   - Want it to be minimally intrusive
@@ -46,6 +58,33 @@ Not a huge amount of switches... A bit suspicious but we'll see
 
   we don't need annotation on coe and exfalso, because we always
   switch into Prop on the inside
+
+  + annotation on Pi, because coe-Pi needs to know arg sort
+
+
+Local meta optimization: an approximation of local scoping with only 2 modes:
+  - metas which haven't yet escaped their scope are local
+  - metas which escaped their scope are top-level contextual
+  - we attach metas to scope levels on creation
+  - we have to raise local metas when exiting scopes
+
+Metas abstracting over local defs:
+  TODO
+
+Unification
+
+  - generalized head inversion:
+     - canonical and neutral inversions
+     - how to avoid looping in canonical inversion? Fuel isn't stable.
+       Cycle detection?
+  - nested pattern unification Bocquet-style
+  - Libal-Miller unification
+
+Mutual blocks are not necessary!
+  - We only allow forward decls in stage 0, but nothing in elaboration depends
+    on the rhs-es of stage 0 definitions, so we don't need to group things together!
+    Single top entries can be the unit of elaboration.
+
 
 
 --------------------------------------------------------------------------------

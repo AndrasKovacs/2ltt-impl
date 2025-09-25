@@ -18,7 +18,7 @@ class Apply a b c | a -> b c where
 data RigidHead
   = RHLocalVar Lvl
   | RHCoe Val Val Val Val
-  | RHPrim Prim
+  | RHPrim Prim -- invariant: not Coe
   deriving Show
 
 -- flexible neutral heads: can be eliminated, can be unblocked
@@ -116,7 +116,7 @@ data Val0
   | Lam0 VTy Closure0
   | Decl0 VTy Closure0
   | Record0 (List Val0)
-  | Project0 Val0 Proj0
+  | Project0 Val0 Proj
   | Splice Val
   deriving Show
 
@@ -125,7 +125,7 @@ data Val
   | Flex FlexHead Spine
   | Unfold UnfoldHead Spine ~Val
   | Pi VTy SP NIClosure
-  | Lam VTy NIClosure
+  | Lam VTy SP NIClosure
   | Record (List Val)
   | TCon {-# nounpack #-} TConInfo (List Val)  -- fully applied
   | DCon {-# nounpack #-} DConInfo (List Val)  -- fully applied
@@ -134,15 +134,19 @@ data Val
 
 --------------------------------------------------------------------------------
 
-pattern Λ x i a t = Lam a (NICl x i (Cl t))
+pattern LocalVar x = Rigid (RHLocalVar x) SId
+
+pattern Λ x i a s t = Lam a s (NICl x i (Cl t))
 
 pattern PiES x a b = Pi a S (NICl x Expl (Cl b))
 pattern PiEP x a b = Pi a P (NICl x Expl (Cl b))
 pattern PiIS x a b = Pi a S (NICl x Impl (Cl b))
 pattern PiIP x a b = Pi a P (NICl x Impl (Cl b))
 
-pattern ΛE x a t = Lam a (NICl x Expl (Cl t))
-pattern ΛI x a t = Lam a (NICl x Impl (Cl t))
+pattern ΛES x a t = Lam a S (NICl x Expl (Cl t))
+pattern ΛEP x a t = Lam a P (NICl x Expl (Cl t))
+pattern ΛIS x a t = Lam a S (NICl x Impl (Cl t))
+pattern ΛIP x a t = Lam a P (NICl x Impl (Cl t))
 
 pattern SAppES t u = SApp t u Expl S
 pattern SAppIS t u = SApp t u Impl S

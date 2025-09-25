@@ -145,6 +145,26 @@ instance Traversable List where
     go Nil         = pure Nil
     go (Cons a as) = Cons <$!> f a ∙ go as
 
+
+-- reasonable monadic looping (forM_ and traverse are often compiled in shitty ways)
+--------------------------------------------------------------------------------
+
+class For t where
+  for :: Monad m => t a -> (Lvl -> a -> m ()) -> m ()
+
+instance For List where
+  {-# inline for #-}
+  for as f = go as 0 where
+    go Nil         i = pure ()
+    go (Cons a as) i = do f i a; go as (i + 1)
+
+instance For [] where
+  {-# inline for #-}
+  for as f = go as 0 where
+    go []       i = pure ()
+    go (a : as) i = do f i a; go as (i + 1)
+
+
 -- errors
 --------------------------------------------------------------------------------
 
@@ -258,6 +278,8 @@ data Icit = Impl | Expl
 data SP = S | P
   deriving (Eq, Show, Ord, Enum)
 
+type SPArg = (?sp :: SP)
+
 -- Time measurement
 --------------------------------------------------------------------------------
 
@@ -312,8 +334,8 @@ type SrcArg = (?src :: Src)
 --------------------------------------------------------------------------------
 
 data Name
-  = NSpan {-# unpack #-} Span
-  | NOp {-# unpack #-} Operator
+  = NSpan Span
+  | NOp Operator
   | NGeneric B.ByteString
   | N_
   deriving (Eq)
@@ -435,6 +457,7 @@ instance FromSing 'False where sing = SFalse
 -- Primitives
 --------------------------------------------------------------------------------
 
+-- TODO: make GADT, make it possible to exclude Coe
 data Prim
   = Lift
   | Set
@@ -457,14 +480,18 @@ data Prim
   | PropExt
   | FunExt
   | FunExtP
-  deriving Show
-
+  deriving (Eq, Show)
 
 -- Overloaded accessors
 --------------------------------------------------------------------------------
 
 class Sized a where
   size :: a -> Lvl
+
+instance Sized (List a) where
+  size = go 0 where
+    go acc Nil = acc
+    go acc (Cons _ as) = go (acc + 1) as
 
 class HasName s a | s -> a where
   name :: Lens' s a
@@ -488,12 +515,6 @@ class HasClosure s a | s -> a where
 data Proj = Proj {
     projLvl  :: Lvl
   , projName :: Name
-  , projSort :: SP
-  } deriving Show
-
-data Proj0 = Proj0 {
-    proj0Lvl  :: Lvl
-  , proj0Name :: Name
   } deriving Show
 
 makeFields ''Proj
