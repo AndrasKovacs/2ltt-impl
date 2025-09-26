@@ -22,16 +22,19 @@ data DefInfo = DI {
   }
 
 data RecInfo = RI {
-    recInfoName  :: Name
+    recInfoUid   :: Int
+  , recInfoName  :: Name
   }
 
 data TConInfo = TCI {
-    tConInfoValue :: ~Val
+    tConInfoUid   :: Int
+  , tConInfoValue :: ~Val
   , tConInfoName  :: Name
   }
 
 data DConInfo = DCI {
-    dConInfoValue :: ~Val
+    dConInfoUid   :: Int
+  , dConInfoValue :: ~Val
   , dConInfoName  :: Name
   }
 
@@ -40,16 +43,20 @@ data Def0Info = D0I {
   }
 
 data Rec0Info = R0I {
-    rec0InfoName  :: Name
+    rec0InfoUid   :: Int
+  , rec0InfoName  :: Name
   }
 
 data TCon0Info = TC0I {
-    tCon0InfoName  :: Name
+    tCon0InfoUid   :: Int
+  , tCon0InfoName  :: Name
   }
 
 data DCon0Info = DC0I {
-    dCon0InfoName  :: Name
+    dCon0InfoUid   :: Int
+  , dCon0InfoName  :: Name
   }
+
 
 data Tm0
   = LocalVar0 Ix
@@ -97,6 +104,12 @@ instance Show TCon0Info where show x = show (x^.name)
 instance Show DCon0Info where show x = show (x^.name)
 deriving instance Show Tm
 deriving instance Show Tm0
+instance Eq RecInfo   where x == y = x^.uid == y^.uid
+instance Eq TConInfo  where x == y = x^.uid == y^.uid
+instance Eq DConInfo  where x == y = x^.uid == y^.uid
+instance Eq Rec0Info  where x == y = x^.uid == y^.uid
+instance Eq TCon0Info where x == y = x^.uid == y^.uid
+instance Eq DCon0Info where x == y = x^.uid == y^.uid
 
 data Locals
   = LNil

@@ -6,9 +6,7 @@ import qualified Data.Ref.F as RF
 import qualified Data.Ref.L as RL
 import qualified Data.Vector.Mutable as VM
 import qualified Data.Vector.Hashtables as HT
-
 import qualified Data.Primitive.MutVar as P
-
 import qualified Data.ByteString as B
 
 import Common
@@ -27,7 +25,8 @@ data Unsolved = Unsolved {
 makeFields ''Unsolved
 
 data Solved = Solved {
-    solvedLocals      :: C.Locals
+    solvedOccursCache :: RF.Ref MetaVar
+  , solvedLocals      :: C.Locals
   , solvedSolution    :: Tm
   , solvedSolutionVal :: Val
   , solvedTy          :: VTy
@@ -67,7 +66,6 @@ resetMetaCxt size = do
   currSize <- nextMeta
   if size < currSize then ADL.pop metaCxt >> resetMetaCxt size
                      else pure ()
-
 
 -- Identifier scope
 --------------------------------------------------------------------------------

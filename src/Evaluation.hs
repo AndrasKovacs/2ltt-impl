@@ -127,7 +127,10 @@ coe a b p t = case (a, b) of
            let x = coeSP sp a' a (Sym Set a a' p0) x'
            in coe (b ∘ x) (b' ∘ x') (p1 ∘ (x, Expl, sp)) (t ∘ (x, i, sp))
 
-
+  (topA@(RecTy i sp), topB@(RecTy i' sp'))
+    | i /= i' -> RCoe topA topB p t
+    | True ->
+      uf
 
   (Set,  Set)  -> t
   (Prop, Prop) -> t
@@ -178,7 +181,6 @@ splice = \case
   t       -> Splice t
 
 instance Apply Val (Val, Icit, SP) Val where
-  {-# inline (∘) #-}
   (∘) t arg@(!u, !_, !_) = case t of
     Lam _ _ t      -> t ∘ u
     Rigid h spn    -> Rigid h (spn ∘ arg)
@@ -248,6 +250,8 @@ force = \case
 -- Conversion for the purpose of coe-refl
 --------------------------------------------------------------------------------
 
+-- TODO: approximated conversion
+
 data ConvRes = Same | Diff | BlockOn MetaVar deriving Show
 instance Exception ConvRes
 
@@ -266,6 +270,10 @@ instance Conv RigidHead where
   conv h h' = case (h, h') of
     (RHLocalVar x, RHLocalVar x') -> conv x x'
     (RHPrim p    , RHPrim p'    ) -> conv p p'
+    (RHTCon i    , RHTCon i'    ) -> conv i i'
+    (RHDCon i    , RHDCon i'    ) -> conv i i'
+    (RHRecTy i   , RHRecTy i'   ) -> conv i i'
+    (RHRec i     , RHRec i'     ) -> conv i i'
     _                             -> throwIO Diff
 
 instance Conv Proj where
