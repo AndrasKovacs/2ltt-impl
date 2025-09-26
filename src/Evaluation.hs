@@ -112,49 +112,47 @@ coeSP :: LvlArg => SP -> Val -> Val -> Val -> Val -> Val
 coeSP P a b p t = proj0 p ∙∘ t
 coeSP S a b p t = coe a b p t
 
--- Set coercion
+-- A, B : Set
 coe :: LvlArg => Val -> Val -> Val -> Val -> Val
-coe a b p t = case (a, b) of
+coe topA topB p topT = case (topA, topB, topT) of
 
-  -- canonical match
-  (topA@(Pi a sp b), topB@(Pi a' sp' b'))
-    | b^.icit /= b'^.icit || sp /= sp' -> RCoe topA topB p t
-    | True ->
-      let i  = b^.icit
-          p0 = proj0 p
-          p1 = proj1 p
-      in Λ (pick (b^.name) (b'^.name)) i a' sp \x' ->
-           let x = coeSP sp a' a (Sym Set a a' p0) x'
-           in coe (b ∘ x) (b' ∘ x') (p1 ∘ (x, Expl, sp)) (t ∘ (x, i, sp))
+  (Pi a sp b, Pi a' sp' b', Lam _ _ t)
+    | b^.icit == b'^.icit, sp == sp' ->
+        let i  = b^.icit
+            p0 = proj0 p
+            p1 = proj1 p
+        in Λ (pick (b^.name) (b'^.name)) i a' sp \x' ->
+             let x = coeSP sp a' a (Sym Set a a' p0) x'
+             in coe (b ∘ x) (b' ∘ x') (p1 ∘ (x, Expl, sp)) (t ∘ x)
+    | otherwise -> RCoe topA topB p topT
 
-  (topA@(RecTy i sp), topB@(RecTy i' sp'))
-    | i /= i' -> RCoe topA topB p t
-    | True ->
-      uf
+  (RecTy ri sp, RecTy ri' sp', Rec _ spn)
+    | ri == ri' -> error "TODO"
+    | otherwise -> RCoe topA topB p topT
 
-  (Set,  Set)  -> t
-  (Prop, Prop) -> t
+  (a, b, t) -> case runIO (catch (Same <$ conv a b) pure) of
+    Same      -> t
+    Diff      -> RCoe a b p t
+    BlockOn m -> FCoe m a b p t
 
-  -- unfolding
-  (ua@(Unfold h sp a), b) -> UCoe ua b p t (coe a b p t)
-  (a, ub@(Unfold h sp b)) -> UCoe a ub p t (coe a b p t)
+  -- -- unfolding
+  -- (ua@(Unfold _ _ a), b, t) -> UCoe ua b p t (coe a b p t)
+  -- (a, ub@(Unfold _ _ b), t) -> UCoe a ub p t (coe a b p t)
+  -- (a, b, ut@(Unfold _ _ t)) -> UCoe a b p ut (coe a b p t)
 
-  -- flex
-  (a@(Flex h sp), b) -> FCoe (blocker h) a b p t
-  (a, b@(Flex h sp)) -> FCoe (blocker h) a b p t
+  -- -- flex
+  -- (a@(Flex h sp), b, t) -> FCoe (blocker h) a b p t
+  -- (a, b@(Flex h sp), t) -> FCoe (blocker h) a b p t
+  -- (a, b, t@(Flex h sp)) -> FCoe (blocker h) a b p t
 
-  -- rigid neutral, try coe-refl
-  (a@Rigid{}, b) -> coeRefl a b p t
-  (a, b@Rigid{}) -> coeRefl a b p t
-
-  -- canonical mismatch
-  (a, b) -> RCoe a b p t
+  -- -- rigid
+  -- (a, b, t) -> coeRefl a b p t
 
 coeRefl :: LvlArg => Val -> Val -> Val -> Val -> Val
 coeRefl a b p t = case runIO (catch (Same <$ conv a b) pure) of
   Same      -> t
   Diff      -> RCoe a b p t
-  BlockOn m -> Flex (FHCoe m a b p t) SId
+  BlockOn m -> FCoe m a b p t
 
 projFromSpine :: Spine -> Ix -> Val
 projFromSpine sp x = case (sp, x) of
@@ -231,7 +229,11 @@ whnf :: LvlArg => Val -> IO Val
 whnf = \case
   top@(Flex h sp) -> case h of
     FHMeta m        -> unblock m top \v _ -> whnf $ spine v sp
-    FHCoe m a b p t -> unblock m top \_ _ -> whnf $ spine (coe a b p t) sp
+    FHCoe m a b p t -> unblock m top \_ _ -> do
+      a <- whnf a
+      b <- whnf b
+      t <- whnf t
+      whnf $ spine (coe a b p t) sp
   Unfold _ _ v -> whnf v
   v            -> pure v
 
@@ -242,7 +244,10 @@ force = \case
     FHMeta m -> unblock m top \v -> \case
       True -> force $ spine v sp             -- inline meta
       _    -> pure $ Unfold (UHMeta m) sp v  -- noinline meta
-    FHCoe m a b p t -> unblock m top \_ _ ->
+    FHCoe m a b p t -> unblock m top \_ _ -> do
+      a <- force a
+      b <- force b
+      t <- force t
       force $ coe a b p t
   v -> pure v
 
