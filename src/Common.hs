@@ -32,6 +32,7 @@ import Debug.Trace (trace, traceM, traceShow, traceShowM)
 import GHC.Exts hiding (lazy, toList, List, BCO, mkApUpd0#, newBCO#)
 import GHC.IO
 import GHC.Word
+import GHC.ForeignPtr
 import IO (runIO)
 import Lens.Micro
 import Lens.Micro.TH
@@ -39,7 +40,10 @@ import Text.Show
 import Data.Flat
 
 import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Internal as B
 import qualified FlatParse.Stateful as FP
+
+import Data.Hashable
 
 
 -- Debug printing, toggled by "debug" cabal flag
@@ -100,6 +104,11 @@ data List a = Nil | Cons a (List a)
 instance Show a => Show (List a) where
   show = show . toList
 
+instance Hashable a => Hashable (List a) where
+  hashWithSalt h as = go h as `hashWithSalt` length as where
+    go h Nil         = h
+    go h (Cons a as) = go (hashWithSalt h a) as
+
 pattern Single a = Cons a Nil
 
 instance Functor List where
@@ -128,6 +137,10 @@ instance Foldable List where
   foldl' f b as = go as b where
     go Nil         b = b
     go (Cons a as) b = go as (f b a)
+
+  length = go 0 where
+    go acc Nil = acc
+    go acc (Cons _ as) = go (acc + 1) as
 
 instance Traversable List where
   {-# inline traverse #-}
@@ -254,7 +267,6 @@ ixToLvl (Lvl envl) (Ix x) = Lvl (envl - x - 1)
 
 --------------------------------------------------------------------------------
 
--- | Ordinary metavariable.
 newtype MetaVar = MkMetaVar Int
   deriving (Eq, Ord, Num, Flat) via Int
 
@@ -328,61 +340,73 @@ type SrcArg = (?src :: Src)
 -- Names and operators
 --------------------------------------------------------------------------------
 
+newtype RawName = RawName B.ByteString
+  deriving (Eq, Ord, IsString) via B.ByteString
+
+instance Hashable RawName where
+  hashWithSalt h (RawName (B.PS (ForeignPtr p _) (I# start) (I# len))) = go h (plusAddr# p start) len where
+    goBytes :: Int -> Addr# -> Int# -> Int
+    goBytes h p len = case len of
+      0# -> h
+      _  -> goBytes (hashWithSalt h (W8# (indexWord8OffAddr# p 0#))) (plusAddr# p 1#) (len -# 1#)
+
+    go :: Int -> Addr# -> Int# -> Int
+    go h p len = case len <# 8# of
+      1# -> goBytes h p len
+      _  -> go (hashWithSalt h (W64# (indexWord64OffAddr# p 0#))) (plusAddr# p 8#) (len -# 8#)
+
+instance Show RawName where
+  show (RawName s) = FP.utf8ToStr s
+
 data Name
-  = NSpan Span
+  = NRawName RawName
   | NOp Operator
-  | NGeneric B.ByteString
   | N_
-  deriving (Eq)
+  deriving (Eq, Ord)
+
+instance Hashable Name where
+  hashWithSalt h = \case
+    NRawName x -> (h + 1) `hashWithSalt` x
+    NOp op     -> (h + 2) `hashWithSalt` op
+    N_         -> h + 3
 
 instance Show Name where
-  showsPrec p (NSpan x)    acc = showsPrec p x acc
-  showsPrec p (NGeneric x) acc = B.unpack x ++ acc
+  showsPrec p (NRawName x) acc = showsPrec p x acc
   showsPrec p N_           acc = '_':acc
   showsPrec p (NOp op)     acc = showsPrec p op acc
 
-opToBs :: SrcArg => Operator -> B.ByteString
-opToBs (Op f xs) = uf
+a_ = NRawName "a"
+b_ = NRawName "b"
+c_ = NRawName "c"
+d_ = NRawName "d"
+e_ = NRawName "e"
+f_ = NRawName "f"
+g_ = NRawName "g"
+h_ = NRawName "h"
+i_ = NRawName "i"
+j_ = NRawName "j"
+k_ = NRawName "k"
+l_ = NRawName "l"
+m_ = NRawName "m"
+n_ = NRawName "n"
+o_ = NRawName "o"
+p_ = NRawName "p"
+q_ = NRawName "q"
+r_ = NRawName "r"
+s_ = NRawName "s"
+t_ = NRawName "t"
+u_ = NRawName "u"
+x_ = NRawName "x"
+y_ = NRawName "y"
+z_ = NRawName "z"
 
-nameToBs :: SrcArg => Name -> B.ByteString
-nameToBs = \case
-  NSpan x    -> spanToBs x
-  NGeneric x -> x
-  N_         -> "_"
-  NOp op     -> opToBs op
-
-a_ = NGeneric "a"
-b_ = NGeneric "b"
-c_ = NGeneric "c"
-d_ = NGeneric "d"
-e_ = NGeneric "e"
-f_ = NGeneric "f"
-g_ = NGeneric "g"
-h_ = NGeneric "h"
-i_ = NGeneric "i"
-j_ = NGeneric "j"
-k_ = NGeneric "k"
-l_ = NGeneric "l"
-m_ = NGeneric "m"
-n_ = NGeneric "n"
-o_ = NGeneric "o"
-p_ = NGeneric "p"
-q_ = NGeneric "q"
-r_ = NGeneric "r"
-s_ = NGeneric "s"
-t_ = NGeneric "t"
-u_ = NGeneric "u"
-x_ = NGeneric "x"
-y_ = NGeneric "y"
-z_ = NGeneric "z"
-
-pattern A_ = NGeneric "A"
-pattern B_ = NGeneric "B"
-pattern C_ = NGeneric "C"
-pattern D_ = NGeneric "D"
+pattern A_ = NRawName "A"
+pattern B_ = NRawName "B"
+pattern C_ = NRawName "C"
+pattern D_ = NRawName "D"
 
 newtype Precedence = Precedence Word
-  deriving (Eq, Show, Num, Ord, Enum) via Word
+  deriving (Eq, Show, Num, Ord, Enum, Hashable) via Word
 
 data Fixity
   = FInLeft Precedence   -- Infix left
@@ -391,42 +415,72 @@ data Fixity
   | FPost Precedence     -- Postfix
   | FInNon Precedence    -- Infix non-associative
   | FClosed              -- Closed
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
-data Operator = Op Fixity (List Span)
-  deriving (Eq, Show)
+instance Hashable Fixity where
+  hashWithSalt h = \case
+    FInLeft x  -> h     `hashWithSalt` x
+    FInRight x -> h + 1 `hashWithSalt` x
+    FPre x     -> h + 2 `hashWithSalt` x
+    FPost x    -> h + 3 `hashWithSalt` x
+    FInNon x   -> h + 4 `hashWithSalt` x
+    FClosed    -> h + 5
+
+data Operator = Op Fixity (List RawName)
+  deriving (Eq, Ord, Show)
+
+instance Hashable Operator where
+  hashWithSalt h (Op fix ops) = h `hashWithSalt` fix `hashWithSalt` ops
 
 pick :: Name -> Name -> Name
 pick N_ N_ = x_
 pick x  N_ = x
 pick _  y  = y
 
+instance SpanOf RawName where
+  leftPos  (RawName (B.PS _ start _))   = Pos $ FP.Pos start
+  rightPos (RawName (B.PS _ start len)) = Pos $ FP.Pos (start + len)
+
+instance SpanOf FP.Span where
+  leftPos  (FP.Span x _) = Pos x
+  rightPos (FP.Span _ x) = Pos x
+
 
 -- Source positions & spans
 --------------------------------------------------------------------------------
 
-type Pos = FP.Pos
-type Span = FP.Span
+newtype Pos = Pos FP.Pos
+  deriving Show via Int
+  deriving (Eq,Ord) via FP.Pos
 
-spanToBs :: SrcArg => Span -> B.ByteString
-spanToBs (FP.Span i j) =
+data Span = Span Pos Pos
+  deriving Show via DontShow Span
+
+{-# inline toSpan #-}
+toSpan :: FP.Span -> Span
+toSpan (FP.Span x y) = Span (coerce x) (coerce y)
+
+type SpanArg = (?span :: Box Span)
+
+spanToRawName :: SrcArg => Span -> RawName
+spanToRawName (Span (Pos i) (Pos j)) =
   let bstr = srcToBs ?src
       i'   = B.length bstr - coerce i   -- Pos counts backwards from the end of the string
       j'   = B.length bstr - coerce j
-  in B.take (j' - i') (B.drop i' bstr)
+  in RawName (B.take (j' - i') (B.drop i' bstr))
 
 spanToString :: SrcArg => Span -> String
-spanToString s = FP.utf8ToStr (spanToBs s)
+spanToString s = case spanToRawName s of RawName s -> FP.utf8ToStr s
 
 class SpanOf a where
   spanOf  :: a -> Span
-  spanOf a = FP.Span (leftPos a) (rightPos a)
+  spanOf a = Span (leftPos a) (rightPos a)
 
   leftPos :: a -> Pos
-  leftPos a = case spanOf a of FP.Span l _ -> l
+  leftPos a = case spanOf a of Span l _ -> l
 
   rightPos :: a -> Pos
-  rightPos a = case spanOf a of FP.Span _ r -> r
+  rightPos a = case spanOf a of Span _ r -> r
 
 instance SpanOf Span where
   spanOf s = s
@@ -452,7 +506,6 @@ instance FromSing 'False where sing = SFalse
 -- Primitives
 --------------------------------------------------------------------------------
 
--- TODO: make GADT, make it possible to exclude Coe
 data Prim
   = Lift
   | Set
@@ -513,3 +566,43 @@ data Proj = Proj {
   } deriving Show
 
 makeFields ''Proj
+
+
+-- Unfolding options
+--------------------------------------------------------------------------------
+
+data Unfold = UnfoldNone | UnfoldAll | UnfoldMetas
+  deriving (Eq, Show)
+
+type UnfoldArg = (?unfold :: Unfold)
+
+
+-- Overloaded application
+--------------------------------------------------------------------------------
+
+infixl 8 ∘
+infixl 8 ∘~
+class Apply a b c | a -> b c where
+  (∘)  :: LvlArg => a -> b -> c  -- strict
+  (∘~) :: LvlArg => a -> b -> c  -- lazy
+  (∘~) = (∘)
+
+infixl 8 ∙∙
+(∙∙) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
+(∙∙) t u = t ∘ (u, Expl, S)
+{-# inline (∙∙) #-}
+
+infixl 8 ∙∘
+(∙∘) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
+(∙∘) t u = t ∘ (u, Expl, P)
+{-# inline (∙∘) #-}
+
+infixl 8 ∘∙
+(∘∙) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
+(∘∙) t u = t ∘ (u, Impl, S)
+{-# inline (∘∙) #-}
+
+infixl 8 ∘∘
+(∘∘) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
+(∘∘) t u = t ∘ (u, Impl, P)
+{-# inline (∘∘) #-}

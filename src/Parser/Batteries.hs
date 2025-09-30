@@ -12,6 +12,8 @@ import Language.Haskell.TH.Syntax hiding (Overlap(..))
 import qualified FlatParse.Stateful as FP
 import qualified FlatParse.Common.Switch as FP
 
+import Common (RawName(..), Pos(..), coerce)
+
 type Parser = FP.Parser Int Error
 
 data Expected
@@ -23,10 +25,10 @@ data Expected
 instance IsString Expected where
   fromString = Lit
 
-data Error = Error FP.Pos [Expected] | DontUnbox
+data Error = Error Pos [Expected] | DontUnbox
   deriving Show
 
-errorPos :: Error -> FP.Pos
+errorPos :: Error -> Pos
 errorPos = \case
   Error p _ -> p
   _         -> undefined
@@ -55,7 +57,7 @@ prettyError :: B.ByteString -> Error -> String
 prettyError b (Error pos es) =
 
   let ls     = FP.linesUtf8 b
-      (l, c) = case FP.posLineCols b [pos] of x:_ -> x; _ -> undefined
+      (l, c) = case FP.posLineCols b [coerce pos] of x:_ -> x; _ -> undefined
       line   = if l < length ls then ls !! l else ""
       linum  = show (l + 1)
       lpad   = map (const ' ') linum
@@ -80,13 +82,13 @@ prettyError b (Error pos es) =
      "parse error: expected " ++ expecteds (S.toList $ S.fromList es)
 prettyError _ _ = undefined
 
-getPos :: Parser FP.Pos
-getPos = FP.getPos
+getPos :: Parser Pos
+getPos = Pos <$> FP.getPos
 {-# inline getPos #-}
 
 err :: [Expected] -> Parser a
 err es = do
-  p <- FP.getPos
+  p <- getPos
   FP.err (Error p es)
 {-# inline err #-}
 
@@ -102,7 +104,7 @@ runParser p src = FP.runParser p 0 0 src
 rawString :: String -> Q Exp
 rawString str =
   let l = length str
-  in [| FP.spanOf $(FP.string str) <* FP.modify (+l) |]
+  in [| toSpan <$> (FP.spanOf $(FP.string str) <* FP.modify (+l)) |]
 
 -- | Run parser, print pretty error on failure.
 testParser :: Show a => Parser a -> String -> IO ()
@@ -203,14 +205,14 @@ symBody symbols overlap cut s switch = let
                   else [| Parser.Batteries.lvl' |]
   pcut p = if cut then [| $p `Parser.Batteries.cut` [Lit (show @String s)] |]
                   else p
-  base = [| FP.spanOf $(FP.string s)|]
+  base = [| toSpan <$> FP.spanOf $(FP.string s)|]
   len  = length s
   in pcut [| $plvl *> $base <* $(handleOverlap (overlap s)) <* FP.modify (+ len) <* ws |]
 
 switchBody :: S.Set String -> (String -> Overlap) -> Bool -> ([(String, Exp)], Maybe Exp) -> Q Exp
 switchBody symbols overlap cut (cases, deflt) =
       [| do $(if cut then [| lvl |] else [| lvl' |])
-            left <- FP.getPos
+            left <- getPos
             $(FP.switch (FP.makeRawSwitch
                 (map (\(s, body) ->
                         let len = length s in
@@ -219,12 +221,12 @@ switchBody symbols overlap cut (cases, deflt) =
                         else
                           (s, [| do {$(handleOverlap (overlap s));
                                      FP.modify (+ len);
-                                     right <- FP.getPos;
+                                     right <- getPos;
                                      ws;
-                                     $(pure body) (FP.Span left right)} |])
+                                     $(pure body) (Span left right)} |])
                      )
                  cases)
-                ((\deflt -> [| do {right <- FP.getPos; ws ; $(pure deflt)} |]) <$> deflt)))
+                ((\deflt -> [| do {ws ; $(pure deflt)} |]) <$> deflt)))
         |]
 
 --------------------------------------------------------------------------------
@@ -296,31 +298,25 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     scanIdent :: Parser ()
     scanIdent = identStartChar >> FP.skipMany inlineIdentRestChar
 
-    identBase :: Parser FP.Span
+    identBase :: Parser RawName
     identBase = FP.withSpan scanIdent \_ span -> do
       FP.fails $ FP.inSpan span anySymbol
       ws
-      pure span
+      RawName <$> FP.unsafeSpanToByteString span
 
     -- | Parse an identifier.
-    ident' :: Parser FP.Span
+    ident' :: Parser RawName
     ident' = do
       lvl'
       FP.branch $(FP.char switchChar) operatorBase identBase
     {-# inline ident' #-}
 
     -- | Parse an identifier.
-    ident :: Parser FP.Span
+    ident :: Parser RawName
     ident = do
       lvl
       FP.branch $(FP.char switchChar) operatorBase identBase `cut` [Lit "identifier"]
     {-# inline ident #-}
-
-    -- -- | Parse an identifier.
-    -- identNoLvl :: Parser FP.Span
-    -- identNoLvl =
-    --   FP.branch $(FP.char switchChar) operatorBase identBase `cut` [Lit "identifier"]
-    -- {-# inline identNoLvl #-}
 
     ------------------------------------------------------------
 
@@ -334,22 +330,22 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     scanOperator :: Parser ()
     scanOperator = FP.skipSome inlineOpChar
 
-    rawOperator :: Parser FP.Span
-    rawOperator = FP.spanOf scanOperator
+    rawOperator :: Parser RawName
+    rawOperator = RawName <$> FP.byteStringOf scanOperator
 
-    operatorBase :: Parser FP.Span
+    operatorBase :: Parser RawName
     operatorBase = FP.withSpan scanOperator \_ span -> do
       FP.fails $ FP.inSpan span anySymbol
       ws
-      pure span
+      RawName <$> FP.unsafeSpanToByteString span
 
     -- | Parse an operator.
-    operator' :: Parser FP.Span
+    operator' :: Parser RawName
     operator' = lvl' >> operatorBase
     {-# inline operator' #-}
 
     -- | Parse an operator.
-    operator :: Parser FP.Span
+    operator :: Parser RawName
     operator = lvl >> operatorBase `cut` [Lit "operator"]
     {-# inline operator #-}
 

@@ -8,7 +8,7 @@ import Common hiding (some, many, debug, Proj(..), Prim(..), name)
 import qualified FlatParse.Stateful as FP
 import Parser.Lexer
 import Presyntax
-import qualified Presyntax as Pre
+
 
 {-
 TODO
@@ -53,10 +53,10 @@ anyWord = (lvl' *> anyWordBase') `cut` ["positive integer"]
 anyLvl :: Parser (Lvl, FP.Span)
 anyLvl = coerce anyWord
 
-arr :: Parser FP.Span
+arr :: Parser Span
 arr = $(switch [| case _ of "->" -> pure; "→" -> pure |])
 
-arr' :: Parser FP.Span
+arr' :: Parser Span
 arr' = $(switch' [| case _ of "->" -> pure; "→" -> pure |])
 
 -- parl    = $(sym "(")
@@ -86,22 +86,22 @@ rawRight = $(rawString "right")
 
 atom' :: Parser Tm
 atom' = $(switch' [| case _ of
-  "("      -> \(FP.Span l r) -> do {t <- tm; r <- rightPos <$> parr; pure $ Parens l t r}
-  "<"      -> \(FP.Span l r) -> do {t <- tm; r <- rightPos <$> angler; pure $ Quote l t r}
-  "Set"    -> \(FP.Span l r) -> pure $ Set l r
-  "Ty"     -> \(FP.Span l r) -> pure $ Ty l r
-  "CompTy" -> \(FP.Span l r) -> pure $ CompTy l r
-  "ValTy"  -> \(FP.Span l r) -> pure $ ValTy l r
-  "ElVal"  -> \(FP.Span l r) -> pure $ ElVal l r
-  "ElComp" -> \(FP.Span l r) -> pure $ ElComp l r
-  "Prop"   -> \(FP.Span l r) -> pure $ Prop l r
-  "Bot"    -> \(FP.Span l r) -> pure $ Bot l r
-  "⊥"      -> \(FP.Span l r) -> pure $ Bot l r
-  "_"      -> \(FP.Span l r) -> pure $ Inferred l
-  "?"      -> \(FP.Span l r) -> pure $ Hole l
-  "↑"      -> \(FP.Span l r) -> pure $ Lift l r
-  "^"      -> \(FP.Span l r) -> pure $ Lift l r
-  "@"      -> \(FP.Span l _) -> do {(n,rightPos -> r) <- anyLvl'; pure $ LocalLvl l n r}
+  "("      -> \(Span l r) -> do {t <- tm; r <- rightPos <$> parr; pure $ Parens l t r}
+  "<"      -> \(Span l r) -> do {t <- tm; r <- rightPos <$> angler; pure $ Quote l t r}
+  "Set"    -> \(Span l r) -> pure $ Set l r
+  "Ty"     -> \(Span l r) -> pure $ Ty l r
+  "CompTy" -> \(Span l r) -> pure $ CompTy l r
+  "ValTy"  -> \(Span l r) -> pure $ ValTy l r
+  "ElVal"  -> \(Span l r) -> pure $ ElVal l r
+  "ElComp" -> \(Span l r) -> pure $ ElComp l r
+  "Prop"   -> \(Span l r) -> pure $ Prop l r
+  "Bot"    -> \(Span l r) -> pure $ Bot l r
+  "⊥"      -> \(Span l r) -> pure $ Bot l r
+  "_"      -> \(Span l r) -> pure $ Inferred l
+  "?"      -> \(Span l r) -> pure $ Hole l
+  "↑"      -> \(Span l r) -> pure $ Lift l r
+  "^"      -> \(Span l r) -> pure $ Lift l r
+  "@"      -> \(Span l _) -> do {(n,rightPos -> r) <- anyLvl'; pure $ LocalLvl l n r}
   |])
   <|> (Ident <$> ident')
 
@@ -141,10 +141,10 @@ splice = FP.withOption tilde'
   (\s -> Splice (leftPos s) <$> projection')
   projection
 
-implicit :: Parser a -> Parser (a, Pre.Icit)
+implicit :: Parser Tm -> Parser (Tm, Icit)
 implicit p = FP.withOption bracel'
-  (\(FP.Span l r) -> do {a <- p; bracer; pure (a, Pre.Impl l r)})
-  (do {a <- p; pure (a, Pre.Expl)})
+  (\(Span l r) -> do {a <- p; bracer; pure (Parens l a r, Impl)})
+  (do {a <- p; pure (a, Expl)})
 
 data SomeSpine where
   SomeSpine :: Sing b -> Spine b -> SomeSpine
@@ -160,7 +160,7 @@ spTail =
       (\(t, i) -> do
           SomeSpine b sp <- spTail
           case (t, i) of
-            (Dot t (POp x), Pre.Expl) -> pure $ SomeSpine SFalse (SProjOp t x sp)
+            (Dot t (POp x), Expl) -> pure $ SomeSpine SFalse (SProjOp t x sp)
             (t, i) -> pure $ SomeSpine b (STm t i sp)
       )
       (pure $ SomeSpine STrue SNil)
@@ -197,7 +197,7 @@ bind' =
     (do
       lvl'
       FP.withOption rawUnderscore
-        (\(FP.Span l _) -> FP.withOption rawOperator
+        (\(Span l _) -> FP.withOption rawOperator
           (\op -> do
               ops <- many (rawUnderscore *> rawOperator)
               FP.withOption rawUnderscore
@@ -237,38 +237,38 @@ bind = bind' `cut` ["binder"]
 piBindBase :: Parser MultiBind
 piBindBase =
   $(switch' [| case _ of
-    "{" -> \(FP.Span l _) -> do
+    "{" -> \(Span l _) -> do
       x <- bind
       a <- FP.optional (colon' *> tm)
       r <- rightPos <$> bracer
-      pure $ MultiBind (Single x) (Pre.Impl l r) a
-    "(" -> \(FP.Span l _) -> do
+      pure $ MultiBind (Single x) Impl a
+    "(" -> \(Span l _) -> do
       x <- bind'
       a <- colon' *> tm -- we only learn at this colon that we're parsing a binder
       r <- rightPos <$> parr
-      pure $ MultiBind (Single x) Pre.Expl (Just a)|])
+      pure $ MultiBind (Single x) Expl (Just a)|])
 
 lamBind :: Parser MultiBind
 lamBind =
   $(switch' [| case _ of
-    "{" -> \(FP.Span l _) -> do
+    "{" -> \(Span l _) -> do
       x <- bind
       a <- FP.optional (colon' *> tm)
       r <- rightPos <$> bracer
-      pure $ MultiBind (Single x) (Pre.Impl l r) a
-    "(" -> \(FP.Span l _) -> do
+      pure $ MultiBind (Single x) Impl a
+    "(" -> \(Span l _) -> do
       x <- bind
       a <- FP.optional (colon' *> tm)
       r <- rightPos <$> parr
-      pure $ MultiBind (Single x) Pre.Expl a
+      pure $ MultiBind (Single x) Expl a
     _ -> do
       x <- bind'
-      pure $ MultiBind (Single x) Pre.Expl Nothing
+      pure $ MultiBind (Single x) Expl Nothing
     |])
 
 pi :: Parser Tm
 pi = do
-  l <- FP.getPos
+  l <- getPos
   FP.withOption (some piBindBase)
     (\binders -> do
         arr `cut` ["\"->\" or \"→\""]
@@ -278,7 +278,7 @@ pi = do
     (do a <- spine
         FP.branch arr'
          (do b <- pi
-             pure $ Pi l (Single (MultiBind (Single BNonExistent) Pre.Expl (Just a))) b)
+             pure $ Pi l (Single (MultiBind (Single BNonExistent) Expl (Just a))) b)
          (pure a)
     )
 
@@ -329,10 +329,10 @@ letrecBody l = do
 
 tm :: Parser Tm
 tm = $(switch [| case _ of
-  "\\"     -> \(FP.Span l _) -> lamBody l
-  "λ"      -> \(FP.Span l _) -> lamBody l
-  "let"    -> \(FP.Span l _) -> letBody l
-  "letrec" -> \(FP.Span l _) -> letrecBody l
+  "\\"     -> \(Span l _) -> lamBody l
+  "λ"      -> \(Span l _) -> lamBody l
+  "let"    -> \(Span l _) -> letBody l
+  "letrec" -> \(Span l _) -> letrecBody l
   |])
   <|>
   pi
@@ -354,7 +354,7 @@ topEntry :: () -> Parser Top
 topEntry _ =
   -- records
   FP.withOption (exactLvl' 0 *> $(sym' "record"))
-    (\(FP.Span l _) -> localIndentation 1 do
+    (\(Span l _) -> localIndentation 1 do
        x <- bind
        params <- many piBindBase
        colon
@@ -410,11 +410,11 @@ p1 =
   record Bar : Set where kuka : Nat
                          béka : Nat
 
-  -- béka : Set
-  -- majom : Set
-  -- béka  : Set
-  -- majom := x
-  -- béka := y
+  béka : Set
+  majom : Set
+  béka  : Set
+  majom := x
+  béka := y
 
   -- Nat  : Set = (N : Set) → (N → N) → N → N
   -- zero : Nat = λ N s z. z

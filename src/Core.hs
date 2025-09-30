@@ -23,6 +23,7 @@ data DefInfo = DI {
 
 data RecInfo = RI {
     recInfoUid   :: Int
+  , recInfoValue :: ~Val
   , recInfoName  :: Name
   }
 
@@ -74,7 +75,10 @@ data Tm
   = LocalVar Ix
   | TCon   {-# nounpack #-} TConInfo
   | DCon   {-# nounpack #-} DConInfo
+  | RecCon {-# nounpack #-} RecInfo
+  | RecTy  {-# nounpack #-} RecInfo
   | TopDef {-# nounpack #-} DefInfo
+  | Meta MetaVar
   | Let Ty SP Tm (Bind Tm)
   | Pi Ty SP (BindI Tm)
   | Prim Prim
@@ -82,6 +86,14 @@ data Tm
   | Lam Ty SP (BindI Tm)
   | Project Tm Proj
   | Quote Tm0
+
+instance Apply Tm (Tm, Icit, SP) Tm where
+  {-# inline (∘) #-}
+  (∘) t (u, i, sp) = App t u i sp
+
+{-# inline coe #-}
+coe a b p t = Prim Coe ∘∙ a ∘∙ b ∙∘ p ∙∙ t
+
 
 makeFields ''Bind
 makeFields ''BindI

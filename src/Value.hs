@@ -6,32 +6,6 @@ import Common hiding (Set, Prop)
 import qualified Common as C
 import {-# SOURCE #-} Core (DefInfo, TConInfo, DConInfo, DCon0Info, Def0Info, RecInfo)
 
-infixl 8 ∘
-infixl 8 ∘~
-class Apply a b c | a -> b c where
-  (∘)  :: LvlArg => a -> b -> c  -- strict
-  (∘~) :: LvlArg => a -> b -> c  -- lazy
-  (∘~) = (∘)
-
-infixl 8 ∙∙
-(∙∙) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
-(∙∙) t u = t ∘ (u, Expl, S)
-{-# inline (∙∙) #-}
-
-infixl 8 ∙∘
-(∙∘) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
-(∙∘) t u = t ∘ (u, Expl, P)
-{-# inline (∙∘) #-}
-
-infixl 8 ∘∙
-(∘∙) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
-(∘∙) t u = t ∘ (u, Impl, S)
-{-# inline (∘∙) #-}
-
-infixl 8 ∘∘
-(∘∘) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
-(∘∘) t u = t ∘ (u, Impl, P)
-{-# inline (∘∘) #-}
 
 -- rigid heads
 -- the things here can be eliminated further, but never computed
@@ -59,7 +33,6 @@ blocker = \case
 data UnfoldHead
   = UHMeta MetaVar                          -- solved meta
   | UHTopDef {-# nounpack #-} DefInfo ~Val  -- top definition
-  | UHCoe Val Val Val Val                   -- at least one of the values is an unfolding
   deriving Show
 
 data Spine
@@ -219,9 +192,9 @@ pattern RCoe a b p x      = Rigid (RHPrim C.Coe) (SId `SAppIS` a `SAppIS` b `SAp
 
 pattern FCoe m a b p x = Flex (FHCoe m a b p x) SId
 
-{-# inline UCoe #-}
-pattern UCoe a b p x v <- Unfold (UHCoe a b p x) SId v where
-  UCoe a b p x ~v = Unfold (UHCoe a b p x) SId v
+-- {-# inline UCoe #-}
+-- pattern UCoe a b p x v <- Unfold (UHCoe a b p x) SId v where
+--   UCoe a b p x ~v = Unfold (UHCoe a b p x) SId v
 
 infixr 1 ∙∙>
 (∙∙>) :: Val -> Val -> Val
@@ -241,6 +214,7 @@ infixr 1 ∘∘>
 
 data G = G {g1 :: Val, g2 :: Val}
 type GTy = G
+type GVal = G
 
 gjoin :: Val -> G
 gjoin v = G v v
@@ -257,6 +231,9 @@ instance Sized Env where
     go acc ENil        = acc
     go acc (EDef e _)  = go (acc + 1) e
     go acc (EDef0 e _) = go (acc + 1) e
+
+gSet = G Set Set
+gProp = G Prop Prop
 
 --------------------------------------------------------------------------------
 

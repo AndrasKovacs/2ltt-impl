@@ -7,12 +7,11 @@ import qualified Data.Ref.L as RL
 import qualified Data.Vector.Mutable as VM
 import qualified Data.Vector.Hashtables as HT
 import qualified Data.Primitive.MutVar as P
-import qualified Data.ByteString as B
 
 import Common
 import Core (Tm, Ty, Locals, LocalsArg)
 import qualified Core as C
-import Value (Val, VTy)
+import Value (Val, VTy, GTy)
 -- import qualified Value as V
 
 -- Metacontext
@@ -75,7 +74,9 @@ resetMetaCxt size = do
 --------------------------------------------------------------------------------
 
 data LocalInfo = LI {
-  localInfoName :: Name
+    localInfoName :: Name
+  , localInfoLvl  :: Lvl
+  , localInfoGTy  :: GTy
   }
 makeFields ''LocalInfo
 
@@ -91,11 +92,30 @@ data ISEntry
   | ISLocal LocalInfo ISEntry
 
 type IdentScope =
-  HT.Dictionary (HT.PrimState IO) VM.MVector B.ByteString VM.MVector ISEntry
+  HT.Dictionary (HT.PrimState IO) VM.MVector Name VM.MVector ISEntry
 
 identScope :: IdentScope
 identScope = runIO $ HT.initialize 5
 {-# noinline identScope #-}
+
+{-# noinline localDefineInsert #-}
+localDefineInsert :: LocalInfo -> Name -> IO ()
+localDefineInsert i x =
+  HT.upsert identScope (maybe (ISLocal i ISNil) (ISLocal i)) x
+
+{-# noinline localDefineDelete #-}
+localDefineDelete :: Name -> IO ()
+localDefineDelete x = HT.alter identScope go x where
+  go (Just (ISLocal _ e)) = Just e
+  go _                    = impossible
+
+{-# inline localDefineIS #-}
+localDefineIS :: LvlArg => Name -> GTy -> IO a -> IO a
+localDefineIS x a act = do
+  localDefineInsert (LI x ?lvl a) x
+  res <- act
+  localDefineDelete x
+  pure res
 
 resetIS :: IO () -- HT doesn't export a "clear" function
 resetIS = do

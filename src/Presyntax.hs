@@ -1,39 +1,34 @@
-{-# options_ghc -funbox-strict-fields #-}
 
 module Presyntax where
 
-import Common hiding (Name, Icit(..), Proj(..), Prim(..))
+import Common hiding (Name, Proj(..), Prim(..))
 
-type Name = Span
 type Ty = Tm
-
-data Icit = Impl Pos Pos | Expl
-  deriving Show
 
 data Bind
   = BOp Operator
-  | BName Name
+  | BName RawName
   | BUnused Pos   -- "_" as a binder
   | BNonExistent  -- a binder which doesn't exist in source (like non-dependent fun domain binder)
   deriving Show
 
 data Projection
-  = PName Name        -- name
-  | POp Name          -- operator
+  = PName RawName        -- name
+  | POp RawName          -- operator
   | PLvl Pos Lvl Pos  -- record field index
   deriving Show
 
 data Spine (b :: Bool) where
   SNil    :: Spine 'True
   STm     :: Tm -> Icit -> Spine b -> Spine b
-  SOp     :: Name -> Spine b -> Spine 'False
-  SProjOp :: Tm -> Name -> Spine b -> Spine 'False
+  SOp     :: RawName -> Spine b -> Spine 'False
+  SProjOp :: Tm -> RawName -> Spine b -> Spine 'False
 deriving instance Show (Spine b)
 
 data UnparsedSpine where
   USTm     :: Tm -> Spine 'False -> UnparsedSpine
-  USOp     :: Name -> Spine b -> UnparsedSpine
-  USProjOp :: Tm -> Name -> Spine b -> UnparsedSpine
+  USOp     :: RawName -> Spine b -> UnparsedSpine
+  USProjOp :: Tm -> RawName -> Spine b -> UnparsedSpine
 deriving instance Show UnparsedSpine
 
 -- TODO
@@ -74,7 +69,7 @@ data Tm
   | Lift Pos Pos                           -- ↑ | ^
   | Quote Pos Tm Pos                       -- <_>
   | Splice Pos Tm                          -- ~t
-  | Ident Name                             -- any general identifier
+  | Ident RawName                          -- any general identifier
   | LocalLvl Pos Lvl Pos                   -- @n (De Bruijn level)
   | Dot Tm Projection                      -- field name or qualified name or record field index
 

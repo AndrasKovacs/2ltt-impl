@@ -101,7 +101,7 @@ ghc-options:
 - -Wno-unused-do-bind
 - -Wno-unused-matches
 - -Wno-missing-pattern-synonym-signatures
-- -fmax-relevant-binds=3
+- -fmax-relevant-binds=5
 - -fmax-valid-hole-fits=0
 
 dependencies:
@@ -113,6 +113,7 @@ dependencies:
 - filepath
 - flatparse
 - ghc-prim
+- hashable
 - microlens
 - microlens-th
 - mtl
