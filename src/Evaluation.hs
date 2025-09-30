@@ -114,7 +114,7 @@ coeSP S a b p t = coe a b p t
 
 -- A, B : Set
 coe :: LvlArg => Val -> Val -> Val -> Val -> Val
-coe topA topB p topT = case (topA, topB, topT) of
+coe topA topB p topT = case (whnf topA, whnf topB, topT) of
 
   (Pi a sp b, Pi a' sp' b', Lam _ _ t)
     | b^.icit == b'^.icit, sp == sp' ->
@@ -132,21 +132,8 @@ coe topA topB p topT = case (topA, topB, topT) of
 
   (a, b, t) -> case runIO (catch (Same <$ conv a b) pure) of
     Same      -> t
-    Diff      -> RCoe a b p t
-    BlockOn m -> FCoe m a b p t
-
-  -- -- unfolding
-  -- (ua@(Unfold _ _ a), b, t) -> UCoe ua b p t (coe a b p t)
-  -- (a, ub@(Unfold _ _ b), t) -> UCoe a ub p t (coe a b p t)
-  -- (a, b, ut@(Unfold _ _ t)) -> UCoe a b p ut (coe a b p t)
-
-  -- -- flex
-  -- (a@(Flex h sp), b, t) -> FCoe (blocker h) a b p t
-  -- (a, b@(Flex h sp), t) -> FCoe (blocker h) a b p t
-  -- (a, b, t@(Flex h sp)) -> FCoe (blocker h) a b p t
-
-  -- -- rigid
-  -- (a, b, t) -> coeRefl a b p t
+    Diff      -> RCoe topA topB p t
+    BlockOn m -> FCoe m topA topB p t
 
 coeRefl :: LvlArg => Val -> Val -> Val -> Val -> Val
 coeRefl a b p t = case runIO (catch (Same <$ conv a b) pure) of
@@ -219,37 +206,29 @@ instance Eval C.Tm Val where
 --------------------------------------------------------------------------------
 
 {-# inline unblock #-}
-unblock :: MetaVar -> a -> (Val -> Bool -> IO a) -> IO a
-unblock m deflt k = readMeta m >>= \case
-  MEUnsolved x -> pure deflt
+unblock :: MetaVar -> a -> (Val -> Bool -> a) -> a
+unblock m deflt k = case lookupMeta m of
+  MEUnsolved x -> deflt
   MESolved x   -> k (x^.solutionVal) (x^.isInline)
 
 -- compute until rigid head, discard unfoldings
-whnf :: LvlArg => Val -> IO Val
+whnf :: LvlArg => Val -> Val
 whnf = \case
-  top@(Flex h sp) -> case h of
-    FHMeta m        -> unblock m top \v _ -> whnf $ spine v sp
-    FHCoe m a b p t -> unblock m top \_ _ -> do
-      a <- whnf a
-      b <- whnf b
-      t <- whnf t
-      whnf $ spine (coe a b p t) sp
+  top@(Flex (FHMeta m) sp) ->
+    unblock m top \v _ -> whnf $ spine v sp
+  top@(Flex (FHCoe m a b p t) sp) ->
+    unblock m top \_ _ -> whnf $ spine (coe a b p (whnf t)) sp
   Unfold _ _ v -> whnf v
-  v            -> pure v
+  v            -> v
 
 -- update head while preserving unfoldings
-force :: LvlArg => Val -> IO Val
+force :: LvlArg => Val -> Val
 force = \case
-  top@(Flex h sp) -> case h of
-    FHMeta m -> unblock m top \v -> \case
-      True -> force $ spine v sp             -- inline meta
-      _    -> pure $ Unfold (UHMeta m) sp v  -- noinline meta
-    FHCoe m a b p t -> unblock m top \_ _ -> do
-      a <- force a
-      b <- force b
-      t <- force t
-      force $ coe a b p t
-  v -> pure v
+  top@(Flex (FHMeta m) sp) -> unblock m top \v -> \case
+      True -> force $ spine v sp      -- inline meta
+      _    -> Unfold (UHMeta m) sp v  -- noinline meta
+  top@(Flex (FHCoe m a b p t) sp) -> unblock m top \_ _ -> force $ spine (coe a b p (force t)) sp
+  v -> v
 
 
 -- Conversion for the purpose of coe-refl
@@ -297,28 +276,25 @@ instance Conv NIClosure where
     fresh \v -> conv (t ∘ v) (u ∘ v)
 
 instance Conv Val where
-  conv t t' = do
-    t  <- whnf t
-    t' <- whnf t'
-    case (t, t') of
+  conv t t' = case (whnf t, whnf t') of
 
-      -- canonical & rigid match
-      (Pi a as b , Pi a' as' b') -> do conv as as'; conv a a'; conv b b'
-      (Rigid h sp, Rigid h' sp') -> do conv h h'; conv sp sp'
-      (Lam _ _ t , Lam _ _ t'  ) -> do conv t t'
+    -- canonical & rigid match
+    (Pi a as b , Pi a' as' b') -> do conv as as'; conv a a'; conv b b'
+    (Rigid h sp, Rigid h' sp') -> do conv h h'; conv sp sp'
+    (Lam _ _ t , Lam _ _ t'  ) -> do conv t t
 
-      -- syntax-directed eta
-      (t, Lam _ s' t')      -> fresh \v -> conv (t ∘ (v, t'^.icit, s')) (t' ∘ v)
-      (Lam _ s t, t')       -> fresh \v -> conv (t ∘ v) (t' ∘ (v, t^.icit, s))
-      (Rec _ sp@SApp{}, t') -> forOf_ spineApps sp  \(ix, t , _, s) -> convSP s t (proj t' (Proj ix N_))
-      (t, Rec _ sp'@SApp{}) -> forOf_ spineApps sp' \(ix, t', _, s) -> convSP s (proj t (Proj ix N_)) t'
+    -- syntax-directed eta
+    (t, Lam _ s' t')      -> fresh \v -> conv (t ∘ (v, t'^.icit, s')) (t' ∘ v)
+    (Lam _ s t, t')       -> fresh \v -> conv (t ∘ v) (t' ∘ (v, t^.icit, s))
+    (Rec _ sp@SApp{}, t') -> forOf_ spineApps sp  \(ix, t , _, s) -> convSP s t (proj t' (Proj ix N_))
+    (t, Rec _ sp'@SApp{}) -> forOf_ spineApps sp' \(ix, t', _, s) -> convSP s (proj t (Proj ix N_)) t
 
-      -- flex
-      (Flex h _, _) -> throwIO $! BlockOn (blocker h)
-      (_, Flex h _) -> throwIO $! BlockOn (blocker h)
+    -- flex
+    (Flex h _, _) -> throwIO $! BlockOn (blocker h)
+    (_, Flex h _) -> throwIO $! BlockOn (blocker h)
 
-      -- rigid mismatch
-      _ -> throwIO Diff
+    -- rigid mismatch
+    _ -> throwIO Diff
 
 
 --------------------------------------------------------------------------------

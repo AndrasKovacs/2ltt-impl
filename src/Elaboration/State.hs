@@ -49,6 +49,10 @@ readMeta :: MetaVar -> IO MetaEntry
 readMeta (MkMetaVar i) = ADL.read metaCxt i
 {-# inline readMeta #-}
 
+lookupMeta :: MetaVar -> MetaEntry
+lookupMeta (MkMetaVar i) = runIO (ADL.read metaCxt i)
+{-# inline lookupMeta #-}
+
 writeMeta :: MetaVar -> MetaEntry -> IO ()
 writeMeta (MkMetaVar i) e = ADL.write metaCxt i e
 {-# inline writeMeta #-}
