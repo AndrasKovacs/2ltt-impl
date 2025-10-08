@@ -1,4 +1,4 @@
-{-# options_ghc -Wno-orphans #-}
+
 
 module Evaluation where
 
@@ -27,7 +27,7 @@ defLazy ~v k = let ?env = EDef ?env v in k
 {-# inline defLazy #-}
 
 class Eval a b | a -> b where
-  eval :: LvlArg => EnvArg => a -> b
+  eval :: EnvArg => a -> b
 
 instance Eval Ix Val where
   eval x = go ?env x where
@@ -37,21 +37,13 @@ instance Eval Ix Val where
     go _           _ = impossible
 
 {-# inline geval #-}
-geval :: Eval a Val => LvlArg => EnvArg => a -> G
+geval :: Eval a Val =>  EnvArg => a -> G
 geval a = gjoin (eval a)
 
 instance Eval C.TConInfo Val where eval x = x^.value
 instance Eval C.DConInfo Val where eval x = x^.value
 instance Eval C.DefInfo  Val where eval x = x^.value
 instance Eval C.RecInfo  Val where eval x = x^.value
-
-instance Eval (C.Bind C.Tm) NClosure where
-  {-# inline eval #-}
-  eval (C.Bind x t) = NCl x $ Cl \v -> def v \_ -> eval t
-
-instance Eval (C.BindI C.Tm) NIClosure where
-  {-# inline eval #-}
-  eval (C.BindI x i t) = NICl x i $ Cl \v -> def v \_ -> eval t
 
 instance Eval (C.Bind C.Tm0) Closure0 where
   {-# inline eval #-}
@@ -60,89 +52,50 @@ instance Eval (C.Bind C.Tm0) Closure0 where
 instance Eval a b => Eval (List a) (List b) where
   eval = fmap eval
 
+instance Eval (C.BindI C.Tm) ClosureI where
+  {-# inline eval #-}
+  eval (C.BindI x i t) = ClI x i \v -> def v \_ -> eval t
+
+instance Eval (C.Bind C.Tm) Closure where
+  {-# inline eval #-}
+  eval (C.Bind x t) = Cl x \v -> def v \_ -> eval t
+
 instance Eval C.Prim Val where
   eval = \case
-    C.Lift      -> ΛES A_ Set Lift
-    C.Bot       -> Bot
+    C.Lift      -> ΛE A_ Set Lift
     C.Set       -> Set
-    C.Prop      -> Prop
     C.Ty        -> Ty
     C.ValTy     -> ValTy
     C.CompTy    -> CompTy
-    C.ElVal     -> ΛES A_ ValTy ElVal
-    C.ElComp    -> ΛES A_ CompTy ElComp
-    C.Exfalso   -> ΛIS A_ Set \a -> ΛES p_ Bot \p -> Exfalso a p
-    C.ExfalsoP  -> ΛIS A_ Prop \a -> ΛES p_ Bot \p -> ExfalsoP a p
-    C.Eq        -> ΛIS A_ Set \a -> ΛES x_ a \x -> ΛES y_ a \y -> Eq a x y
-    C.Refl      -> ΛIS A_ Set \a -> ΛIS x_ a \x -> Refl a x
-    C.Sym       -> ΛIS A_ Set \a -> ΛIS x_ a \x -> ΛIS y_ a \y ->
-                   ΛEP p_ (Eq a x y) \p ->
-                   Sym a x y p
-    C.Trans     -> ΛIS A_ Set \a -> ΛIS x_ a \x -> ΛIS y_ a \y -> ΛIS z_ a \z ->
-                   ΛEP p_ (Eq a x y) \p -> ΛEP q_ (Eq a y z) \q ->
-                   Trans a x y z p q
-    C.Ap        -> ΛIS A_ Set \a -> ΛIS B_ Set \b ->
-                   ΛES f_ (a ∙∙> b) \f -> ΛIS x_ a \x -> ΛIS y_ a \y ->
-                   ΛEP p_ (Eq a x y) \p ->
-                   Ap a b f x y p
-    C.Fun0      -> ΛES A_ ValTy \a -> ΛES B_ Ty \b -> Fun0 a b
-    C.Coe       -> ΛIS A_ Set \a -> ΛIS B_ Set \b -> ΛEP p_ (Eq Set a b) \p -> ΛES x_ a \x ->
-                   coe a b p x
-    C.PropExt   -> ΛIS A_ Prop \a -> ΛIS B_ Prop \b -> ΛEP f_ (a ∙∘> b) \f -> ΛEP g_ (b ∙∘> a) \g ->
-                   PropExt a b f g
-    C.FunExt    -> ΛIS A_ Set \a -> ΛIS B_ (a ∙∙> Set) \b ->
-                   let funtype = PiES a_ a (b ∙∙) in
-                   ΛIS f_ funtype \f -> ΛIS g_ funtype \g ->
-                   ΛEP p_ (PiES a_ a \x -> Eq (b ∙∙ x) (f ∙∙ x) (g ∙∙ x)) \p ->
-                   FunExt a b f g p
-    C.FunExtP   -> ΛIS A_ Prop \a -> ΛIS B_ (a ∙∘> Set) \b ->
-                   let funtype = PiEP a_ a (b ∙∘) in
-                   ΛIS f_ funtype \f -> ΛIS g_ funtype \g ->
-                   ΛEP p_ (PiEP a_ a \x -> Eq (b ∙∘ x) (f ∙∘ x) (g ∙∘ x)) \p ->
-                   FunExtP a b f g p
+    C.ElVal     -> ΛE A_ ValTy ElVal
+    C.ElComp    -> ΛE A_ CompTy ElComp
+    C.Fun0      -> ΛE A_ ValTy \a -> ΛE B_ Ty \b -> Fun0 a b
+    C.Eq        -> ΛI A_ Set \a -> ΛE x_ a \x -> ΛE y_ a \y -> Eq a x y
+    C.Refl      -> ΛI A_ Set \a -> ΛI x_ a \x -> Refl a x
+    C.J         -> ΛI A_ Set \a ->
+                   ΛI x_ a \x ->
+                   ΛE P_ (PiE y_ a \y -> Eq a x y ∙> Set) \bigP ->
+                   ΛI y_ a \y ->
+                   ΛI p_ (Eq a x y) \p ->
+                   ΛE r_ (bigP ∙ x ∙ p) \r ->
+                   p ∙ y ∙ p
+    C.K         -> ΛI A_ Set \a ->
+                   ΛI x_ a \x ->
+                   ΛE P_ (Eq a x x ∙> Set) \bigP ->
+                   ΛE p_ (Eq a x x) \p ->
+                   bigP ∙ p
 
-spine :: LvlArg => Val -> Spine -> Val
+spine :: Val -> Spine -> Val
 spine v = \case
   SId           -> v
-  SApp t u i sp -> spine v t ∘ (u, i, sp)
+  SApp t u i    -> spine v t ∙∘ (u, i)
   SProject t p  -> proj (spine v t) p
-
-proj0 :: Val -> Val
-proj0 v = proj v (Proj 0 N_)
-
-proj1 :: Val -> Val
-proj1 v = proj v (Proj 1 N_)
-
-coeSP :: LvlArg => SP -> Val -> Val -> Val -> Val -> Val
-coeSP P a b p t = proj0 p ∙∘ t
-coeSP S a b p t = coe a b p t
-
--- A, B : Set
-coe :: LvlArg => Val -> Val -> Val -> Val -> Val
-coe topA topB p topT = case (whnf topA, whnf topB, topT) of
-
-  (Pi a sp b, Pi a' sp' b', Lam _ _ t)
-    | b^.icit == b'^.icit, sp == sp' ->
-       let i  = b^.icit
-           p0 = proj0 p
-           p1 = proj1 p
-       in Λ (pick (b^.name) (b'^.name)) i a' sp \x' ->
-            let x = coeSP sp a' a (Sym Set a a' p0) x'
-            in coe (b ∘ x) (b' ∘ x') (p1 ∘ (x, Expl, sp)) (t ∘ x)
-
-  (RecTy ri sp, RecTy ri' sp', Rec _ spn)
-    | ri == ri' -> error "TODO"
-
-  (a, b, t) -> case runIO (catch (Same <$ conv a b) pure) of
-    Same      -> t
-    Diff      -> RCoe topA topB p t
-    BlockOn m -> FCoe m topA topB p t
 
 projFromSpine :: Spine -> Ix -> Val
 projFromSpine sp x = case (sp, x) of
-  (SApp _ u _ _, 0)  -> u
-  (SApp sp _ _ _, x) -> projFromSpine sp (x - 1)
-  _                  -> impossible
+  (SApp _ u _ , 0) -> u
+  (SApp sp _ _, x) -> projFromSpine sp (x - 1)
+  _                -> impossible
 
 proj :: Val -> C.Proj -> Val
 proj t p = case t of
@@ -162,14 +115,6 @@ splice = \case
   Quote t -> t
   t       -> Splice t
 
-instance Apply Val (Val, Icit, SP) Val where
-  (∘) t arg@(!u, !_, !_) = case t of
-    Lam _ _ t      -> t ∘ u
-    Rigid h spn    -> Rigid h (spn ∘ arg)
-    Flex h spn     -> Flex h (spn ∘ arg)
-    Unfold h spn v -> Unfold h (spn ∘ arg) (v ∘ arg)
-    _              -> impossible
-
 instance Eval C.Tm0 Val0 where
   eval = \case
     C.LocalVar0 x -> go ?env x where
@@ -186,7 +131,7 @@ instance Eval C.Tm0 Val0 where
     C.Splice t       -> splice (eval t)
 
 instance Eval MetaVar Val where
-  eval m = unblock m (Flex (FHMeta m) SId) \ ~v -> \case
+  eval m = unblock m (Flex m SId) \ ~v -> \case
     True  -> v
     False -> Unfold (UHMeta m) SId v
 
@@ -196,12 +141,13 @@ instance Eval C.Tm Val where
     C.TCon ci      -> eval ci
     C.DCon ci      -> eval ci
     C.RecTy ri     -> eval ri
+    C.RecCon ri    -> eval ri
     C.TopDef di    -> eval di
-    C.Let _ _ t u  -> def (eval t) \v -> eval u ∘ v
-    C.Pi a as b    -> Pi (eval a) as (eval b)
+    C.Let _ t u    -> def (eval t) \v -> eval u ∙ v
+    C.Pi a b       -> Pi (eval a) (eval b)
     C.Prim p       -> eval p
-    C.App t u i sp -> eval t ∘ (eval u, i, sp)
-    C.Lam a s t    -> Lam (eval a) s (eval t)
+    C.App t u i    -> eval t ∙∘ (eval u, i)
+    C.Lam a t      -> Lam (eval a) (eval t)
     C.Project t p  -> proj (eval t) p
     C.Quote t      -> quote (eval t)
     C.Meta m       -> eval m
@@ -216,167 +162,22 @@ unblock m deflt k = case lookupMeta m of
   MESolved x   -> k (x^.solutionVal) (x^.isInline)
 
 -- discard all unfoldings
-whnf :: LvlArg => Val -> Val
+whnf :: Val -> Val
 whnf = \case
-  top@(Flex (FHMeta m) sp) ->
-    unblock m top \v _ -> whnf $ spine v sp
-  top@(Flex (FHCoe m a b p t) sp) ->
-    unblock m top \_ _ -> whnf $ spine (coe a b p (whnf t)) sp
-  Unfold _ _ v -> whnf v
-  v            -> v
+  top@(Flex m sp) -> unblock m top \v _ -> whnf $ spine v sp
+  Unfold _ _ v    -> whnf v
+  v               -> v
 
 -- update head, unfold metas ("weak head meta normal")
-whmnf :: LvlArg => Val -> Val
+whmnf :: Val -> Val
 whmnf = \case
-  top@(Flex (FHMeta m) sp) ->
-    unblock m top \v _ -> whmnf $ spine v sp
-  top@(Flex (FHCoe m a b p t) sp) ->
-    unblock m top \_ _ -> whmnf $ spine (coe a b p (whmnf t)) sp
-  v -> v
+  top@(Flex m sp) -> unblock m top \v _ -> whmnf $ spine v sp
+  v               -> v
 
 -- update head, preserve all unfoldings
-force :: LvlArg => Val -> Val
+force ::  Val -> Val
 force = \case
-  top@(Flex (FHMeta m) sp) ->
-    unblock m top \v -> \case
-      True -> force $ spine v sp      -- inline meta
-      _    -> Unfold (UHMeta m) sp v  -- noinline meta
-  top@(Flex (FHCoe m a b p t) sp) ->
-    unblock m top \_ _ -> force $ spine (coe a b p (force t)) sp
+  top@(Flex m sp) -> unblock m top \v -> \case
+    True -> force $ spine v sp      -- inline meta
+    _    -> Unfold (UHMeta m) sp v  -- noinline meta
   v -> v
-
-
--- Conversion for the purpose of coe-refl
---------------------------------------------------------------------------------
-
--- TODO: approximated conversion
-
-data ConvRes = Same | Diff | BlockOn MetaVar deriving Show
-instance Exception ConvRes
-
-class Conv a where conv :: LvlArg => a -> a -> IO ()
-
-instance {-# overlappable #-} Eq a => Conv a where
-  {-# inline conv #-}
-  conv x y = unless (x == y) $ throwIO Diff
-
-{-# inline convSP #-}
-convSP :: Conv a => LvlArg => SP -> a -> a -> IO ()
-convSP sp x y = case sp of S -> conv x y
-                           P -> pure ()
-
-instance Conv RigidHead where
-  conv h h' = case (h, h') of
-    (RHLocalVar x, RHLocalVar x') -> conv x x'
-    (RHPrim p    , RHPrim p'    ) -> conv p p'
-    (RHTCon i    , RHTCon i'    ) -> conv i i'
-    (RHDCon i    , RHDCon i'    ) -> conv i i'
-    (RHRecTy i   , RHRecTy i'   ) -> conv i i'
-    (RHRec i     , RHRec i'     ) -> conv i i'
-    _                             -> throwIO Diff
-
-instance Conv Proj where
-  conv p p' = conv (p^.index) (p'^.index)
-
-instance Conv Spine where
-  conv t u = case (t, u) of
-    (SId         , SId             ) -> pure ()
-    (SApp t u i s, SApp t' u' i' s') -> do conv t t'; convSP s u u'
-    (SProject t p, SProject t' p'  ) -> do conv t t'; conv p p'
-    _                                -> throwIO Diff
-
-instance Conv NIClosure where
-  conv t u = do
-    conv (t^.icit) (u^.icit)
-    fresh \v -> conv (t ∘ v) (u ∘ v)
-
-instance Conv Val where
-  conv t t' = case (whnf t, whnf t') of
-
-    -- canonical & rigid match
-    (Pi a as b , Pi a' as' b') -> do conv as as'; conv a a'; conv b b'
-    (Rigid h sp, Rigid h' sp') -> do conv h h'; conv sp sp'
-    (Lam _ _ t , Lam _ _ t'  ) -> do conv t t
-
-    -- syntax-directed eta
-    (t, Lam _ s' t')      -> fresh \v -> conv (t ∘ (v, t'^.icit, s')) (t' ∘ v)
-    (Lam _ s t, t')       -> fresh \v -> conv (t ∘ v) (t' ∘ (v, t^.icit, s))
-    (Rec _ sp@SApp{}, t') -> forOf_ spineApps sp  \(ix, t , _, s) -> convSP s t (proj t' (Proj ix N_))
-    (t, Rec _ sp'@SApp{}) -> forOf_ spineApps sp' \(ix, t', _, s) -> convSP s (proj t (Proj ix N_)) t
-
-    -- flex
-    (Flex h _, _) -> throwIO $! BlockOn (blocker h)
-    (_, Flex h _) -> throwIO $! BlockOn (blocker h)
-
-    -- rigid mismatch
-    _ -> throwIO Diff
-
-
--- Quotation
---------------------------------------------------------------------------------
-
-
-class ReadBack a b | a -> b where
-  readb :: LvlArg => UnfoldArg => a -> b
-
-instance ReadBack Lvl Ix where
-  readb = lvlToIx ?lvl
-
-instance ReadBack RigidHead C.Tm where
-  readb = \case
-    RHLocalVar x -> C.LocalVar (readb x)
-    RHPrim p     -> C.Prim p
-    RHDCon i     -> C.DCon i
-    RHTCon i     -> C.TCon i
-    RHRecTy i    -> C.RecTy i
-    RHRec i      -> C.RecCon i
-
-instance ReadBack FlexHead C.Tm where
-  readb = \case
-    FHMeta m        -> C.Meta m
-    FHCoe m a b p t -> C.coe (readb a) (readb b) (readb p) (readb t)
-
-instance ReadBack UnfoldHead C.Tm where
-  readb = \case
-    UHMeta m     -> C.Meta m
-    UHTopDef i _ -> C.TopDef i
-
-instance ReadBack Spine (C.Tm -> C.Tm) where
-  readb t h = case t of
-    SId           -> h
-    SApp t u i sp -> C.App (readb t h) (readb u) i sp
-    SProject t p  -> C.Project (readb t h) p
-
-instance ReadBack NIClosure (C.BindI C.Tm) where
-  readb (NICl x i t) = fresh \v -> C.BindI x i (readb (t ∘ v))
-
-instance ReadBack Closure0 (C.Bind C.Tm0) where
-  readb (Cl0 x t) = _
-
-instance ReadBack Val0 C.Tm0 where
-  readb = \case
-    LocalVar0 x  -> C.LocalVar0 (readb x)
-    TopDef0 i    -> C.TopDef0 i
-    DCon0 i      -> C.DCon0 i
-    App0 t u     -> C.App0 (readb t) (readb u)
-    Lam0 a t     -> C.Lam0 (readb a) (readb t)
-    Decl0 a t    -> C.Decl0 (readb a) (readb t)
-    Project0 t p -> C.Project0 (readb t) p
-    Splice t     -> C.Splice (readb t)
-
-instance ReadBack Val C.Tm where
-  readb t =
-    let t' = case ?unfold of
-          UnfoldAll   -> whnf t
-          UnfoldNone  -> force t
-          UnfoldMetas -> whmnf t
-    in case t' of
-      Rigid h sp    -> readb sp (readb h)
-      Flex h sp     -> readb sp (readb h)
-      Unfold h sp _ -> readb sp (readb h)
-      Pi a as b     -> C.Pi (readb a) as (readb b)
-      Lam a as t    -> C.Lam (readb a) as (readb t)
-      Quote t       -> C.Quote (readb t)
-
-
---------------------------------------------------------------------------------

@@ -94,6 +94,41 @@ noinlineRunIO :: IO a -> a
 noinlineRunIO (IO f) = runRW# (\s -> case f s of (# _, a #) -> a)
 {-# noinline noinlineRunIO #-}
 
+-- Overloaded application
+--------------------------------------------------------------------------------
+
+infixl 8 ∘
+infixl 8 ∙
+infixl 8 ∘~
+infixl 8 ∙~
+class Apply a b c | a -> b c where
+  {-# inline (∙) #-}
+  (∙)  :: a -> b -> c  -- ^ Explicit, strict
+  (∙) a b = (∙∘) a (b, Expl)
+
+  {-# inline (∘) #-}
+  (∘)  :: a -> b -> c  -- ^ Implicit, strict
+  (∘) a b = (∙∘) a (b, Impl)
+
+  (∙~) :: a -> b -> c  -- ^ Explicit, lazy
+  (∘~) :: a -> b -> c  -- ^ Implicit, lazy
+  (∙~) = (∙); {-# inline (∙~) #-}
+  (∘~) = (∘); {-# inline (∘~) #-}
+
+  {-# inline (∙∘) #-}
+  (∙∘) :: a -> (b, Icit) -> c
+  (∙∘) a (!b, Expl) = a ∙ b
+  (∙∘) a (!b, Impl) = a ∘ b
+
+  {-# minimal (∙∘) | (∙), (∘) #-}
+
+instance (Monad m, a ~ a', out ~ m b) => Apply (m (a -> b)) (m a') out where
+  {-# inline (∙∘) #-}
+  (∙∘) mf (ma, _) = do
+    f <- mf
+    a <- ma
+    pure $! f a
+
 
 -- Strict list
 --------------------------------------------------------------------------------
@@ -151,7 +186,7 @@ instance Traversable List where
   {-# inline mapM #-}
   mapM f = go where
     go Nil         = pure Nil
-    go (Cons a as) = Cons <$!> f a ∙ go as
+    go (Cons a as) = Cons ! f a ∙ go as
 
 
 -- reasonable monadic looping (forM_ and traverse are often compiled in shitty ways)
@@ -203,24 +238,16 @@ w2i :: Word -> Int
 w2i (W# n) = I# (word2Int# n)
 {-# inline w2i #-}
 
+infixl 9 $$!
 ($$!) :: (a -> b) -> a -> b
 ($$!) f a = f $! a
 {-# inline ($$!) #-}
-infixl 9 $$!
 
 -- less annoying strict "idioms"
-infixl 4 !
+infixl 8 !
 {-# inline (!) #-}
 (!) :: Monad m => (a -> b) -> m a -> m b
 (!) = (<$!>)
-
-infixl 4 ∙
-(∙) :: Monad m => m (a -> b) -> m a -> m b
-(∙) mf ma = do
-  f <- mf
-  a <- ma
-  pure $! f a
-{-# inline (∙) #-}
 
 -- strict pair
 infixr 4 //
@@ -234,9 +261,6 @@ ptrEq x y = isTrue# (reallyUnsafePtrEquality# x y)
 
 data Box a = Box ~a deriving Show
 
-lam1 :: (a -> b) -> a -> b
-lam1 = oneShot
-{-# inline lam1 #-}
 
 -- Not printing stuff
 --------------------------------------------------------------------------------
@@ -280,12 +304,6 @@ data Stage = S0 | S1
 
 data Icit = Impl | Expl
   deriving (Eq, Show, Ord, Enum)
-
--- | Set/Prop
-data SP = S | P
-  deriving (Eq, Show, Ord, Enum)
-
-type SPArg = (?sp :: SP)
 
 -- Time measurement
 --------------------------------------------------------------------------------
@@ -404,6 +422,7 @@ pattern A_ = NRawName "A"
 pattern B_ = NRawName "B"
 pattern C_ = NRawName "C"
 pattern D_ = NRawName "D"
+pattern P_ = NRawName "P"
 
 newtype Precedence = Precedence Word
   deriving (Eq, Show, Num, Ord, Enum, Hashable) via Word
@@ -509,25 +528,16 @@ instance FromSing 'False where sing = SFalse
 data Prim
   = Lift
   | Set
-  | Prop
   | Ty
   | ValTy
   | CompTy
   | ElVal
   | ElComp
-  | Bot
-  | Exfalso
-  | ExfalsoP
   | Eq
   | Refl
-  | Sym
-  | Trans
-  | Ap
-  | Coe
+  | J
+  | K
   | Fun0
-  | PropExt
-  | FunExt
-  | FunExtP
   deriving (Eq, Show)
 
 -- Overloaded accessors
@@ -575,34 +585,3 @@ data Unfold = UnfoldNone | UnfoldAll | UnfoldMetas
   deriving (Eq, Show)
 
 type UnfoldArg = (?unfold :: Unfold)
-
-
--- Overloaded application
---------------------------------------------------------------------------------
-
-infixl 8 ∘
-infixl 8 ∘~
-class Apply a b c | a -> b c where
-  (∘)  :: LvlArg => a -> b -> c  -- strict
-  (∘~) :: LvlArg => a -> b -> c  -- lazy
-  (∘~) = (∘)
-
-infixl 8 ∙∙
-(∙∙) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
-(∙∙) t u = t ∘ (u, Expl, S)
-{-# inline (∙∙) #-}
-
-infixl 8 ∙∘
-(∙∘) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
-(∙∘) t u = t ∘ (u, Expl, P)
-{-# inline (∙∘) #-}
-
-infixl 8 ∘∙
-(∘∙) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
-(∘∙) t u = t ∘ (u, Impl, S)
-{-# inline (∘∙) #-}
-
-infixl 8 ∘∘
-(∘∘) :: LvlArg => Apply a (b, Icit, SP) a => a -> b -> a
-(∘∘) t u = t ∘ (u, Impl, P)
-{-# inline (∘∘) #-}

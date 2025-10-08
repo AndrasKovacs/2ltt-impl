@@ -57,10 +57,6 @@ data Tm
   | CompTy Pos Pos                         -- CompTy
   | ElVal Pos Pos                          -- ElVal
   | ElComp Pos Pos                         -- ElComp
-  | Prop Pos Pos                           -- Prop
-
-  | Bot Pos Pos                            -- Bot | ⊥
-  | Exfalso Pos Pos                        -- exfalso
 
   | Pi Pos (List MultiBind) Tm             -- (x : A) -> B | {x : A} -> B
   | Parens Pos Tm Pos                      -- (t)    -- used to correctly track spans
@@ -145,14 +141,11 @@ instance SpanOf Tm where
     CompTy x _       -> leftPos x
     ElVal x _        -> leftPos x
     ElComp x _       -> leftPos x
-    Prop x _         -> leftPos x
     Inferred x       -> leftPos x
     Splice x _       -> leftPos x
     Rec x _ _        -> leftPos x
     RecTy x _ _      -> leftPos x
     Spine x _        -> leftPos x
-    Bot x _          -> leftPos x
-    Exfalso x _      -> leftPos x
 
   rightPos = \case
     Lam _ _ x        -> rightPos x
@@ -174,11 +167,8 @@ instance SpanOf Tm where
     CompTy _ x       -> rightPos x
     ElVal _ x        -> rightPos x
     ElComp _ x       -> rightPos x
-    Prop _ x         -> rightPos x
     Inferred x       -> rightPos x
     Splice _ x       -> rightPos x
     RecTy _ _ x      -> rightPos x
     Rec _ _ x        -> rightPos x
     Spine _ x        -> rightPos x
-    Bot _ x          -> rightPos x
-    Exfalso _ x      -> rightPos x

@@ -2,10 +2,9 @@
 module Value where
 
 import GHC.Word
-import Common hiding (Set, Prop)
+import Common
 import qualified Common as C
 import {-# SOURCE #-} Core (DefInfo, TConInfo, DConInfo, DCon0Info, Def0Info, RecInfo)
-
 
 -- rigid heads
 -- the things here can be eliminated further, but never computed
@@ -18,17 +17,6 @@ data RigidHead
   | RHRec   {-# nounpack #-} RecInfo
   deriving Show
 
--- flexible neutral heads: can be eliminated, can be unblocked
-data FlexHead
-  = FHMeta MetaVar
-  | FHCoe MetaVar Val Val Val Val  -- coe blocked on single meta
-  deriving Show
-
-blocker :: FlexHead -> MetaVar
-blocker = \case
-  FHMeta m -> m
-  FHCoe m _ _ _ _ -> m
-
 -- delayed unfoldings
 data UnfoldHead
   = UHMeta MetaVar                          -- solved meta
@@ -37,67 +25,41 @@ data UnfoldHead
 
 data Spine
   = SId
-  | SApp Spine Val Icit SP -- TODO: pack Icit and SP
+  | SApp Spine Val Icit
   | SProject Spine Proj
   deriving Show
 
-instance Apply Spine (Val,Icit,SP) Spine where
+instance Apply Spine Val Spine where
+  {-# inline (∙) #-}
+  spn ∙ v = SApp spn v Expl
   {-# inline (∘) #-}
-  spn ∘ (v,i,sp) = SApp spn v i sp
+  spn ∘ v = SApp spn v Impl
 
 {-# inline spineApps #-}
-spineApps :: Traversal' Spine (Ix, Val,Icit,SP)
+spineApps :: Traversal' Spine (Ix, Val,Icit)
 spineApps f = go 0 where
   go ix SId            = pure SId
-  go ix (SApp t u i s) = (\t (!_,!u,!i,!s) -> SApp t u i s) <$> go (ix - 1) t <*> f (ix,u,i,s)
+  go ix (SApp t u i)   = (\t (!_,!u,!i) -> SApp t u i) <$> go (ix - 1) t <*> f (ix,u,i)
   go ix (SProject t p) = (\t -> SProject t p) <$> go ix t
 
 --------------------------------------------------------------------------------
 
--- | A closure abstracts over the `Int#` which marks the next fresh variable.
---   Since it is impossible for GHC to unbox this argument, and we want to make
---   the argument implicit, and only lifted types can be implicit, we unbox it
---   by hand, and define `Cl` as a pattern synonym with the more convenient
---   type.
-newtype Closure = Cl# {unCl# :: Word# -> Val -> Val}
-newtype Wrap# = Wrap# (LvlArg => Val -> Val)
+data ClosureI = ClI# {
+    closureIName :: Name
+  , closureIIcit :: Icit
+  , closureIBody :: Val -> Val
+  }
 
-pattern Cl :: (LvlArg => Val -> Val) -> Closure
-pattern Cl f <- ((\(Cl# f) -> Wrap# (oneShot \v -> case ?lvl of Lvl (W# l) -> f l v)) -> Wrap# f)
-  where Cl f = Cl# (oneShot \l -> lam1 \v -> let ?lvl = Lvl (W# l) in f v)
-{-# complete Cl #-}
-{-# inline Cl #-}
+pattern ClI :: Name -> Icit -> (Val -> Val) -> ClosureI
+pattern ClI x i f <- ClI# x i f where ClI x i f = ClI# x i (oneShot f)
+{-# complete ClI #-}
+{-# inline ClI #-}
 
-instance Show Closure where showsPrec _ _ acc = "<closure>" ++ acc
+instance Show ClosureI where showsPrec _ _ acc = "<closure>" ++ acc
 
-instance (b ~ Val, c ~ Val) => Apply Closure b c where
-  {-# inline (∘) #-}
-  Cl f ∘ x = f x
-  {-# inline (∘~) #-}
-  Cl f ∘~ ~x = f x
-
-data NIClosure = NICl {
-    nIClosureName    :: Name
-  , nIClosureIcit    :: Icit
-  , nIClosureClosure :: Closure
-  } deriving Show
-
-instance Apply NIClosure Val Val where
-  {-# inline (∘) #-}
-  NICl _ _ (Cl f) ∘ x = f x
-  {-# inline (∘~) #-}
-  NICl _ _ (Cl f) ∘~ ~x = f x
-
-data NClosure = NCl {
-    nClosureName    :: Name
-  , nClosureClosure :: Closure
-  } deriving Show
-
-instance Apply NClosure Val Val where
-  {-# inline (∘) #-}
-  NCl _ (Cl f) ∘ x = f x
-  {-# inline (∘~) #-}
-  NCl _ (Cl f) ∘~ ~x = f x
+instance Apply ClosureI Val Val where
+  {-# inline (∙∘) #-}
+  ClI _ _ f ∙∘ (!x,_) = f x
 
 data Closure0 = Cl0# Name (Word# -> Val0)
 instance Show Closure0 where showsPrec _ _ acc = "<closure>" ++ acc
@@ -106,6 +68,31 @@ pattern Cl0 x f <- ((\(Cl0# x f) -> (x,(\x -> case x of Lvl (W# x) -> f x))) -> 
   Cl0 x f = Cl0# x (\x -> f (Lvl (W# x)))
 {-# inline Cl0 #-}
 {-# complete Cl0 #-}
+
+data Closure = Cl# {
+    closureName :: Name
+  , closureBody :: Val -> Val
+  }
+
+pattern Cl :: Name -> (Val -> Val) -> Closure
+pattern Cl x f <- Cl# x f where Cl x f = Cl# x (oneShot f)
+{-# complete Cl #-}
+{-# inline Cl #-}
+
+instance Show Closure where showsPrec _ _ acc = "<closure>" ++ acc
+
+instance Apply Closure Val Val where
+  {-# inline (∙∘) #-}
+  Cl _ f ∙∘ (!x,_) = f x
+
+instance Apply Val Val Val where
+  {-# inline (∙∘) #-}
+  t ∙∘ arg@(u, i) = case t of
+    Lam _ t        -> t ∙ u
+    Rigid h spn    -> Rigid h (spn ∙∘ arg)
+    Flex h spn     -> Flex h (spn ∙∘ arg)
+    Unfold h spn v -> Unfold h (spn ∙∘ arg) (v ∙∘ arg)
+    _              -> impossible
 
 --------------------------------------------------------------------------------
 
@@ -124,104 +111,60 @@ data Val0
 
 data Val
   = Rigid RigidHead Spine
-  | Flex FlexHead Spine
+  | Flex MetaVar Spine
   | Unfold UnfoldHead Spine ~Val
-  | Pi VTy SP NIClosure
-  | Lam VTy SP NIClosure
+  | Pi VTy ClosureI
+  | Lam VTy ClosureI
   | Quote Val0
  deriving Show
 
 --------------------------------------------------------------------------------
 
 pattern LocalVar x = Rigid (RHLocalVar x) SId
-
-pattern Λ x i a s t = Lam a s (NICl x i (Cl t))
-
-pattern PiES x a b = Pi a S (NICl x Expl (Cl b))
-pattern PiEP x a b = Pi a P (NICl x Expl (Cl b))
-pattern PiIS x a b = Pi a S (NICl x Impl (Cl b))
-pattern PiIP x a b = Pi a P (NICl x Impl (Cl b))
-
-pattern ΛES x a t = Lam a S (NICl x Expl (Cl t))
-pattern ΛEP x a t = Lam a P (NICl x Expl (Cl t))
-pattern ΛIS x a t = Lam a S (NICl x Impl (Cl t))
-pattern ΛIP x a t = Lam a P (NICl x Impl (Cl t))
-
-pattern SAppES t u = SApp t u Expl S
-pattern SAppIS t u = SApp t u Impl S
-pattern SAppEP t u = SApp t u Expl P
-pattern SAppIP t u = SApp t u Impl P
+pattern Λ x i a t = Lam a (ClI x i t)
+pattern ΛE x a t = Lam a (ClI x Expl t)
+pattern ΛI x a t = Lam a (ClI x Impl t)
+pattern PiE x a b = Pi a (ClI x Expl b)
+pattern PiI x a b = Pi a (ClI x Impl b)
 
 pattern RecTy i sp = Rigid (RHRecTy i) sp
 pattern Rec i sp = Rigid (RHRec i) sp
+pattern SAppE t u = SApp t u Expl
+pattern SAppI t u = SApp t u Impl
 
 -- statically allocated constants, for sharing
-sSet    = Rigid (RHPrim C.Set) SId; {-# noinline sSet #-}
-sProp   = Rigid (RHPrim C.Prop) SId; {-# noinline sProp #-}
-sTy     = Rigid (RHPrim C.Ty) SId; {-# noinline sTy #-}
-sBot    = Rigid (RHPrim C.Bot) SId; {-# noinline sBot #-}
-sValTy  = Rigid (RHPrim C.ValTy) SId; {-# noinline sValTy #-}
+sSet    = Rigid (RHPrim C.Set)    SId; {-# noinline sSet #-}
+sTy     = Rigid (RHPrim C.Ty)     SId; {-# noinline sTy #-}
+sValTy  = Rigid (RHPrim C.ValTy)  SId; {-# noinline sValTy #-}
 sCompTy = Rigid (RHPrim C.CompTy) SId; {-# noinline sCompTy #-}
 
-pattern Lift a            = Rigid (RHPrim C.Lift) (SId `SAppES` a)
-pattern Set              <- Rigid (RHPrim C.Set)    SId where Set    = sSet
-pattern Bot              <- Rigid (RHPrim C.Bot)    SId where Bot    = sBot
-pattern Prop             <- Rigid (RHPrim C.Prop)   SId where Prop   = sProp
-pattern Ty               <- Rigid (RHPrim C.Ty)     SId where Ty     = sTy
-pattern ValTy            <- Rigid (RHPrim C.ValTy)  SId where ValTy  = sValTy
-pattern CompTy           <- Rigid (RHPrim C.CompTy) SId where CompTy = sCompTy
-pattern ElVal  a          = Rigid (RHPrim C.ElVal) (SId `SAppES` a)
-pattern ElComp a          = Rigid (RHPrim C.ElComp) (SId `SAppES` a)
-pattern Exfalso  a t      = Rigid (RHPrim C.Exfalso) (SId `SAppIS` a `SAppEP` t)
-pattern ExfalsoP a t      = Rigid (RHPrim C.ExfalsoP) (SId `SAppIS` a `SAppEP` t)
-pattern Eq a x y          = Rigid (RHPrim C.Eq) (SId `SAppIS` a `SAppES` x `SAppES` y)
-pattern Refl a x          = Rigid (RHPrim C.Refl) (SId `SAppIS` a `SAppIS` x)
-pattern Sym a x y p       = Rigid (RHPrim C.Sym) (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppEP` p)
-pattern Trans a x y z p q = Rigid (RHPrim C.Sym) (SId `SAppIS` a `SAppIS` x `SAppIS` y `SAppIS` z `SAppEP` p `SAppEP` q)
-pattern Ap a b f x y p    = Rigid (RHPrim C.Ap) (SId `SAppIS` a `SAppIS` b `SAppIS` f `SAppIS` x `SAppIS` y `SAppEP` p)
-pattern Fun0 a b          = Rigid (RHPrim C.Fun0) (SId `SAppIS` a `SAppIS` b)
-pattern PropExt a b f g   = Rigid (RHPrim C.PropExt) (SId `SAppIS` a `SAppIS` b `SAppEP` f `SAppEP` g)
-pattern FunExt a b f g p  = Rigid (RHPrim C.FunExt) (SId `SAppIS` a `SAppIS` b `SAppES` f `SAppES` g `SAppEP` p)
-pattern FunExtP a b f g p = Rigid (RHPrim C.FunExtP) (SId `SAppIS` a `SAppIS` b `SAppES` f `SAppES` g `SAppEP` p)
-pattern RCoe a b p x      = Rigid (RHPrim C.Coe) (SId `SAppIS` a `SAppIS` b `SAppEP` p `SAppES` x)
+pattern Lift a     = Rigid (RHPrim C.Lift) (SId `SAppE` a)
+pattern Set       <- Rigid (RHPrim C.Set)    SId where Set    = sSet
+pattern Ty        <- Rigid (RHPrim C.Ty)     SId where Ty     = sTy
+pattern ValTy     <- Rigid (RHPrim C.ValTy)  SId where ValTy  = sValTy
+pattern CompTy    <- Rigid (RHPrim C.CompTy) SId where CompTy = sCompTy
+pattern ElVal  a   = Rigid (RHPrim C.ElVal) (SId `SAppE` a)
+pattern ElComp a   = Rigid (RHPrim C.ElComp) (SId `SAppE` a)
+pattern Eq a x y   = Rigid (RHPrim C.Eq) (SId `SAppI` a `SAppE` x `SAppE` y)
+pattern Refl a x   = Rigid (RHPrim C.Refl) (SId `SAppI` a `SAppI` x)
+pattern Fun0 a b   = Rigid (RHPrim C.Fun0) (SId `SAppI` a `SAppI` b)
+
 {-# inline Set #-}
-{-# inline Prop #-}
 {-# inline Ty #-}
 {-# inline ValTy #-}
 {-# inline CompTy #-}
 
-pattern FCoe m a b p x = Flex (FHCoe m a b p x) SId
+infixr 1 ∙>
+(∙>) a b = PiE N_ a \_ -> b
+infixr 1 ∘>
+(∘>) a b = PiI N_ a \_ -> b
 
--- {-# inline UCoe #-}
--- pattern UCoe a b p x v <- Unfold (UHCoe a b p x) SId v where
---   UCoe a b p x ~v = Unfold (UHCoe a b p x) SId v
-
-infixr 1 ∙∙>
-(∙∙>) :: Val -> Val -> Val
-(∙∙>) a b = PiES N_ a \_ -> b
-
-infixr 1 ∙∘>
-(∙∘>) :: Val -> Val -> Val
-(∙∘>) a b = PiEP N_ a \_ -> b
-
-infixr 1 ∘∙>
-(∘∙>) :: Val -> Val -> Val
-(∘∙>) a b = PiIS N_ a \_ -> b
-
-infixr 1 ∘∘>
-(∘∘>) :: Val -> Val -> Val
-(∘∘>) a b = PiIP N_ a \_ -> b
-
-data G = G {g1 :: Val, g2 :: Val}
-type GTy = G
+data G    = G {g1 :: Val, g2 :: Val}
+type GTy  = G
 type GVal = G
 
 gjoin :: Val -> G
 gjoin v = G v v
-
-spVal :: SP -> Val
-spVal S = Set
-spVal P = Prop
 
 data Env = ENil | EDef Env ~Val | EDef0 Env Lvl deriving Show
 type EnvArg = (?env :: Env)
@@ -232,10 +175,4 @@ instance Sized Env where
     go acc (EDef e _)  = go (acc + 1) e
     go acc (EDef0 e _) = go (acc + 1) e
 
-gSet = G Set Set
-gProp = G Prop Prop
-
---------------------------------------------------------------------------------
-
-makeFields ''NIClosure
-makeFields ''NClosure
+makeFields ''ClosureI

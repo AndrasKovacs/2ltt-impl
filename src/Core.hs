@@ -1,9 +1,8 @@
 
 module Core where
 
-import {-# source #-} Value
-
 import Common
+import {-# source #-} Value
 
 data Bind a = Bind {
     bindName :: Name
@@ -79,21 +78,17 @@ data Tm
   | RecTy  {-# nounpack #-} RecInfo
   | TopDef {-# nounpack #-} DefInfo
   | Meta MetaVar
-  | Let Ty SP Tm (Bind Tm)
-  | Pi Ty SP (BindI Tm)
+  | Let Ty Tm (Bind Tm)
+  | Pi Ty (BindI Tm)
   | Prim Prim
-  | App Tm Tm Icit SP -- TODO: pack Icit and SP
-  | Lam Ty SP (BindI Tm)
+  | App Tm Tm Icit
+  | Lam Ty (BindI Tm)
   | Project Tm Proj
   | Quote Tm0
 
-instance Apply Tm (Tm, Icit, SP) Tm where
-  {-# inline (∘) #-}
-  (∘) t (u, i, sp) = App t u i sp
-
-{-# inline coe #-}
-coe a b p t = Prim Coe ∘∙ a ∘∙ b ∙∘ p ∙∙ t
-
+instance Apply Tm Tm Tm where
+  {-# inline (∙∘) #-}
+  (∙∘) t (u,i) = App t u i
 
 makeFields ''Bind
 makeFields ''BindI

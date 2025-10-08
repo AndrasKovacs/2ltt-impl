@@ -94,9 +94,6 @@ atom' = $(switch' [| case _ of
   "ValTy"  -> \(Span l r) -> pure $ ValTy l r
   "ElVal"  -> \(Span l r) -> pure $ ElVal l r
   "ElComp" -> \(Span l r) -> pure $ ElComp l r
-  "Prop"   -> \(Span l r) -> pure $ Prop l r
-  "Bot"    -> \(Span l r) -> pure $ Bot l r
-  "⊥"      -> \(Span l r) -> pure $ Bot l r
   "_"      -> \(Span l r) -> pure $ Inferred l
   "?"      -> \(Span l r) -> pure $ Hole l
   "↑"      -> \(Span l r) -> pure $ Lift l r
