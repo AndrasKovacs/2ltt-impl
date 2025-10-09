@@ -90,6 +90,9 @@ instance Apply Tm Tm Tm where
   {-# inline (∙∘) #-}
   (∙∘) t (u,i) = App t u i
 
+pattern AppE t u = App t u Expl
+pattern AppI t u = App t u Impl
+
 makeFields ''Bind
 makeFields ''BindI
 makeFields ''DefInfo

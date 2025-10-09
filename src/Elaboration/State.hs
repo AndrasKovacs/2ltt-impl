@@ -3,7 +3,6 @@ module Elaboration.State where
 
 import qualified Data.Array.Dynamic.L as ADL
 import qualified Data.Ref.F as RF
-import qualified Data.Ref.L as RL
 import qualified Data.Vector.Mutable as VM
 import qualified Data.Vector.Hashtables as HT
 import qualified Data.Primitive.MutVar as P
@@ -70,6 +69,25 @@ resetMetaCxt size = do
   if size < currSize then ADL.pop metaCxt >> resetMetaCxt size
                      else pure ()
 
+-- Frozen metas
+--------------------------------------------------------------------------------
+
+frozen :: RF.Ref MetaVar
+frozen = runIO $ RF.new 0
+{-# noinline frozen #-}
+
+-- | Freeze all current metas, return size of metacontext.
+freezeMetas :: IO MetaVar
+freezeMetas = do
+  frz <- nextMeta
+  RF.write frozen frz
+  pure frz
+
+isFrozen :: MetaVar -> IO Bool
+isFrozen x = do
+  frz <- RF.read frozen
+  pure $! x < frz
+
 -- Identifier scope
 --------------------------------------------------------------------------------
 
@@ -131,44 +149,26 @@ resetIS = do
 -- TODO
 
 
-
--- Frozen metas
+-- Unique ID for top-level entities
 --------------------------------------------------------------------------------
 
-frozen :: RF.Ref MetaVar
-frozen = runIO $ RF.new 0
-{-# noinline frozen #-}
+uidRef :: RF.Ref Int
+uidRef = runIO $ RF.new 0
+{-# noinline uidRef #-}
 
--- | Freeze all current metas, return size of metacontext.
-freezeMetas :: IO MetaVar
-freezeMetas = do
-  frz <- nextMeta
-  RF.write frozen frz
-  pure frz
+newUid :: IO Int
+newUid = do
+  i <- RF.read uidRef
+  RF.write uidRef (i + 1)
+  pure i
 
-isFrozen :: MetaVar -> IO Bool
-isFrozen x = do
-  frz <- RF.read frozen
-  pure $! x < frz
-
-
--- Source of code being elaborated
---------------------------------------------------------------------------------
-
-elabSource :: RL.Ref (Maybe Src)
-elabSource = runIO $ RL.new Nothing
-{-# noinline elabSource #-}
-
-readElabSource :: IO (Maybe Src)
-readElabSource = RL.read elabSource
-
-writeElabSource :: Maybe Src -> IO ()
-writeElabSource msrc = RL.write elabSource msrc
 
 -- Benchmarking
 --------------------------------------------------------------------------------
 
 -- TODO
+
+
 
 
 --------------------------------------------------------------------------------
@@ -178,4 +178,4 @@ reset = do
   ADL.clear metaCxt
   RF.write frozen 0
   resetIS
-  writeElabSource Nothing
+  RF.write uidRef 0

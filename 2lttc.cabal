@@ -53,6 +53,7 @@ executable 2lttc
       Parser.Prototype.Pratt
       Parser.Prototype.Proto
       Presyntax
+      Pretty
       Unification
       Utils.Fusion
       Utils.State

@@ -146,6 +146,7 @@ implicit p = FP.withOption bracel'
 data SomeSpine where
   SomeSpine :: Sing b -> Spine b -> SomeSpine
 
+-- TODO: trailing lambdas in spines
 spTail :: Parser SomeSpine
 spTail =
   FP.withOption operator'
@@ -163,7 +164,7 @@ spTail =
       (pure $ SomeSpine STrue SNil)
     )
 
--- TODO: errors
+-- TODO: better errors
 spine :: Parser Tm
 spine = do
   FP.withOption operator'

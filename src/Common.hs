@@ -188,6 +188,12 @@ instance Traversable List where
     go Nil         = pure Nil
     go (Cons a as) = Cons ! f a ∙ go as
 
+indexList :: List a -> Ix -> a
+indexList as x = case (as, x) of
+  (Cons a as, 0) -> a
+  (Cons _ as, x) -> indexList as (x - 1)
+  _              -> uf
+
 
 -- reasonable monadic looping (forM_ and traverse are often compiled in shitty ways)
 --------------------------------------------------------------------------------
