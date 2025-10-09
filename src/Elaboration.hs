@@ -2,7 +2,7 @@
 
 module Elaboration where
 
-import Common hiding (Set, Prop)
+import Common hiding (Set)
 import Core (Tm, Ty, Tm0, LocalsArg, Locals(..))
 import Value
 import Evaluation
@@ -11,6 +11,7 @@ import Elaboration.State
 import qualified Presyntax as P
 import qualified Common as C
 import qualified Core as C
+import Unification
 
 --------------------------------------------------------------------------------
 
@@ -21,12 +22,12 @@ forceElab :: Elab a -> Elab a
 forceElab act = seq ?lvl (seq ?env (seq ?locals (seq ?src act)))
 
 {-# inline define #-}
-define :: Name -> Ty -> GTy -> Tm -> GVal -> Elab (IO a) -> Elab (IO a)
-define x a ga t gt act =
+define :: Name -> Ty -> VTy -> Tm -> Val -> Elab (IO a) -> Elab (IO a)
+define x a va t vt act =
   let ?lvl    = ?lvl + 1
-      ?env    = EDef ?env (g1 gt)
+      ?env    = EDef ?env vt
       ?locals = LDef ?locals x t a
-  in forceElab $ localDefineIS x ga act
+  in forceElab $ localDefineIS x va act
 
 {-# inline forcePTm #-}
 forcePTm :: P.Tm -> (SpanArg => P.Tm -> a) -> a
@@ -43,7 +44,7 @@ bindToName = \case
 
 --------------------------------------------------------------------------------
 
-checkMaybe :: Elab (Maybe P.Tm -> GTy -> IO Tm)
+checkMaybe :: Elab (Maybe P.Tm -> VTy -> IO Tm)
 checkMaybe t a = case t of
   Nothing -> uf
   Just t  -> check t a
@@ -51,7 +52,7 @@ checkMaybe t a = case t of
 inferTy :: Elab (P.Tm -> IO Ty)
 inferTy t = forcePTm t \case
   P.Let _ S1 (bindToName -> x) a t u -> do
-    a <- checkMaybe a gSet
+    a <- checkMaybe a Set
     uf
 
 -- checkLams :: Elab (List P.MultiBind -> P.Tm -> VTy -> SP -> NIClosure -> IO Tm)
@@ -60,25 +61,28 @@ inferTy t = forcePTm t \case
 --   Cons (P.MultiBind (Single (bindToName -> x)) i ma) bindss -> do
 --     _
 
-check :: Elab (P.Tm -> GTy -> IO Tm)
-check t gtopA@(G topA ftopA) = forcePTm t \case
+check :: Elab (P.Tm -> VTy -> IO Tm)
+check t topA = forcePTm t \case
   P.Let _ S1 (bindToName -> x) ma t u -> do
-    a <- checkMaybe a gSet
-    let ga = geval a
-    t <- check t ga
-    let gt = geval t
-    u <- define x a ga t gt $ check u gtopA
+    a <- checkMaybe ma Set
+    let va = eval a
+    t <- check t va
+    let vt = eval t
+    u <- define x a va t vt $ check u topA
     pure $ C.Let a t (C.Bind x u)
 
-  t -> case (t, whnf ftopA) of
+  P.Hole _ ->
+    freshMeta topA
 
-    (P.Lam pos Nil t, Pi a b) -> impossible
+  -- t -> case (t, whnf ftopA) of
 
-    -- matching icit
-    (P.Lam pos (Cons (P.MultiBind (Single (bindToName -> x)) i ma) bindss) t, Pi a b) | i == b^.icit ->
-      _
+  --   (P.Lam pos Nil t, Pi a b) -> impossible
 
-    -- (t, Pi a as b) | b^.icit == Impl -> uf
+  --   -- matching icit
+  --   (P.Lam pos (Cons (P.MultiBind (Single (bindToName -> x)) i ma) bindss) t, Pi a b) | i == b^.icit ->
+  --     uf
+
+  --   -- (t, Pi a as b) | b^.icit == Impl -> uf
 
 infer :: Elab (P.Tm -> IO (Tm, GTy))
 infer t = uf

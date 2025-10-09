@@ -8,23 +8,25 @@ import qualified Core as C
 import Value
 import Elaboration.State
 
+{-# inline def #-}
 def :: Val -> (Val -> EnvArg => a) -> EnvArg => a
 def v k = let ?env = EDef ?env v in k v
-{-# inline def #-}
 
+{-# inline def0 #-}
 def0 :: Lvl -> (Lvl -> EnvArg => a) -> EnvArg => a
 def0 v k = let ?env = EDef0 ?env v in k v
-{-# inline def0 #-}
 
+{-# inline fresh #-}
 fresh :: (LvlArg => Val -> a) -> LvlArg => a
-fresh k =
-  let v = LocalVar ?lvl in
-  let ?lvl = ?lvl + 1 in
-  k v
+fresh k = let v = LocalVar ?lvl in let ?lvl = ?lvl + 1 in k v
 
+{-# inline freshLvl #-}
+freshLvl :: (LvlArg => Lvl -> a) -> LvlArg => a
+freshLvl k = let v = ?lvl in let ?lvl = v + 1 in k v
+
+{-# inline defLazy #-}
 defLazy :: Val -> (EnvArg => a) -> EnvArg => a
 defLazy ~v k = let ?env = EDef ?env v in k
-{-# inline defLazy #-}
 
 class Eval a b | a -> b where
   eval :: EnvArg => a -> b
@@ -37,7 +39,7 @@ instance Eval Ix Val where
     go _           _ = impossible
 
 {-# inline geval #-}
-geval :: Eval a Val =>  EnvArg => a -> G
+geval :: Eval a Val => EnvArg => a -> G
 geval a = gjoin (eval a)
 
 instance Eval C.TConInfo Val where eval x = x^.value
@@ -152,6 +154,9 @@ instance Eval C.Tm Val where
     C.Quote t      -> quote (eval t)
     C.Meta m       -> eval m
 
+eval0 :: Eval a b => a -> b
+eval0 a = let ?env = ENil in eval a
+
 -- Forcing
 --------------------------------------------------------------------------------
 
@@ -181,3 +186,70 @@ force = \case
     True -> force $ spine v sp      -- inline meta
     _    -> Unfold (UHMeta m) sp v  -- noinline meta
   v -> v
+
+
+-- Readback
+--------------------------------------------------------------------------------
+
+class ReadBack a b | a -> b where
+  readb :: LvlArg => UnfoldArg => a -> b
+
+readBack0 :: ReadBack a b => Unfold -> a -> b
+readBack0 uf a = let ?unfold = uf; ?lvl = 0 in readb a
+
+instance ReadBack Lvl Ix where
+  readb = lvlToIx ?lvl
+
+instance ReadBack RigidHead C.Tm where
+  readb = \case
+    RHLocalVar x -> C.LocalVar (readb x)
+    RHPrim p     -> C.Prim p
+    RHDCon i     -> C.DCon i
+    RHTCon i     -> C.TCon i
+    RHRecTy i    -> C.RecTy i
+    RHRec i      -> C.RecCon i
+
+instance ReadBack UnfoldHead C.Tm where
+  readb = \case
+    UHMeta m     -> C.Meta m
+    UHTopDef i _ -> C.TopDef i
+
+instance ReadBack MetaVar C.Tm where
+  readb = C.Meta
+
+instance ReadBack Spine (C.Tm -> C.Tm) where
+  readb t h = case t of
+    SId          -> h
+    SApp t u i   -> C.App (readb t h) (readb u) i
+    SProject t p -> C.Project (readb t h) p
+
+instance ReadBack ClosureI (C.BindI C.Tm) where
+  readb (ClI x i t) = fresh \v -> C.BindI x i (readb (t v))
+
+instance ReadBack Closure0 (C.Bind C.Tm0) where
+  readb (Cl0 x t) = freshLvl \l -> C.Bind x (readb (t l))
+
+instance ReadBack Val0 C.Tm0 where
+  readb = \case
+    LocalVar0 x  -> C.LocalVar0 (readb x)
+    TopDef0 i    -> C.TopDef0 i
+    DCon0 i      -> C.DCon0 i
+    App0 t u     -> C.App0 (readb t) (readb u)
+    Lam0 a t     -> C.Lam0 (readb a) (readb t)
+    Decl0 a t    -> C.Decl0 (readb a) (readb t)
+    Project0 t p -> C.Project0 (readb t) p
+    Splice t     -> C.Splice (readb t)
+
+instance ReadBack Val C.Tm where
+  readb t =
+    let t' = case ?unfold of
+          UnfoldAll   -> whnf t
+          UnfoldNone  -> force t
+          UnfoldMetas -> whmnf t
+    in case t' of
+      Rigid h sp    -> readb sp (readb h)
+      Flex h sp     -> readb sp (readb h)
+      Unfold h sp _ -> readb sp (readb h)
+      Pi a b        -> C.Pi (readb a) (readb b)
+      Lam a t       -> C.Lam (readb a) (readb t)
+      Quote t       -> C.Quote (readb t)

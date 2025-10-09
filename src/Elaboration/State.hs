@@ -8,23 +8,22 @@ import qualified Data.Vector.Hashtables as HT
 import qualified Data.Primitive.MutVar as P
 
 import Common
-import Core (Tm, Ty, Locals, LocalsArg)
+import Core (Tm, Locals, LocalsArg)
 import qualified Core as C
-import Value (Val, VTy, GTy)
--- import qualified Value as V
+import Value (Val, VTy)
 
 -- Metacontext
 --------------------------------------------------------------------------------
 
 data Unsolved = Unsolved {
-    unsolvedTy     :: Ty
+    unsolvedTy     :: VTy
   , unsolvedLocals :: Locals
   }
 makeFields ''Unsolved
 
 data Solved = Solved {
     solvedOccursCache :: RF.Ref MetaVar
-  , solvedLocals      :: C.Locals
+  , solvedLocals      :: Locals
   , solvedSolution    :: Tm
   , solvedSolutionVal :: Val
   , solvedTy          :: VTy
@@ -55,7 +54,7 @@ writeMeta :: MetaVar -> MetaEntry -> IO ()
 writeMeta (MkMetaVar i) e = ADL.write metaCxt i e
 {-# inline writeMeta #-}
 
-newMeta :: LocalsArg => Ty -> IO MetaVar
+newMeta :: LocalsArg => VTy -> IO MetaVar
 newMeta a = do
   s <- ADL.size metaCxt
   ADL.push metaCxt (MEUnsolved (Unsolved a ?locals))
@@ -94,7 +93,7 @@ isFrozen x = do
 data LocalInfo = LI {
     localInfoName :: Name
   , localInfoLvl  :: Lvl
-  , localInfoGTy  :: GTy
+  , localInfoVTy  :: VTy
   }
 makeFields ''LocalInfo
 
@@ -128,7 +127,7 @@ localDefineDelete x = HT.alter identScope go x where
   go _                    = impossible
 
 {-# inline localDefineIS #-}
-localDefineIS :: LvlArg => Name -> GTy -> IO a -> IO a
+localDefineIS :: LvlArg => Name -> VTy -> IO a -> IO a
 localDefineIS x a act = do
   localDefineInsert (LI x ?lvl a) x
   res <- act
