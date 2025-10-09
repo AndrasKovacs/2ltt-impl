@@ -43,16 +43,15 @@ bindToName = \case
 
 --------------------------------------------------------------------------------
 
-checkMaybe :: Elab (Maybe P.Tm -> GTy -> SP -> IO Tm)
-checkMaybe t a sp = case t of
+checkMaybe :: Elab (Maybe P.Tm -> GTy -> IO Tm)
+checkMaybe t a = case t of
   Nothing -> uf
-  Just t  -> check t a sp
+  Just t  -> check t a
 
-inferTy :: Elab (P.Tm -> IO (Ty, SP))
+inferTy :: Elab (P.Tm -> IO Ty)
 inferTy t = forcePTm t \case
   P.Let _ S1 (bindToName -> x) a t u -> do
-    (a, as) <- case a of Nothing -> uf
-                         Just a  -> inferTy a
+    a <- checkMaybe a gSet
     uf
 
 -- checkLams :: Elab (List P.MultiBind -> P.Tm -> VTy -> SP -> NIClosure -> IO Tm)
@@ -61,29 +60,28 @@ inferTy t = forcePTm t \case
 --   Cons (P.MultiBind (Single (bindToName -> x)) i ma) bindss -> do
 --     _
 
-check :: Elab (P.Tm -> GTy -> SP -> IO Tm)
-check t gtopA@(G topA ftopA) sp = forcePTm t \case
+check :: Elab (P.Tm -> GTy -> IO Tm)
+check t gtopA@(G topA ftopA) = forcePTm t \case
   P.Let _ S1 (bindToName -> x) ma t u -> do
-    (a, as) <- case ma of Nothing -> uf
-                          Just a  -> inferTy a
+    a <- checkMaybe a gSet
     let ga = geval a
-    t <- check t ga as
+    t <- check t ga
     let gt = geval t
-    u <- define x a ga t gt $ check u gtopA sp
-    pure $ C.Let a as t (C.Bind x u)
+    u <- define x a ga t gt $ check u gtopA
+    pure $ C.Let a t (C.Bind x u)
 
   t -> case (t, whnf ftopA) of
 
-    (P.Lam pos Nil t, Pi a as b) -> impossible
+    (P.Lam pos Nil t, Pi a b) -> impossible
 
     -- matching icit
-    (P.Lam pos (Cons (P.MultiBind (Single (bindToName -> x)) i ma) bindss) t, Pi a as b) | i == b^.icit ->
+    (P.Lam pos (Cons (P.MultiBind (Single (bindToName -> x)) i ma) bindss) t, Pi a b) | i == b^.icit ->
       _
 
     -- (t, Pi a as b) | b^.icit == Impl -> uf
 
-infer :: Elab (P.Tm -> SP -> IO (Tm, GTy))
-infer t s = uf
+infer :: Elab (P.Tm -> IO (Tm, GTy))
+infer t = uf
 
 
 check0 :: Elab (P.Tm -> GTy -> IO Tm0)

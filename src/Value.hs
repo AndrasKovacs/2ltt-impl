@@ -2,7 +2,7 @@
 module Value where
 
 import GHC.Word
-import Common
+import Common hiding (Set)
 import qualified Common as C
 import {-# SOURCE #-} Core (DefInfo, TConInfo, DConInfo, DCon0Info, Def0Info, RecInfo)
 
@@ -165,6 +165,9 @@ type GVal = G
 
 gjoin :: Val -> G
 gjoin v = G v v
+
+gSet :: GTy
+gSet = G Set Set
 
 data Env = ENil | EDef Env ~Val | EDef0 Env Lvl deriving Show
 type EnvArg = (?env :: Env)
