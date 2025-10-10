@@ -192,8 +192,14 @@ indexList :: List a -> Ix -> a
 indexList as x = case (as, x) of
   (Cons a as, 0) -> a
   (Cons _ as, x) -> indexList as (x - 1)
-  _              -> uf
+  _              -> impossible
 
+{-# inline updateAt #-}
+updateAt :: Ix -> List a -> (a -> a) -> List a
+updateAt i as f = go i as where
+  go 0 (Cons a as) = Cons (f a) as
+  go i (Cons a as) = Cons a (go (i - 1) as)
+  go _ _           = impossible
 
 -- reasonable monadic looping (forM_ and traverse are often compiled in shitty ways)
 --------------------------------------------------------------------------------

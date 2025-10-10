@@ -17,15 +17,16 @@ import Value (VTy)
 
 data Unsolved = Unsolved {
     unsolvedLocals :: Locals
-  , unsolvedTy     :: Ty
+  , unsolvedTy     :: Ty       -- the type is under the Locals
   }
 makeFields ''Unsolved
 
+-- TODO: optimize closed solutions by using call-by-need instead of call-by-name?
 data Solved = Solved {
     solvedLocals      :: Locals
   , solvedTy          :: Ty
-  , solvedSolution    :: Tm
-  , solvedIsInline    :: Bool
+  , solvedSolution    :: Tm     -- the type and solution are under the Locals
+  , solvedIsInline    :: Bool   -- should we immediately unfold the meta
   , solvedOccursCache :: RF.Ref MetaVar
   }
 makeFields ''Solved
