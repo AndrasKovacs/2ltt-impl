@@ -17,10 +17,14 @@ data RigidHead
   | RHRec   {-# nounpack #-} RecInfo
   deriving Show
 
+data MetaHead = MetaHead MetaVar Env
+  deriving Show
+
 -- delayed unfoldings
 data UnfoldHead
-  = UHMeta MetaVar                          -- solved meta
-  | UHTopDef {-# nounpack #-} DefInfo ~Val  -- top definition
+  = UHMeta MetaHead
+  | UHTopDef {-# nounpack #-} DefInfo
+  | UHLocalDef Lvl
   deriving Show
 
 data Spine
@@ -111,7 +115,7 @@ data Val0
 
 data Val
   = Rigid RigidHead Spine
-  | Flex MetaVar Spine
+  | Flex {-# nounpack #-} MetaHead Spine
   | Unfold UnfoldHead Spine ~Val
   | Pi VTy ClosureI
   | Lam VTy ClosureI
@@ -169,13 +173,22 @@ gjoin v = G v v
 gSet :: GTy
 gSet = G Set Set
 
-data Env = ENil | EDef Env ~Val | EDef0 Env Lvl deriving Show
+data Env
+  = ENil
+  | ELet Env  Val -- ^ Let-definition in outer local scope
+                  --   NOTE: the value here is already the Unfold that we want to lookup!
+                  --   To get the definition body, we have to project from the Unfold.
+  | EDef Env ~Val -- ^ Meta-stage binder
+  | EDef0 Env Lvl -- ^ Object binder, only supports renaming.
+  deriving Show
+
 type EnvArg = (?env :: Env)
 
 instance Sized Env where
   size = go 0 where
     go acc ENil        = acc
     go acc (EDef e _)  = go (acc + 1) e
+    go acc (ELet e _)  = go (acc + 1) e
     go acc (EDef0 e _) = go (acc + 1) e
 
 makeFields ''ClosureI

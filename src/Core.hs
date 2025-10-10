@@ -70,6 +70,16 @@ data Tm0
 
 type Ty = Tm
 
+data TmEnv
+  = TENil
+  | TELet TmEnv Tm
+  | TEDef TmEnv Tm
+  | TEDef0 TmEnv Ix
+
+data MetaSub
+  = MSId             -- ^ Identity substitution
+  | MSSub TmEnv
+
 data Tm
   = LocalVar Ix
   | TCon   {-# nounpack #-} TConInfo
@@ -77,7 +87,7 @@ data Tm
   | RecCon {-# nounpack #-} RecInfo
   | RecTy  {-# nounpack #-} RecInfo
   | TopDef {-# nounpack #-} DefInfo
-  | Meta MetaVar
+  | Meta MetaVar MetaSub
   | Let Ty Tm (Bind Tm)
   | Pi Ty (BindI Tm)
   | Prim Prim
@@ -112,6 +122,8 @@ instance Show Def0Info  where show x = show (x^.name)
 instance Show Rec0Info  where show x = show (x^.name)
 instance Show TCon0Info where show x = show (x^.name)
 instance Show DCon0Info where show x = show (x^.name)
+deriving instance Show TmEnv
+deriving instance Show MetaSub
 deriving instance Show Tm
 deriving instance Show Tm0
 instance Eq RecInfo   where x == y = x^.uid == y^.uid

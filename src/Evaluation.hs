@@ -1,5 +1,4 @@
 
-
 module Evaluation where
 
 import Common hiding (Prim(..))
@@ -31,12 +30,22 @@ defLazy ~v k = let ?env = EDef ?env v in k
 class Eval a b | a -> b where
   eval :: EnvArg => a -> b
 
-instance Eval Ix Val where
-  eval x = go ?env x where
-    go (EDef _ v)  0 = v
-    go (EDef e _)  x = go e (x - 1)
-    go (EDef0 e _) x = go e (x - 1)
-    go _           _ = impossible
+lookupIx :: EnvArg => Ix -> Val
+lookupIx x = go ?env x where
+  go (EDef _ v)  0 = v
+  go (ELet _ v)  0 = v
+  go (EDef e _)  x = go e (x - 1)
+  go (EDef0 e _) x = go e (x - 1)
+  go (ELet e _)  x = go e (x - 1)
+  go _           _ = impossible
+
+lookupIx0 :: EnvArg => Ix -> Lvl
+lookupIx0 x = go ?env x where
+  go (EDef0 _ l) 0 = l
+  go (EDef e _)  x = go e (x - 1)
+  go (EDef0 e _) x = go e (x - 1)
+  go (ELet e _)  x = go e (x - 1)
+  go _           _ = impossible
 
 {-# inline geval #-}
 geval :: Eval a Val => EnvArg => a -> G
@@ -117,42 +126,52 @@ splice = \case
   Quote t -> t
   t       -> Splice t
 
+meta :: MetaVar -> Env -> Val
+meta m e =
+  let h = MetaHead m e in
+  unblock h (Flex h SId) \ ~v -> \case
+    True  -> v
+    False -> Unfold (UHMeta h) SId v
+
+instance Eval C.TmEnv Env where
+  eval = \case
+    C.TENil      -> ENil
+    C.TELet e t  -> ELet (eval e) (eval t)
+    C.TEDef e t  -> EDef (eval e) (eval t)
+    C.TEDef0 e x -> EDef0 (eval e) (lookupIx0 x)
+
+instance Eval C.MetaSub Env where
+  eval = \case
+    C.MSId    -> ?env
+    C.MSSub s -> eval s
+
 instance Eval C.Tm0 Val0 where
   eval = \case
-    C.LocalVar0 x -> go ?env x where
-       go (EDef0 _ v) 0 = LocalVar0 v
-       go (EDef e _)  x = go e (x - 1)
-       go (EDef0 e _) x = go e (x - 1)
-       go _           _ = impossible
-    C.TopDef0 di     -> TopDef0 di
-    C.DCon0 di       -> DCon0 di
-    C.Project0 t p   -> Project0 (eval t) p
-    C.App0 t u       -> App0 (eval t) (eval u)
-    C.Lam0 a t       -> Lam0 (eval a) (eval t)
-    C.Decl0 a t      -> Decl0 (eval a) (eval t)
-    C.Splice t       -> splice (eval t)
-
-instance Eval MetaVar Val where
-  eval m = unblock m (Flex m SId) \ ~v -> \case
-    True  -> v
-    False -> Unfold (UHMeta m) SId v
+    C.LocalVar0 x  -> LocalVar0 (lookupIx0 x)
+    C.TopDef0 di   -> TopDef0 di
+    C.DCon0 di     -> DCon0 di
+    C.Project0 t p -> Project0 (eval t) p
+    C.App0 t u     -> App0 (eval t) (eval u)
+    C.Lam0 a t     -> Lam0 (eval a) (eval t)
+    C.Decl0 a t    -> Decl0 (eval a) (eval t)
+    C.Splice t     -> splice (eval t)
 
 instance Eval C.Tm Val where
   eval = \case
-    C.LocalVar x   -> eval x
-    C.TCon ci      -> eval ci
-    C.DCon ci      -> eval ci
-    C.RecTy ri     -> eval ri
-    C.RecCon ri    -> eval ri
-    C.TopDef di    -> eval di
-    C.Let _ t u    -> def (eval t) \v -> eval u ∙ v
-    C.Pi a b       -> Pi (eval a) (eval b)
-    C.Prim p       -> eval p
-    C.App t u i    -> eval t ∙∘ (eval u, i)
-    C.Lam a t      -> Lam (eval a) (eval t)
-    C.Project t p  -> proj (eval t) p
-    C.Quote t      -> quote (eval t)
-    C.Meta m       -> eval m
+    C.LocalVar x  -> lookupIx x
+    C.TCon ci     -> eval ci
+    C.DCon ci     -> eval ci
+    C.RecTy ri    -> eval ri
+    C.RecCon ri   -> eval ri
+    C.TopDef di   -> eval di
+    C.Let _ t u   -> def (eval t) \v -> eval u ∙ v
+    C.Pi a b      -> Pi (eval a) (eval b)
+    C.Prim p      -> eval p
+    C.App t u i   -> eval t ∙∘ (eval u, i)
+    C.Lam a t     -> Lam (eval a) (eval t)
+    C.Project t p -> proj (eval t) p
+    C.Quote t     -> quote (eval t)
+    C.Meta m sub  -> meta m (eval sub)
 
 eval0 :: Eval a b => a -> b
 eval0 a = let ?env = ENil in eval a
@@ -161,10 +180,11 @@ eval0 a = let ?env = ENil in eval a
 --------------------------------------------------------------------------------
 
 {-# inline unblock #-}
-unblock :: MetaVar -> a -> (Val -> Bool -> a) -> a
-unblock m deflt k = case lookupMeta m of
+unblock :: MetaHead -> a -> (Val -> Bool -> a) -> a
+unblock (MetaHead m env) deflt k = case lookupMeta m of
   MEUnsolved x -> deflt
-  MESolved x   -> k (x^.solutionVal) (x^.isInline)
+  MESolved x   -> let ~v = (let ?env = env in eval (x^.solution)) in
+                  k v (x^.isInline)
 
 -- discard all unfoldings
 whnf :: Val -> Val
@@ -211,11 +231,21 @@ instance ReadBack RigidHead C.Tm where
 
 instance ReadBack UnfoldHead C.Tm where
   readb = \case
-    UHMeta m     -> C.Meta m
-    UHTopDef i _ -> C.TopDef i
+    UHMeta m     -> readb m
+    UHTopDef i   -> C.TopDef i
+    UHLocalDef l -> C.LocalVar (readb l)
 
-instance ReadBack MetaVar C.Tm where
-  readb = C.Meta
+instance ReadBack Env C.MetaSub where
+  readb e = C.MSSub (go e) where
+    go :: LvlArg => Env -> C.TmEnv
+    go = \case
+      ENil      -> C.TENil
+      ELet e v  -> C.TELet (go e) (readb v)
+      EDef e v  -> C.TEDef (go e) (readb v)
+      EDef0 e l -> C.TEDef0 (go e) (readb l)
+
+instance ReadBack MetaHead C.Tm where
+  readb (MetaHead m env) = C.Meta m (readb env)
 
 instance ReadBack Spine (C.Tm -> C.Tm) where
   readb t h = case t of

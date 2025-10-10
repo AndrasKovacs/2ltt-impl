@@ -8,26 +8,25 @@ import qualified Data.Vector.Hashtables as HT
 import qualified Data.Primitive.MutVar as P
 
 import Common
-import Core (Tm, Locals, LocalsArg)
+import Core (Tm, Ty, Locals, LocalsArg)
 import qualified Core as C
-import Value (Val, VTy)
+import Value (VTy)
 
 -- Metacontext
 --------------------------------------------------------------------------------
 
 data Unsolved = Unsolved {
-    unsolvedTy     :: VTy
-  , unsolvedLocals :: Locals
+    unsolvedLocals :: Locals
+  , unsolvedTy     :: Ty
   }
 makeFields ''Unsolved
 
 data Solved = Solved {
-    solvedOccursCache :: RF.Ref MetaVar
-  , solvedLocals      :: Locals
+    solvedLocals      :: Locals
+  , solvedTy          :: Ty
   , solvedSolution    :: Tm
-  , solvedSolutionVal :: Val
-  , solvedTy          :: VTy
   , solvedIsInline    :: Bool
+  , solvedOccursCache :: RF.Ref MetaVar
   }
 makeFields ''Solved
 
@@ -54,10 +53,10 @@ writeMeta :: MetaVar -> MetaEntry -> IO ()
 writeMeta (MkMetaVar i) e = ADL.write metaCxt i e
 {-# inline writeMeta #-}
 
-newMeta :: LocalsArg => VTy -> IO MetaVar
+newMeta :: LocalsArg => Ty -> IO MetaVar
 newMeta a = do
   s <- ADL.size metaCxt
-  ADL.push metaCxt (MEUnsolved (Unsolved a ?locals))
+  ADL.push metaCxt (MEUnsolved (Unsolved ?locals a))
   pure (coerce s)
 {-# inline newMeta #-}
 
