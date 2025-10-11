@@ -30,6 +30,9 @@ defLazy ~v k = let ?env = EDef ?env v in k
 class Eval a b | a -> b where
   eval :: EnvArg => a -> b
 
+evalIn :: Eval a b => Env -> a -> b
+evalIn e a = let ?env = e in eval a
+
 lookupIx :: EnvArg => Ix -> Val
 lookupIx x = go ?env x where
   go (EDef _ v)  0 = v
@@ -59,9 +62,6 @@ instance Eval C.RecInfo  Val where eval x = x^.value
 instance Eval (C.Bind C.Tm0) Closure0 where
   {-# inline eval #-}
   eval (C.Bind x t) = Cl0 x \v -> def0 v \_ -> eval t
-
-instance Eval a b => Eval (List a) (List b) where
-  eval = fmap eval
 
 instance Eval (C.BindI C.Tm) ClosureI where
   {-# inline eval #-}
@@ -159,11 +159,11 @@ instance Eval C.Tm0 Val0 where
 instance Eval C.Tm Val where
   eval = \case
     C.LocalVar x  -> lookupIx x
-    C.TCon ci     -> eval ci
-    C.DCon ci     -> eval ci
-    C.RecTy ri    -> eval ri
-    C.RecCon ri   -> eval ri
-    C.TopDef di   -> eval di
+    C.TCon i      -> eval i
+    C.DCon i      -> eval i
+    C.RecTy i     -> eval i
+    C.Rec i       -> eval i
+    C.TopDef i    -> eval i
     C.Let _ t u   -> def (eval t) \v -> eval u ∙ v
     C.Pi a b      -> Pi (eval a) (eval b)
     C.Prim p      -> eval p
@@ -172,9 +172,6 @@ instance Eval C.Tm Val where
     C.Project t p -> proj (eval t) p
     C.Quote t     -> quote (eval t)
     C.Meta m sub  -> meta m (eval sub)
-
-eval0 :: Eval a b => a -> b
-eval0 a = let ?env = ENil in eval a
 
 -- Forcing
 --------------------------------------------------------------------------------
@@ -214,8 +211,8 @@ force = \case
 class ReadBack a b | a -> b where
   readb :: LvlArg => UnfoldArg => a -> b
 
-readBack0 :: ReadBack a b => Unfold -> a -> b
-readBack0 uf a = let ?unfold = uf; ?lvl = 0 in readb a
+readBack :: ReadBack a b => Lvl -> Unfold -> a -> b
+readBack l uf = let ?lvl = l; ?unfold = uf in readb
 
 instance ReadBack Lvl Ix where
   readb = lvlToIx ?lvl
@@ -227,7 +224,7 @@ instance ReadBack RigidHead C.Tm where
     RHDCon i     -> C.DCon i
     RHTCon i     -> C.TCon i
     RHRecTy i    -> C.RecTy i
-    RHRec i      -> C.RecCon i
+    RHRec i      -> C.Rec i
 
 instance ReadBack UnfoldHead C.Tm where
   readb = \case

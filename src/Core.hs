@@ -84,7 +84,7 @@ data Tm
   = LocalVar Ix
   | TCon   {-# nounpack #-} TConInfo
   | DCon   {-# nounpack #-} DConInfo
-  | RecCon {-# nounpack #-} RecInfo
+  | Rec    {-# nounpack #-} RecInfo
   | RecTy  {-# nounpack #-} RecInfo
   | TopDef {-# nounpack #-} DefInfo
   | Meta MetaVar MetaSub
