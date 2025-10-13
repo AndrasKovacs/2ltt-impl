@@ -206,8 +206,12 @@ force = \case
 class ReadBack a b | a -> b where
   readb :: LvlArg => UnfoldArg => a -> b
 
+{-# inline readBack #-}
 readBack :: ReadBack a b => Lvl -> Unfold -> a -> b
 readBack l uf = let ?lvl = l; ?unfold = uf in readb
+
+readBackNoUnfold :: ReadBack a b => Lvl -> a -> b
+readBackNoUnfold l = readBack l UnfoldNone
 
 instance ReadBack Lvl Ix where
   readb = lvlToIx ?lvl

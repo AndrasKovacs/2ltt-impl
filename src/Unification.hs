@@ -40,6 +40,105 @@ Speculations
 
     - We might just hardwire simple cases like Lift, ElVal and ElComp. And see in practice which
       Libal-Miller problem pop up, to assess the practical benefit.
+
+Optimization for non-escaping metas
+
+  Most metas don't escape the scope of their creation, so we want to optimize for that case.
+  Concretely, the cost of operations on non-escaping metas should not depend on the size of the
+  local scope.
+
+    - fresh meta creation is already O(1) in local scope
+    - TODO metasub inversion should be O(1). We need to represent weakened identity env-s in values,
+      shortcut inversion for that case.
+    - TODO pruning should be O(1). Need to shortcut pruning subst creation if one meta scope is contained
+      in the other one.
+
+Inverting local defs
+
+  Mapping to a defined domain var is an merely an *optimization* whose goal is preserving unfoldings,
+  it can't fail in a hard way.
+
+    - If inversion fails, we can simply continue; the only effect is that the domain definition will
+      be unused in the solution (but may be still used in the solution type).
+      When psubst-ing the solution candidate, we simply unfold those local defs which are not mapped
+      in the psub.
+    - We can invert codomain definitions opportunistically
+
+  Example: "a" and "x" are both defined.
+
+       a
+     α x =? rhs
+     x ↦ a
+     α := λ a. rhs[x↦a]
+
+     We simply rename local definitions.
+
+  Example: "a", "x", "y" are defined
+
+       a
+    α (x, y) =? rhs
+    x ↦ a.1
+    y ↦ a.2
+    α := λ a. rhs[x↦a.1, y↦a.2]
+
+  Codomain local defs behave like bound vars for the purpose of inversion
+  When inversion fails for a defvar-headed spine, we unfold and retry.
+
+  We need two different modes for inversion
+    - mapping to defvar: don't whnf, retry localdef inversion with unfolding
+    - mapping to bvar: always whnf
+
+
+Postponing
+
+  - TODO
+  - Need to track strong rigid/rigid/flex occurrences in errors
+  - Need placeholders metas
+  - NEW: fine-grain blocking: psubst failure gets *locally* replaced with placeholder metas
+    - We bubble up to the outermost rigid or flex context
+    - At *that* point we make a postponed problem and return a placeholder meta
+    - Makes more progress than Agda!
+
+  - Do we want to block on a single meta or more?
+     In psubst, we might fail under multiple metas
+
+  - JUST LEARNED ABOUT AGDA'S ANTI-UNIFICATION
+    - Can we *just* keep unifying telescopes in a syntax-directed setting, by doing
+      absolutely nothing???
+    - Is this "typing modulo"?
+    - IDEA: we relax the homogenity of unification. Since we only need homogenity for syntax-directed
+      eta rules, we only need that:
+        - when one side is Π, the other one is Π too with the same Icit-ness
+        - when one side is a record, the other one is a record with the same arity
+
+    - Does it even work?
+
+         f : (b : Bool) → (if b then (Bool → Bool) else Bool) → C
+
+         f true (λ x. x) =? f (α true) y
+
+         postpone "true =? α true"
+
+         (λ x. x : Bool → Bool) =? (y : if α true then (Bool → Bool) else Bool)
+
+         No, it doesn't work!
+         In Agda, anti-unification works because eta-expansion is type-directed,
+         and it can only happen if both sides have Π/Σ type
+
+    - Lesson: heterogeneous unification can make progress, but it requires computing types
+
+    - Can we use some kind of computing meta-transport, without OTT or cubical, to get
+      progress under postponed equality?
+
+       f : (x : A) → B x → C
+       f t u =? f t' u'
+
+       cast (B t) (B t') u =? u'
+
+       fancy "cast" operation which becomes definitional identity if t ≡ t'
+
+
+
 -}
 
 ----------------------------------------------------------------------------------------------------
@@ -58,13 +157,19 @@ unifyError = throwIO UETodo
 -- Partial values
 ----------------------------------------------------------------------------------------------------
 
--- | These closures abstract over all enclosing lambda binders in a PartialVal.
+-- | Closures abstract over all enclosing lambda binders in a PartialVal.
 newtype PClosure = PCl ([Val] -> Val)
+newtype PClosure0 = PCl0 ([Val] -> Lvl)
 
 instance Show PClosure where showsPrec _ _ acc = "<closure>" ++ acc
 
 instance Apply PClosure [Val] Val where
   (∙∘) (PCl f) (vs,_) = f vs; {-# inline (∙∘) #-}
+
+instance Show PClosure0 where showsPrec _ _ acc = "<closure>" ++ acc
+
+instance Apply PClosure0 [Val] Lvl where
+  (∙∘) (PCl0 f) (vs,_) = f vs; {-# inline (∙∘) #-}
 
 data PartialRecFields
   = PRFNil
@@ -88,19 +193,9 @@ data PartialVal
   = PVTop
   | PVBot
   | PVVal PClosure
+  | PVVal0 PClosure0
   | PVLam PClosure Name Icit PartialVal
   | PVRec {-# nounpack #-} RecInfo PartialRecFields
-  deriving Show
-
-data PartialVal0
-  = PV0Val Lvl
-  | PV0Top
-  | PV0Bot
-  deriving Show
-
-data PSEntry
-  = PSVal PartialVal
-  | PSVal0 PartialVal0
   deriving Show
 
 data Path
@@ -110,12 +205,12 @@ data Path
   deriving Show
 
 data PartialSub = PSub {
-    partialSubOccurs       :: Maybe MetaVar   -- ^ Optional meta occurs check
-  , partialSubAllowPruning :: Bool            -- ^ Can we prune metas
-  , partialSubDomEnv       :: Env             -- ^ Identity environment for the domain
-  , partialSubDom          :: Lvl             -- ^ Domain (size of the map)
-  , partialSubCod          :: Lvl             -- ^ Codomain (next fresh Lvl)
-  , partialSubSub          :: IntMap PSEntry  -- ^ Total map from codomain vars to partial values
+    partialSubOccurs       :: Maybe MetaVar     -- ^ Optional meta occurs check
+  , partialSubAllowPruning :: Bool              -- ^ Can we prune metas
+  , partialSubDomEnv       :: Env               -- ^ Identity environment for the domain
+  , partialSubDom          :: Lvl               -- ^ Domain (size of the map)
+  , partialSubCod          :: Lvl               -- ^ Codomain (next fresh Lvl)
+  , partialSubSub          :: IntMap PartialVal -- ^ Total map from codomain vars to partial values
   }
 makeFields ''PartialSub
 
@@ -151,18 +246,17 @@ lift :: PartialSub -> PartialSub
 lift (PSub occ pr idenv dom cod sub) =
   let var = LocalVar dom in
   PSub occ pr (EDef idenv var) (dom + 1) (cod + 1) $
-    IM.insert (fromIntegral cod) (PSVal $ PVVal $ PCl \_ -> var) sub
+    IM.insert (fromIntegral cod) (PVVal $ PCl \_ -> var) sub
 
 lift0 :: PartialSub -> PartialSub
 lift0 (PSub occ pr idenv dom cod sub) =
   PSub occ pr (EDef0 idenv dom) (dom + 1) (cod + 1) $
-    IM.insert (fromIntegral cod) (PSVal0 $ PV0Val dom) sub
+    IM.insert (fromIntegral cod) (PVVal0 $ PCl0 \_ -> dom) sub
 
 update :: Lvl -> Path -> PClosure -> PartialSub -> PartialSub
 update x path def psub =
-  let ~newpv           = PSVal (extendPVal path def PVBot)
-      ext _ (PSVal pv) = PSVal (extendPVal path def pv)
-      ext _ _          = impossible in
+  let ~newpv   = extendPVal path def PVBot
+      ext _ pv = extendPVal path def pv in
   psub & sub %~ IM.insertWith ext (fromIntegral x) newpv
 
 
@@ -172,20 +266,8 @@ update x path def psub =
 class PSubst a b | a -> b where
   psubst :: PSubArg => a -> b
 
--- instance PSubst Lvl PartialVal where
---   psubst x = case (?psub^.sub) IM.! fromIntegral x of
---     PSVal pv -> pv
---     _        -> impossible
-
-psubstLvl :: PSubArg => Lvl -> PartialVal
-psubstLvl x = case (?psub^.sub) IM.! fromIntegral x of
-  PSVal pv -> pv
-  _        -> impossible
-
-psubstLvl0 :: PSubArg => Lvl -> PartialVal0
-psubstLvl0 x = case (?psub^.sub) IM.! fromIntegral x of
-  PSVal0 pv -> pv
-  _         -> impossible
+instance PSubst Lvl PartialVal where
+  psubst x = (?psub^.sub) IM.! fromIntegral x
 
 instance PSubst Spine (Tm -> IO Tm) where
   psubst t hd = case t of
@@ -199,15 +281,6 @@ instance PSubst RevSpine (Tm -> IO Tm) where
     RSApp t i sp   -> do t <- psubst t; psubst sp (C.App acc t i)
     RSProject p sp -> psubst sp (C.Project acc p)
 
-applyPVal :: PSubArg => PartialVal -> RevSpine -> [Val] -> IO Tm
-applyPVal pv sp args = case (pv, sp) of
-  (PVLam a _ _ pv, RSApp t i sp  ) -> do t <- psubst t
-                                         applyPVal pv sp (evalIn (?psub^.domEnv) t : args)
-  (PVRec i pvs   , RSProject p sp) -> applyPVal (elemAt pvs (p^.index)) sp args
-  (PVVal v       , sp            ) -> psubst sp (readBack (?psub^.dom) UnfoldNone (v ∙ args))
-  (pv            , RSId          ) -> readBack (?psub^.dom) UnfoldNone pv args
-  _                                -> unifyError
-
 -- TODO: detect identity substitution
 instance PSubst Env (IO C.MetaSub) where
   psubst e = C.MSSub ! go e where
@@ -216,18 +289,43 @@ instance PSubst Env (IO C.MetaSub) where
       ENil      -> pure C.TENil
       ELet e v  -> C.TELet  ! go e ∙ psubst v
       EDef e v  -> C.TEDef  ! go e ∙ psubst v
-      EDef0 e x -> C.TEDef0 ! go e ∙ readBack (?psub^.dom) UnfoldNone (psubstLvl0 x)
+      EDef0 e x -> C.TEDef0 ! go e ∙ readBackPDef0 (psubst x)
 
-instance PSubst MetaHead (IO Tm) where
-  psubst (MetaHead m e) = do
-    case ?psub^.occurs of Just m' -> when (m == m') unifyError
-                          _       -> pure ()
-    C.Meta m ! psubst e
+applyPVal :: PSubArg => PartialVal -> RevSpine -> [Val] -> IO Tm
+applyPVal pv sp args = case (pv, sp) of
+  (PVLam a _ _ pv, RSApp t i sp  ) -> do t <- psubst t
+                                         applyPVal pv sp (evalIn (?psub^.domEnv) t : args)
+  (PVRec i pvs   , RSProject p sp) -> applyPVal (elemAt pvs (p^.index)) sp args
+  (PVVal v       , sp            ) -> psubst sp (readBackNoUnfold (?psub^.dom) (v ∙ args))
+  (pv            , RSId          ) -> readBackNoUnfold (?psub^.dom) pv args
+  _                                -> unifyError
+
+readBackPDef0 :: PSubArg => PartialVal -> IO Ix
+readBackPDef0 = \case
+  PVTop    -> unifyError
+  PVBot    -> unifyError
+  PVVal0 x -> pure $! readBackNoUnfold (?psub^.dom) (x ∙ [])
+  _        -> impossible
+
+approxOccursInMeta :: MetaVar -> MetaVar -> IO ()
+approxOccursInMeta occ m = uf
+
+psubstUnsolvedMeta :: PSubArg => MetaHead -> IO Tm
+psubstUnsolvedMeta (MetaHead m e) = do
+  case ?psub^.occurs of Just m' -> when (m == m') unifyError
+                        _       -> pure ()
+  C.Meta m ! psubst e
+
+psubstSolvedMeta :: PSubArg => MetaHead -> IO Tm
+psubstSolvedMeta (MetaHead m e) = do
+  case ?psub^.occurs of Just occ -> approxOccursInMeta occ m
+                        _        -> pure ()
+  C.Meta m ! psubst e
 
 instance PSubst Val (IO Tm) where
   psubst v = case force v of
     Rigid h sp -> case h of
-      RHLocalVar x -> applyPVal (psubstLvl x) (reverseSpine sp) []
+      RHLocalVar x -> applyPVal (psubst x) (reverseSpine sp) []
       RHPrim i     -> psubst sp (C.Prim i)
       RHDCon i     -> psubst sp (C.DCon i)
       RHTCon i     -> psubst sp (C.TCon i)
@@ -235,16 +333,20 @@ instance PSubst Val (IO Tm) where
       RHRec i      -> psubst sp (C.Rec i)
 
     -- TODO: pruning
-    Flex m sp -> do hd <- psubst m; psubst sp hd
+    Flex m sp -> do hd <- psubstUnsolvedMeta m; psubst sp hd
+
+    Unfold h sp v -> do
+      let goHead = case h of
+            UHMeta m     -> psubstSolvedMeta m
+            UHTopDef i   -> pure $ C.TopDef i
+            UHLocalDef x -> applyPVal (psubst x) (reverseSpine sp) []
+      catch @UnifyEx (psubst sp =<< goHead) \_ -> psubst v
+
+    Pi a b -> C.Pi ! psubst a ∙ psubst b
+
 
 -- Readback
 ----------------------------------------------------------------------------------------------------
-
-instance ReadBack PartialVal0 (IO Ix) where
-  readb = \case
-    PV0Val x -> pure $! readb x
-    PV0Top   -> unifyError
-    PV0Bot   -> unifyError
 
 instance ReadBack PartialRecFields ([Val] -> Tm -> IO Tm) where
   readb pvs args hd = case pvs of
