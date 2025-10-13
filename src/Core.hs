@@ -4,6 +4,9 @@ module Core where
 import Common
 import {-# source #-} Value
 
+-- TODO: move info tables to a separate module, so that they can be imported unqualified all the
+-- time.
+
 data DefInfo = DI {
     defInfoValue :: ~Val
   , defInfoName  :: Name
@@ -11,7 +14,7 @@ data DefInfo = DI {
 
 data FieldInfo
   = FINil
-  | FISnoc Name Icit Ty
+  | FISnoc FieldInfo Name Icit Ty
 
 data RecInfo = RI {
     recInfoUid       :: Int

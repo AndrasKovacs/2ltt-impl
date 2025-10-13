@@ -11,7 +11,8 @@ import Evaluation
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 
---------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
+
 {-
 
 Speculations
@@ -41,7 +42,7 @@ Speculations
       Libal-Miller problem pop up, to assess the practical benefit.
 -}
 
---------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
 
 freshMeta :: LocalsArg => Ty -> IO Tm
 freshMeta a = C.Meta ! ES.newMeta a ∙ pure C.MSId
@@ -55,9 +56,9 @@ unifyError = throwIO UETodo
 
 
 -- Partial values
---------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
 
--- | These closures abstract over all enclosing lambda binders in a PartialValue.
+-- | These closures abstract over all enclosing lambda binders in a PartialVal.
 newtype PClosure = PCl ([Val] -> Val)
 
 instance Show PClosure where showsPrec _ _ acc = "<closure>" ++ acc
@@ -76,12 +77,30 @@ instance ElemAt PartialRecFields Ix PartialVal where
     (PRFSnoc pvs _ _, i) -> elemAt pvs (i - 1)
     _                    -> impossible
 
+instance UpdateAt PartialRecFields Ix PartialVal where
+  {-# inline updateAt #-}
+  updateAt pvs ix f = go pvs ix where
+    go (PRFSnoc pvs v i) 0  = PRFSnoc pvs (f v) i
+    go (PRFSnoc pvs v i) ix = PRFSnoc (go pvs (ix - 1)) v i
+    go _                 _  = impossible
+
 data PartialVal
   = PVTop
   | PVBot
   | PVVal PClosure
   | PVLam PClosure Name Icit PartialVal
   | PVRec {-# nounpack #-} RecInfo PartialRecFields
+  deriving Show
+
+data PartialVal0
+  = PV0Val Lvl
+  | PV0Top
+  | PV0Bot
+  deriving Show
+
+data PSEntry
+  = PSVal PartialVal
+  | PSVal0 PartialVal0
   deriving Show
 
 data Path
@@ -91,12 +110,12 @@ data Path
   deriving Show
 
 data PartialSub = PSub {
-    partialSubOccurs       :: Maybe MetaVar        -- ^ Optional meta occurs check
-  , partialSubAllowPruning :: Bool                 -- ^ Can we prune metas during partial substitution
-  , partialSubDomEnv       :: Env                  -- ^ Identity environment for the domain
-  , partialSubDom          :: Lvl                  -- ^ Domain (size of the map)
-  , partialSubCod          :: Lvl                  -- ^ Codomain (next fresh Lvl)
-  , partialSubSub          :: IntMap PartialVal    -- ^ Total map from codomain vars to partial values
+    partialSubOccurs       :: Maybe MetaVar   -- ^ Optional meta occurs check
+  , partialSubAllowPruning :: Bool            -- ^ Can we prune metas
+  , partialSubDomEnv       :: Env             -- ^ Identity environment for the domain
+  , partialSubDom          :: Lvl             -- ^ Domain (size of the map)
+  , partialSubCod          :: Lvl             -- ^ Codomain (next fresh Lvl)
+  , partialSubSub          :: IntMap PSEntry  -- ^ Total map from codomain vars to partial values
   }
 makeFields ''PartialSub
 
@@ -108,43 +127,65 @@ setPSub s act = let ?psub = s in act
 extendPVal :: Path -> PClosure -> PartialVal -> PartialVal
 extendPVal path def pv = go path pv where
 
-  -- -- create record fields of size numFields, where we insert a path at index "i"
-  -- -- and we have PVBot everywhere else
-  -- mkRec :: Ix -> Lvl -> Path -> PartialRecFieldsVal
-  -- mkRec i numFields path = go' (ixToLvl numFields i) numFields Nil where
-  --   go'  0 numFields acc = go'' (numFields - 1) (Snoc acc (go path PVBot))
-  --   go'  i numFields acc = go'  (i - 1) (numFields - 1) (Snoc acc PVBot)
-  --   go'' 0           acc = acc
-  --   go'' i           acc = go'' (i - 1) (Snoc acc PVBot)
+  botFields :: C.FieldInfo -> PartialRecFields
+  botFields = \case
+    C.FINil           -> PRFNil
+    C.FISnoc fs x i a -> PRFSnoc (botFields fs) PVBot i
+
+  mkFields :: C.FieldInfo -> Ix -> Path -> PartialRecFields
+  mkFields fs ix path = case (fs, ix) of
+    (C.FISnoc fs x i a, 0 ) -> PRFSnoc (botFields fs) (go path PVBot) i
+    (C.FISnoc fs x i a, ix) -> PRFSnoc (mkFields fs (ix - 1) path) PVBot i
+    _                       -> impossible
 
   go :: Path -> PartialVal -> PartialVal
   go path pv = case (path, pv) of
     (PNil           , PVBot         ) -> PVVal def
     (PApp _ _ _ path, PVLam a x i pv) -> PVLam a x i (go path pv)
-    (PProj i p path , PVRec _ pvs   ) -> PVRec i uf
+    (PProj i p path , PVRec _ pvs   ) -> PVRec i (updateAt pvs (p^.index) (go path))
     (PApp a x i path, PVBot         ) -> PVLam a x i (go path PVBot)
-    (PProj i p path , PVBot         ) -> PVRec i uf
+    (PProj i p path , PVBot         ) -> PVRec i (mkFields (i^.C.fields) (p^.index) path)
     _                                 -> PVTop
 
 lift :: PartialSub -> PartialSub
 lift (PSub occ pr idenv dom cod sub) =
   let var = LocalVar dom in
   PSub occ pr (EDef idenv var) (dom + 1) (cod + 1) $
-    IM.insert (fromIntegral cod) (PVVal $ PCl \_ -> var) sub
+    IM.insert (fromIntegral cod) (PSVal $ PVVal $ PCl \_ -> var) sub
+
+lift0 :: PartialSub -> PartialSub
+lift0 (PSub occ pr idenv dom cod sub) =
+  PSub occ pr (EDef0 idenv dom) (dom + 1) (cod + 1) $
+    IM.insert (fromIntegral cod) (PSVal0 $ PV0Val dom) sub
 
 update :: Lvl -> Path -> PClosure -> PartialSub -> PartialSub
 update x path def psub =
-  let ~newpv = extendPVal path def PVBot in
-  psub & sub %~ IM.insertWith (\_ -> extendPVal path def) (fromIntegral x) newpv
+  let ~newpv           = PSVal (extendPVal path def PVBot)
+      ext _ (PSVal pv) = PSVal (extendPVal path def pv)
+      ext _ _          = impossible in
+  psub & sub %~ IM.insertWith ext (fromIntegral x) newpv
+
 
 -- Partial substitution
---------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
 
 class PSubst a b | a -> b where
   psubst :: PSubArg => a -> b
 
-instance PSubst Lvl PartialVal where
-  psubst x = (?psub^.sub) IM.! fromIntegral x
+-- instance PSubst Lvl PartialVal where
+--   psubst x = case (?psub^.sub) IM.! fromIntegral x of
+--     PSVal pv -> pv
+--     _        -> impossible
+
+psubstLvl :: PSubArg => Lvl -> PartialVal
+psubstLvl x = case (?psub^.sub) IM.! fromIntegral x of
+  PSVal pv -> pv
+  _        -> impossible
+
+psubstLvl0 :: PSubArg => Lvl -> PartialVal0
+psubstLvl0 x = case (?psub^.sub) IM.! fromIntegral x of
+  PSVal0 pv -> pv
+  _         -> impossible
 
 instance PSubst Spine (Tm -> IO Tm) where
   psubst t hd = case t of
@@ -167,19 +208,43 @@ applyPVal pv sp args = case (pv, sp) of
   (pv            , RSId          ) -> readBack (?psub^.dom) UnfoldNone pv args
   _                                -> unifyError
 
+-- TODO: detect identity substitution
+instance PSubst Env (IO C.MetaSub) where
+  psubst e = C.MSSub ! go e where
+    go :: Env -> IO C.TmEnv
+    go = \case
+      ENil      -> pure C.TENil
+      ELet e v  -> C.TELet  ! go e ∙ psubst v
+      EDef e v  -> C.TEDef  ! go e ∙ psubst v
+      EDef0 e x -> C.TEDef0 ! go e ∙ readBack (?psub^.dom) UnfoldNone (psubstLvl0 x)
+
+instance PSubst MetaHead (IO Tm) where
+  psubst (MetaHead m e) = do
+    case ?psub^.occurs of Just m' -> when (m == m') unifyError
+                          _       -> pure ()
+    C.Meta m ! psubst e
+
 instance PSubst Val (IO Tm) where
-  psubst = \case
+  psubst v = case force v of
     Rigid h sp -> case h of
-      RHLocalVar x -> applyPVal (psubst x) (reverseSpine sp) []
+      RHLocalVar x -> applyPVal (psubstLvl x) (reverseSpine sp) []
       RHPrim i     -> psubst sp (C.Prim i)
       RHDCon i     -> psubst sp (C.DCon i)
       RHTCon i     -> psubst sp (C.TCon i)
       RHRecTy i    -> psubst sp (C.RecTy i)
       RHRec i      -> psubst sp (C.Rec i)
-    Flex m sp -> uf
+
+    -- TODO: pruning
+    Flex m sp -> do hd <- psubst m; psubst sp hd
 
 -- Readback
---------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
+
+instance ReadBack PartialVal0 (IO Ix) where
+  readb = \case
+    PV0Val x -> pure $! readb x
+    PV0Top   -> unifyError
+    PV0Bot   -> unifyError
 
 instance ReadBack PartialRecFields ([Val] -> Tm -> IO Tm) where
   readb pvs args hd = case pvs of
@@ -208,4 +273,4 @@ instance ReadBack PartialVal ([Val] -> IO Tm) where
 
 
 
---------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------

@@ -136,17 +136,17 @@ class ElemAt a i b | a -> i b where
   elemAt   :: a -> i -> b
 
 class UpdateAt a i b | a -> i b where
-  updateAt :: i -> a -> (b -> b) -> a
+  updateAt :: a -> i -> (b -> b) -> a
 
 instance ElemAt [a] Int a where
   elemAt = (!!)
 
 instance UpdateAt [a] Int a where
   {-# inline updateAt #-}
-  updateAt i as f = go i as where
-    go 0 (a:as) = f a : as
-    go i (a:as) = (:) a $$! go (i - 1) as
-    go _ _      = impossible
+  updateAt as i f = go as i where
+    go (a:as) 0 = f a : as
+    go (a:as) i = (:) a $$! go as (i - 1)
+    go _      _ = impossible
 
 -- Strict list
 --------------------------------------------------------------------------------
@@ -218,10 +218,10 @@ instance ElemAt (List a) Int a where
 
 instance UpdateAt (List a) Int a where
   {-# inline updateAt #-}
-  updateAt i as f = go i as where
-    go 0 (Cons a as) = Cons (f a) as
-    go i (Cons a as) = Cons a (go (i - 1) as)
-    go _ _           = impossible
+  updateAt as i f = go as i where
+    go (Cons a as) 0 = Cons (f a) as
+    go (Cons a as) i = Cons a (go as (i - 1))
+    go _           _ = impossible
 
 
 -- reasonable monadic looping (forM_ and traverse are often compiled in shitty ways)
