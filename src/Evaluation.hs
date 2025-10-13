@@ -15,13 +15,13 @@ def v k = let ?env = EDef ?env v in k v
 def0 :: Lvl -> (Lvl -> EnvArg => a) -> EnvArg => a
 def0 v k = let ?env = EDef0 ?env v in k v
 
-{-# inline fresh #-}
-fresh :: (LvlArg => Val -> a) -> LvlArg => a
-fresh k = let v = LocalVar ?lvl in let ?lvl = ?lvl + 1 in k v
-
 {-# inline freshLvl #-}
 freshLvl :: (LvlArg => Lvl -> a) -> LvlArg => a
 freshLvl k = let v = ?lvl in let ?lvl = v + 1 in k v
+
+{-# inline fresh #-}
+fresh :: (LvlArg => Val -> a) -> LvlArg => a
+fresh k = freshLvl \l -> k $! LocalVar l
 
 {-# inline defLazy #-}
 defLazy :: Val -> (EnvArg => a) -> EnvArg => a
@@ -53,11 +53,6 @@ lookupIx0 x = go ?env x where
 {-# inline geval #-}
 geval :: Eval a Val => EnvArg => a -> G
 geval a = gjoin (eval a)
-
-instance Eval C.TConInfo Val where eval x = x^.value
-instance Eval C.DConInfo Val where eval x = x^.value
-instance Eval C.DefInfo  Val where eval x = x^.value
-instance Eval C.RecInfo  Val where eval x = x^.value
 
 instance Eval (C.Bind C.Tm0) Closure0 where
   {-# inline eval #-}
@@ -159,11 +154,11 @@ instance Eval C.Tm0 Val0 where
 instance Eval C.Tm Val where
   eval = \case
     C.LocalVar x  -> lookupIx x
-    C.TCon i      -> eval i
-    C.DCon i      -> eval i
-    C.RecTy i     -> eval i
-    C.Rec i       -> eval i
-    C.TopDef i    -> eval i
+    C.TCon i      -> i^.value
+    C.DCon i      -> i^.value
+    C.RecTy i     -> i^.value
+    C.Rec i       -> i^.value
+    C.TopDef i    -> i^.value
     C.Let _ t u   -> def (eval t) \v -> eval u ∙ v
     C.Pi a b      -> Pi (eval a) (eval b)
     C.Prim p      -> eval p

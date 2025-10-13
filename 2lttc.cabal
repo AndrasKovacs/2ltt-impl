@@ -68,6 +68,9 @@ executable 2lttc
       CPP
       ConstraintKinds
       DataKinds
+      DeriveFoldable
+      DeriveFunctor
+      DeriveTraversable
       DerivingVia
       EmptyCase
       EmptyDataDeriving

@@ -4,27 +4,20 @@ module Core where
 import Common
 import {-# source #-} Value
 
-data Bind a = Bind {
-    bindName :: Name
-  , bindBody :: a
-  } deriving Show
-
-data BindI a = BindI {
-    bindIName :: Name
-  , bindIIcit :: Icit
-  , bindIBody :: a
-  } deriving Show
-
 data DefInfo = DI {
     defInfoValue :: ~Val
   , defInfoName  :: Name
   }
 
+data FieldInfo
+  = FINil
+  | FISnoc Name Icit Ty
+
 data RecInfo = RI {
     recInfoUid       :: Int
   , recInfoValue     :: ~Val
   , recInfoName      :: Name
-  , recInfoNumFields :: Lvl
+  , recInfoFields    :: FieldInfo
   }
 
 data TConInfo = TCI {
@@ -104,8 +97,6 @@ instance Apply Tm Tm Tm where
 pattern AppE t u = App t u Expl
 pattern AppI t u = App t u Impl
 
-makeFields ''Bind
-makeFields ''BindI
 makeFields ''DefInfo
 makeFields ''RecInfo
 makeFields ''TConInfo
@@ -127,6 +118,7 @@ deriving instance Show TmEnv
 deriving instance Show MetaSub
 deriving instance Show Tm
 deriving instance Show Tm0
+deriving instance Show FieldInfo
 instance Eq RecInfo   where x == y = x^.uid == y^.uid
 instance Eq TConInfo  where x == y = x^.uid == y^.uid
 instance Eq DConInfo  where x == y = x^.uid == y^.uid

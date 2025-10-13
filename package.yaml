@@ -47,6 +47,9 @@ default-extensions:
   - CPP
   - ConstraintKinds
   - DataKinds
+  - DeriveFoldable
+  - DeriveFunctor
+  - DeriveTraversable
   - DerivingVia
   - EmptyCase
   - EmptyDataDeriving

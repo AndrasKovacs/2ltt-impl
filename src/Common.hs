@@ -129,6 +129,24 @@ instance (Monad m, a ~ a', out ~ m b) => Apply (m (a -> b)) (m a') out where
     a <- ma
     pure $! f a
 
+-- Indexing
+--------------------------------------------------------------------------------
+
+class ElemAt a i b | a -> i b where
+  elemAt   :: a -> i -> b
+
+class UpdateAt a i b | a -> i b where
+  updateAt :: i -> a -> (b -> b) -> a
+
+instance ElemAt [a] Int a where
+  elemAt = (!!)
+
+instance UpdateAt [a] Int a where
+  {-# inline updateAt #-}
+  updateAt i as f = go i as where
+    go 0 (a:as) = f a : as
+    go i (a:as) = (:) a $$! go (i - 1) as
+    go _ _      = impossible
 
 -- Strict list
 --------------------------------------------------------------------------------
@@ -192,23 +210,19 @@ instance Traversable List where
     go Nil         = pure Nil
     go (Cons a as) = Cons ! f a ∙ go as
 
-indexList :: List a -> Ix -> a
-indexList as x = case (as, x) of
-  (Cons a as, 0) -> a
-  (Cons _ as, x) -> indexList as (x - 1)
-  _              -> impossible
+instance ElemAt (List a) Int a where
+  elemAt as x = case (as, x) of
+    (Cons a as, 0) -> a
+    (Cons _ as, x) -> elemAt as (x - 1)
+    _              -> impossible
 
-{-# inline updateAt #-}
-updateAt :: Ix -> List a -> (a -> a) -> List a
-updateAt i as f = go i as where
-  go 0 (Cons a as) = Cons (f a) as
-  go i (Cons a as) = Cons a (go (i - 1) as)
-  go _ _           = impossible
+instance UpdateAt (List a) Int a where
+  {-# inline updateAt #-}
+  updateAt i as f = go i as where
+    go 0 (Cons a as) = Cons (f a) as
+    go i (Cons a as) = Cons a (go (i - 1) as)
+    go _ _           = impossible
 
-replicate :: Int -> a -> List a
-replicate n a = go Nil n a where
-  go acc n a | n <= 0 = acc
-  go acc n a = go (Cons a acc) (n - 1) a
 
 -- reasonable monadic looping (forM_ and traverse are often compiled in shitty ways)
 --------------------------------------------------------------------------------
@@ -606,3 +620,21 @@ data Unfold = UnfoldNone | UnfoldAll | UnfoldMetas
   deriving (Eq, Show)
 
 type UnfoldArg = (?unfold :: Unfold)
+
+
+-- Binders
+--------------------------------------------------------------------------------
+
+data Bind a = Bind {
+    bindName :: Name
+  , bindBody :: a
+  } deriving (Show, Functor, Foldable, Traversable)
+
+data BindI a = BindI {
+    bindIName :: Name
+  , bindIIcit :: Icit
+  , bindIBody :: a
+  } deriving (Show, Functor, Foldable, Traversable)
+
+makeFields ''Bind
+makeFields ''BindI
