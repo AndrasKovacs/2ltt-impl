@@ -136,6 +136,8 @@ instance (Monad m, a ~ a', out ~ m b) => Apply (m (a -> b)) (m a') out where
 data List a = Nil | Cons a (List a)
   deriving (Eq, Ord)
 
+type SnocList a = List a
+
 instance Show a => Show (List a) where
   show = show . toList
 
@@ -145,6 +147,8 @@ instance Hashable a => Hashable (List a) where
     go h (Cons a as) = go (hashWithSalt h a) as
 
 pattern Single a = Cons a Nil
+pattern Snoc as a = Cons a as
+{-# complete Nil, Snoc #-}
 
 instance Functor List where
   fmap f = go where
@@ -200,6 +204,11 @@ updateAt i as f = go i as where
   go 0 (Cons a as) = Cons (f a) as
   go i (Cons a as) = Cons a (go (i - 1) as)
   go _ _           = impossible
+
+replicate :: Int -> a -> List a
+replicate n a = go Nil n a where
+  go acc n a | n <= 0 = acc
+  go acc n a = go (Cons a acc) (n - 1) a
 
 -- reasonable monadic looping (forM_ and traverse are often compiled in shitty ways)
 --------------------------------------------------------------------------------

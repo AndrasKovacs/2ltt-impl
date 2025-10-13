@@ -3,7 +3,7 @@
 module Unification where
 
 import Common
-import Core (Ty, Tm, Locals, LocalsArg)
+import Core (Ty, Tm, Locals, LocalsArg, RecInfo)
 import qualified Core as C
 import Value
 import qualified Elaboration.State as ES
@@ -22,6 +22,15 @@ Speculations
       bound var as the "anchor". Somehow we want to remember a "hole" for the anchor,
       and everything in the hole context should be somehow conversion checked in
       the partial substitution.
+    - Idea: for each anchor variable, we remember the path to the root of the
+      enclosing term. When psubst hits an anchor variable, we throw the path as
+      exception, then bubble up all the way to the root. At that point we can
+      do a conversion check in the *codomain*, comparing the target codomain value
+      to the Libal-Miller term. If the check succeeds, we return the corresponding domain
+      variable.
+      - Simpler version: only do Libal-Miller inversion in top-level solveSp
+      - Full version: integrate Libal-Miller to nested unification everywhere
+
 -}
 
 --------------------------------------------------------------------------------
@@ -52,13 +61,13 @@ data PartialVal
   | PVBot
   | PVVal PClosure
   | PVLam PClosure PartialVal
-  | PVRec (List PartialVal)
+  | PVRec (SnocList PartialVal)
   deriving Show
 
 data Path
   = PNil
   | PApp PClosure Icit Path
-  | PProj Proj Path
+  | PProj {-# nounpack #-} RecInfo Proj Path
   deriving Show
 
 data PartialSub = PSub {
@@ -79,26 +88,22 @@ setPSub s act = let ?psub = s in act
 extendPVal :: Path -> PClosure -> PartialVal -> PartialVal
 extendPVal path def pv = go path pv where
 
-  mkRec :: Ix -> Path -> List PartialVal
-  mkRec i path = case i of
-    0 -> Cons (go path PVBot) Nil
-    i -> Cons PVBot (mkRec (i - 1) path)
-
-  updRec :: Ix -> Path -> List PartialVal -> List PartialVal
-  updRec i path pvs = case (i, pvs) of
-    (0, Cons pv pvs) -> Cons (go path pv) pvs
-    (0, Nil        ) -> Cons (go path PVBot) Nil
-    (i, Cons pv pvs) -> Cons pv (updRec (i - 1) path pvs)
-    (i, Nil        ) -> Cons pv (updRec (i - 1) path Nil)
+  mkRec :: Ix -> Lvl -> Path -> SnocList PartialVal
+  mkRec i numFields path = go' (ixToLvl numFields i) numFields Nil where
+    go'  0 numFields acc = go'' (numFields - 1) (Snoc acc (go path PVBot))
+    go'  i numFields acc = go'  (i - 1) (numFields - 1) (Snoc acc PVBot)
+    go'' 0           acc = acc
+    go'' i           acc = go'' (i - 1) (Snoc acc PVBot)
 
   go :: Path -> PartialVal -> PartialVal
   go path pv = case (path, pv) of
-    (PNil         , PVBot     ) -> PVVal def
-    (PApp _ _ path, PVLam a pv) -> PVLam a (go path pv)
-    (PProj p path , PVRec pvs ) -> PVRec (updRec (p^.index) path pvs)
-    (PApp a i path, PVBot     ) -> PVLam a (go path PVBot)
-    (PProj p path , PVBot     ) -> PVRec (mkRec (p^.index) path)
-    _                           -> PVTop
+    (PNil          , PVBot     ) -> PVVal def
+    (PApp _ _ path , PVLam a pv) -> PVLam a (go path pv)
+    (PProj i p path, PVRec pvs ) -> PVRec $ updateAt (p^.index) pvs $ go path
+    (PApp a i path , PVBot     ) -> PVLam a (go path PVBot)
+    (PProj i p path, PVBot     ) -> PVRec $ mkRec (p^.index) (i^.C.numFields) path
+                                 -- ^ same as updateAt (p^.index) (replicate (i^.numFields) PVBot) (go path)
+    _                            -> PVTop
 
 lift :: PartialSub -> PartialSub
 lift (PSub occ pr idenv dom cod sub) =
@@ -139,15 +144,15 @@ applyPVal pv sp args = case (pv, sp) of
   _                            -> unifyError
 
 instance ReadBack (List PartialVal) ([Val] -> Tm -> IO Tm) where
-  readb = _
+  readb pvs args hd = uf
 
 instance ReadBack PartialVal ([Val] -> IO Tm) where
   readb pv args = case pv of
     PVTop      -> unifyError
     PVBot      -> unifyError
     PVVal v    -> pure $! readb (v ∙ args)
-    PVLam a pv -> uf
-    PVRec pvs  -> _   -- TODO: need record info!
+    PVLam a pv -> C.Lam ! _ ∙ _
+    PVRec pvs  -> uf   -- TODO: need record info!
 
 -- readbackPVal :: PartialVal -> IO Tm
 -- readbackPVal = uf

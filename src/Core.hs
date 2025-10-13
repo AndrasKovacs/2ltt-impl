@@ -21,9 +21,10 @@ data DefInfo = DI {
   }
 
 data RecInfo = RI {
-    recInfoUid   :: Int
-  , recInfoValue :: ~Val
-  , recInfoName  :: Name
+    recInfoUid       :: Int
+  , recInfoValue     :: ~Val
+  , recInfoName      :: Name
+  , recInfoNumFields :: Lvl
   }
 
 data TConInfo = TCI {
