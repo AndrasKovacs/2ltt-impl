@@ -258,9 +258,9 @@ extendPVal path def pv = go path pv where
     (PProj i p path , PVBot         ) -> PVRec i (mkFields (i^.fields) (p^.index) path)
     _                                 -> PVTop
 
-lift :: PartialSub -> PartialSub
-lift (PSub occ pr idenv dom cod sub) =
-  let var = LocalVar dom in
+lift :: VTy -> PartialSub -> PartialSub
+lift ~a (PSub occ pr idenv dom cod sub) =
+  let var = LocalVar dom a in
   PSub occ pr (EDef idenv var) (dom + 1) (cod + 1) $
     IM.insert (fromIntegral cod) (PVVal $ PCl \_ -> var) sub
 
@@ -324,18 +324,19 @@ checkMetaOccurs m = case ?psub^.occurs of
   _       -> pure ()
 
 instance PSubst ClosureI (IO (BindI Tm)) where
-  psubst (ClI x i t) =
-    setPSub (lift ?psub) $ BindI x i ! psubst (t (LocalVar (?psub^.cod)))
+  psubst (ClI a x i t) = _
+    -- BindI ! (psubst a) ∙ pure a ∙
+    -- setPSub (lift ?psub) $ BindI x i ! psubst (t (LocalVar (?psub^.cod)))
 
 instance PSubst Val (IO Tm) where
   psubst v = case force v of
     Rigid h sp -> case h of
-      RHLocalVar x -> applyPVal (psubst x) (reverseSpine sp) []
-      RHPrim i     -> psubst sp (S.Prim i)
-      RHDCon i     -> psubst sp (S.DCon i)
-      RHTCon i     -> psubst sp (S.TCon i)
-      RHRecTy i    -> psubst sp (S.RecTy i)
-      RHRec i      -> psubst sp (S.Rec i)
+      RHLocalVar x _ -> applyPVal (psubst x) (reverseSpine sp) []
+      RHPrim i       -> psubst sp (S.Prim i)
+      RHDCon i       -> psubst sp (S.DCon i)
+      RHTCon i       -> psubst sp (S.TCon i)
+      RHRecTy i      -> psubst sp (S.RecTy i)
+      RHRec i        -> psubst sp (S.Rec i)
 
     -- TODO: pruning
     Flex (MetaHead m e) sp -> do
@@ -350,12 +351,13 @@ instance PSubst Val (IO Tm) where
             UHLocalDef x          -> applyPVal (psubst x) (reverseSpine sp) []
       catch @UnifyEx (psubst sp =<< goHead) \_ -> psubst v
 
-    Pi a b  -> S.Pi ! psubst a ∙ psubst b
-    Lam a t -> S.Lam ! psubst a ∙ psubst t
+    Pi b    -> S.Pi ! psubst b
+    Lam t   -> S.Lam ! psubst t
     Quote t -> S.Quote ! psubst t
 
 instance PSubst Closure0 (IO (Bind Tm0)) where
-  psubst (Cl0 x f) = setPSub (lift0 ?psub) $ Bind x ! psubst (f (?psub^.cod))
+  psubst (Cl0 x a f) = _
+    -- setPSub (lift0 ?psub) $ Bind x ! psubst (f (?psub^.cod))
 
 instance PSubst Val0 (IO Tm0) where
   psubst t = case force0 t of
@@ -366,8 +368,8 @@ instance PSubst Val0 (IO Tm0) where
     TopDef0 i                    -> pure $ S.TopDef0 i
     DCon0 i                      -> pure $ S.DCon0 i
     App0 t u                     -> S.App0 ! psubst t ∙ psubst u
-    Lam0 a t                     -> S.Lam0 ! psubst a ∙ psubst t
-    Decl0 a t                    -> S.Decl0 ! psubst a ∙ psubst t
+    Lam0 t                       -> S.Lam0 ! psubst t
+    Decl0 t                      -> S.Decl0 ! psubst t
     Project0 t p                 -> S.Project0 ! psubst t ∙ pure p
     Splice t                     -> S.Splice ! psubst t
 
@@ -382,8 +384,9 @@ readbPVal pv args = case pv of
   PVBot          -> unifyError
   PVVal v        -> pure $! readb (v ∙ args)
   PVVal0 x       -> impossible
-  PVLam a x i pv -> let a' = readb (a ∙ args) in
-                    fresh \v -> S.Lam a' . BindI x i ! readbPVal pv (v:args)
+  PVLam a x i pv -> _
+                    -- let a' = readb (a ∙ args) in
+                    -- fresh \v -> S.Lam a' . BindI x i a' ! readbPVal pv (v:args)
   PVRec i pvs    -> readb pvs args (S.Rec i)
 
 readbPVal0 :: LvlArg => PartialVal -> IO Ix
@@ -404,15 +407,18 @@ invertVal0 solvable psub param t path = case setLvl param $ whnf0 t of
 invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Path -> IO PartialSub
 invertVal solvable psub param t path = case setLvl param $ whmnf t of
 
-  Lam a t -> do
-    let var = LocalVar param
+  Lam t -> do
+    -- a <- setPSub psub $ psubst (t^.ty)
+    -- let ~va = evalIn (psub^.domEnv) a
+    -- let ~qa = setLvl (psub^.dom) readb
+    let var = LocalVar param (t^.ty)
     let ?lvl = param + 1
-    invertVal solvable psub ?lvl (t ∙ var) (PApp (PCl \_ -> a) (t^.name) (t^.icit) path)
+    invertVal solvable psub ?lvl (t ∙ var) (PApp _ (t^.name) (t^.icit) path)
 
   Quote t -> do
     invertVal0 solvable psub param t (PSplice path)
 
-  Rigid (RHLocalVar x) sp -> do
+  Rigid (RHLocalVar x a) sp -> do
     unless (solvable <= x && x < psub^.cod) unifyError
 
     let psub' = PSub Nothing False (psub^.domEnv) (psub^.dom) param (psub^.sub)

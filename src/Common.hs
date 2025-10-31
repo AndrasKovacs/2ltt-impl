@@ -45,6 +45,8 @@ import qualified FlatParse.Stateful as FP
 
 import Data.Hashable
 
+import {-# source #-} qualified Core.Syntax as S
+
 
 -- Debug printing, toggled by "debug" cabal flag
 --------------------------------------------------------------------------------
@@ -634,12 +636,14 @@ setUnfold uf k = let ?unfold = uf in k
 
 data Bind a = Bind {
     bindName :: Name
+  , bindTy   :: S.Ty
   , bindBody :: a
   } deriving (Show, Functor, Foldable, Traversable)
 
 data BindI a = BindI {
     bindIName :: Name
   , bindIIcit :: Icit
+  , bindITy   :: S.Ty
   , bindIBody :: a
   } deriving (Show, Functor, Foldable, Traversable)
 

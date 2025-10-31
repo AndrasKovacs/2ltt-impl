@@ -9,7 +9,7 @@ import Core.Info
 -- rigid heads
 -- the things here can be eliminated further, but never computed
 data RigidHead
-  = RHLocalVar Lvl
+  = RHLocalVar Lvl ~VTy
   | RHPrim Prim
   | RHDCon  {-# nounpack #-} DConInfo
   | RHTCon  {-# nounpack #-} TConInfo
@@ -64,11 +64,12 @@ spineApps f = go 0 where
 data ClosureI = ClI# {
     closureIName :: Name
   , closureIIcit :: Icit
+  , closureITy   :: ~VTy
   , closureIBody :: Val -> Val
   }
 
-pattern ClI :: Name -> Icit -> (Val -> Val) -> ClosureI
-pattern ClI x i f <- ClI# x i f where ClI x i f = ClI# x i (oneShot f)
+pattern ClI :: Name -> Icit -> VTy -> (Val -> Val) -> ClosureI
+pattern ClI x i a f <- ClI# x i a f where ClI x i ~a f = ClI# x i a (oneShot f)
 {-# complete ClI #-}
 {-# inline ClI #-}
 
@@ -76,23 +77,24 @@ instance Show ClosureI where showsPrec _ _ acc = "<closure>" ++ acc
 
 instance Apply ClosureI Val Val where
   {-# inline (∙∘) #-}
-  ClI _ _ f ∙∘ (!x,_) = f x
+  ClI _ _ _ f ∙∘ (!x,_) = f x
 
-data Closure0 = Cl0# Name (Word# -> Val0)
+data Closure0 = Cl0# Name VTy (Word# -> Val0)
 instance Show Closure0 where showsPrec _ _ acc = "<closure>" ++ acc
 
-pattern Cl0 x f <- ((\(Cl0# x f) -> (x,(\x -> case x of Lvl (W# x) -> f x))) -> (x, f)) where
-  Cl0 x f = Cl0# x (\x -> f (Lvl (W# x)))
+pattern Cl0 x a f <- ((\(Cl0# x a f) -> (x, a, (\x -> case x of Lvl (W# x) -> f x))) -> (x, a, f)) where
+  Cl0 x a f = Cl0# x a (\x -> f (Lvl (W# x)))
 {-# inline Cl0 #-}
 {-# complete Cl0 #-}
 
 data Closure = Cl# {
     closureName :: Name
+  , closureTy   :: VTy
   , closureBody :: Val -> Val
   }
 
-pattern Cl :: Name -> (Val -> Val) -> Closure
-pattern Cl x f <- Cl# x f where Cl x f = Cl# x (oneShot f)
+pattern Cl :: Name -> VTy -> (Val -> Val) -> Closure
+pattern Cl x a f <- Cl# x a f where Cl x a f = Cl# x a (oneShot f)
 {-# complete Cl #-}
 {-# inline Cl #-}
 
@@ -100,12 +102,12 @@ instance Show Closure where showsPrec _ _ acc = "<closure>" ++ acc
 
 instance Apply Closure Val Val where
   {-# inline (∙∘) #-}
-  Cl _ f ∙∘ (!x,_) = f x
+  Cl _ _ f ∙∘ (!x,_) = f x
 
 instance Apply Val Val Val where
   {-# inline (∙∘) #-}
   t ∙∘ arg@(u, i) = case t of
-    Lam _ t        -> t ∙ u
+    Lam t          -> t ∙ u
     Rigid h spn    -> Rigid h (spn ∙∘ arg)
     Flex h spn     -> Flex h (spn ∙∘ arg)
     Unfold h spn v -> Unfold h (spn ∙∘ arg) (v ∙∘ arg)
@@ -122,8 +124,9 @@ data Val0
   | TopDef0 {-# nounpack #-} Def0Info
   | DCon0   {-# nounpack #-} DCon0Info
   | App0 Val0 Val0
-  | Lam0 VTy Closure0
-  | Decl0 VTy Closure0
+  | Lam0 Closure0
+  | Decl0 Closure0
+  | Let0 Val0 Closure0
   | Project0 Val0 Proj
   | Splice Val
   deriving Show
@@ -132,19 +135,21 @@ data Val
   = Rigid RigidHead Spine
   | Flex {-# nounpack #-} MetaHead Spine
   | Unfold UnfoldHead Spine ~Val
-  | Pi VTy ClosureI
-  | Lam VTy ClosureI
+  | Pi ClosureI
+  | Lam ClosureI
   | Quote Val0
  deriving Show
 
 --------------------------------------------------------------------------------
 
-pattern LocalVar x = Rigid (RHLocalVar x) SId
-pattern Λ x i a t = Lam a (ClI x i t)
-pattern ΛE x a t = Lam a (ClI x Expl t)
-pattern ΛI x a t = Lam a (ClI x Impl t)
-pattern PiE x a b = Pi a (ClI x Expl b)
-pattern PiI x a b = Pi a (ClI x Impl b)
+pattern LocalVar x a <- Rigid (RHLocalVar x a) SId where
+  LocalVar x ~a = Rigid (RHLocalVar x a) SId
+
+pattern Λ x i a t = Lam (ClI x i    a t)
+pattern ΛE x a t  = Lam (ClI x Expl a t)
+pattern ΛI x a t  = Lam (ClI x Impl a t)
+pattern PiE x a b = Pi  (ClI x Expl a b)
+pattern PiI x a b = Pi  (ClI x Impl a b)
 
 pattern RecTy i sp = Rigid (RHRecTy i) sp
 pattern Rec i sp = Rigid (RHRec i) sp

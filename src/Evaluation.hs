@@ -20,8 +20,8 @@ freshLvl :: (LvlArg => Lvl -> a) -> LvlArg => a
 freshLvl k = let v = ?lvl in let ?lvl = v + 1 in k v
 
 {-# inline fresh #-}
-fresh :: (LvlArg => Val -> a) -> LvlArg => a
-fresh k = freshLvl \l -> k $! LocalVar l
+fresh :: VTy -> (LvlArg => Val -> a) -> LvlArg => a
+fresh ~a k = freshLvl \l -> k $! LocalVar l a
 
 {-# inline defLazy #-}
 defLazy :: Val -> (EnvArg => a) -> EnvArg => a
@@ -56,15 +56,15 @@ geval a = gjoin (eval a)
 
 instance Eval (S.Bind S.Tm0) Closure0 where
   {-# inline eval #-}
-  eval (S.Bind x t) = Cl0 x \v -> def0 v \_ -> eval t
+  eval (S.Bind x a t) = Cl0 x (eval a) \v -> def0 v \_ -> eval t
 
 instance Eval (S.BindI S.Tm) ClosureI where
   {-# inline eval #-}
-  eval (S.BindI x i t) = ClI x i \v -> def v \_ -> eval t
+  eval (S.BindI x i a t) = ClI x i (eval a) \v -> def v \_ -> eval t
 
 instance Eval (S.Bind S.Tm) Closure where
   {-# inline eval #-}
-  eval (S.Bind x t) = Cl x \v -> def v \_ -> eval t
+  eval (S.Bind x a t) = Cl x (eval a) \v -> def v \_ -> eval t
 
 instance Eval S.Prim Val where
   eval = \case
@@ -155,9 +155,10 @@ instance Eval S.Tm0 Val0 where
     S.DCon0 di     -> DCon0 di
     S.Project0 t p -> Project0 (eval t) p
     S.App0 t u     -> App0 (eval t) (eval u)
-    S.Lam0 a t     -> Lam0 (eval a) (eval t)
-    S.Decl0 a t    -> Decl0 (eval a) (eval t)
+    S.Lam0 t       -> Lam0 (eval t)
+    S.Decl0 t      -> Decl0 (eval t)
     S.Splice t     -> splice (eval t)
+    S.Let0 t u     -> Let0 (eval t) (eval u)
 
 instance Eval S.Tm Val where
   eval = \case
@@ -167,11 +168,11 @@ instance Eval S.Tm Val where
     S.RecTy i     -> i^.value
     S.Rec i       -> i^.value
     S.TopDef i    -> i^.value
-    S.Let _ t u   -> def (eval t) \v -> eval u ∙ v
-    S.Pi a b      -> Pi (eval a) (eval b)
+    S.Let t u     -> def (eval t) \v -> eval u ∙ v
+    S.Pi b        -> Pi (eval b)
     S.Prim p      -> eval p
     S.App t u i   -> eval t ∙∘ (eval u, i)
-    S.Lam a t     -> Lam (eval a) (eval t)
+    S.Lam t       -> Lam (eval t)
     S.Project t p -> proj (eval t) p
     S.Quote t     -> quote (eval t)
     S.Meta m sub  -> meta m (eval sub)
@@ -268,12 +269,12 @@ instance ReadBack Lvl Ix where
 
 instance ReadBack RigidHead S.Tm where
   readb = \case
-    RHLocalVar x -> S.LocalVar (readb x)
-    RHPrim p     -> S.Prim p
-    RHDCon i     -> S.DCon i
-    RHTCon i     -> S.TCon i
-    RHRecTy i    -> S.RecTy i
-    RHRec i      -> S.Rec i
+    RHLocalVar x _ -> S.LocalVar (readb x)
+    RHPrim p       -> S.Prim p
+    RHDCon i       -> S.DCon i
+    RHTCon i       -> S.TCon i
+    RHRecTy i      -> S.RecTy i
+    RHRec i        -> S.Rec i
 
 instance ReadBack UnfoldHead S.Tm where
   readb = \case
@@ -297,39 +298,42 @@ instance ReadBack Spine (S.Tm -> S.Tm) where
     SProject t p -> S.Project (readb t h) p
 
 instance ReadBack ClosureI (S.BindI S.Tm) where
-  readb (ClI x i t) = fresh \v -> S.BindI x i (readb (t v))
+  readb (ClI x i a t) = S.BindI x i (readb a) $ fresh a \v -> readb (t v)
 
 instance ReadBack Closure0 (S.Bind S.Tm0) where
-  readb (Cl0 x t) = freshLvl \l -> S.Bind x (readb (t l))
+  readb (Cl0 x a t) = S.Bind x (readb a) $ freshLvl \l -> readb (t l)
+
+forceUnfold :: UnfoldArg => Val -> Val
+forceUnfold t = case ?unfold of
+  UnfoldAll   -> whnf t
+  UnfoldNone  -> force t
+  UnfoldMetas -> whmnf t
+
+forceUnfold0 :: UnfoldArg => Val0 -> Val0
+forceUnfold0 t = case ?unfold of
+  UnfoldAll   -> whnf0 t
+  UnfoldNone  -> force0 t
+  UnfoldMetas -> whmnf0 t
 
 instance ReadBack Val0 S.Tm0 where
-  readb t =
-    let t' = case ?unfold of
-          UnfoldAll   -> whnf0 t
-          UnfoldNone  -> force0 t
-          UnfoldMetas -> whmnf0 t
-    in case t' of
-      LocalVar0 x     -> S.LocalVar0 (readb x)
-      Meta0 m         -> readbMetaHead0 m
-      SolvedMeta0 m _ -> readbMetaHead0 m
-      TopDef0 i       -> S.TopDef0 i
-      DCon0 i         -> S.DCon0 i
-      App0 t u        -> S.App0 (readb t) (readb u)
-      Lam0 a t        -> S.Lam0 (readb a) (readb t)
-      Decl0 a t       -> S.Decl0 (readb a) (readb t)
-      Project0 t p    -> S.Project0 (readb t) p
-      Splice t        -> S.Splice (readb t)
+  readb t = case forceUnfold0 t of
+    LocalVar0 x     -> S.LocalVar0 (readb x)
+    Meta0 m         -> readbMetaHead0 m
+    SolvedMeta0 m _ -> readbMetaHead0 m
+    TopDef0 i       -> S.TopDef0 i
+    DCon0 i         -> S.DCon0 i
+    App0 t u        -> S.App0 (readb t) (readb u)
+    Lam0 t          -> S.Lam0 (readb t)
+    Decl0 t         -> S.Decl0 (readb t)
+    Let0 t u        -> S.Let0 (readb t) (readb u)
+    Project0 t p    -> S.Project0 (readb t) p
+    Splice t        -> S.Splice (readb t)
 
 instance ReadBack Val S.Tm where
-  readb t =
-    let t' = case ?unfold of
-          UnfoldAll   -> whnf t
-          UnfoldNone  -> force t
-          UnfoldMetas -> whmnf t
-    in case t' of
-      Rigid h sp             -> readb sp (readb h)
-      Flex (MetaHead m e) sp -> readb sp (S.Meta m (readb e))
-      Unfold h sp _          -> readb sp (readb h)
-      Pi a b                 -> S.Pi (readb a) (readb b)
-      Lam a t                -> S.Lam (readb a) (readb t)
-      Quote t                -> S.Quote (readb t)
+  readb t = case forceUnfold t of
+    Rigid h sp             -> readb sp (readb h)
+    Flex (MetaHead m e) sp -> readb sp (S.Meta m (readb e))
+    Unfold h sp _          -> readb sp (readb h)
+    Pi b                   -> S.Pi (readb b)
+    Lam t                  -> S.Lam (readb t)
+    Quote t                -> S.Quote (readb t)

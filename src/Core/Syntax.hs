@@ -11,8 +11,9 @@ data Tm0
   | DCon0   {-# nounpack #-} DCon0Info
   | Project0 Tm0 Proj
   | App0 Tm0 Tm0
-  | Lam0 Ty (Bind Tm0)
-  | Decl0 Ty (Bind Tm0)
+  | Lam0 (Bind Tm0)
+  | Let0 Tm0 (Bind Tm0)
+  | Decl0 (Bind Tm0)
   | Splice Tm
 
 type Ty = Tm
@@ -35,11 +36,11 @@ data Tm
   | RecTy  {-# nounpack #-} RecInfo
   | TopDef {-# nounpack #-} DefInfo
   | Meta MetaVar MetaSub
-  | Let Ty Tm (Bind Tm)
-  | Pi Ty (BindI Tm)
+  | Let Tm (Bind Tm)
+  | Pi (BindI Tm)
   | Prim Prim
   | App Tm Tm Icit
-  | Lam Ty (BindI Tm)
+  | Lam (BindI Tm)
   | Project Tm Proj
   | Quote Tm0
 
