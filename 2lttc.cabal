@@ -88,6 +88,7 @@ executable 2lttc
       MultiParamTypeClasses
       MultilineStrings
       NondecreasingIndentation
+      OrPatterns
       OverloadedStrings
       PackageImports
       PatternSynonyms

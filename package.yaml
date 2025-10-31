@@ -66,6 +66,7 @@ default-extensions:
   - MultiParamTypeClasses
   - MultilineStrings
   - NondecreasingIndentation
+  - OrPatterns
   - OverloadedStrings
   - PackageImports
   - PatternSynonyms
