@@ -1,7 +1,7 @@
 
 module Presyntax where
 
-import Common hiding (Name, Proj(..), Prim(..))
+import Common hiding (Name, Proj(..), Prim(..), Bind(..))
 
 type Ty = Tm
 

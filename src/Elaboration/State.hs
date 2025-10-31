@@ -8,9 +8,9 @@ import qualified Data.Vector.Hashtables as HT
 import qualified Data.Primitive.MutVar as P
 
 import Common
-import Core (Tm, Ty, Locals, LocalsArg)
-import qualified Core as C
-import Value (VTy)
+import Core.Syntax (Tm, Ty, Locals, LocalsArg, Tm0)
+import Core.Value (VTy)
+import Core.Info
 
 -- Metacontext
 --------------------------------------------------------------------------------
@@ -31,7 +31,16 @@ data Solved = Solved {
   }
 makeFields ''Solved
 
-data MetaEntry = MEUnsolved Unsolved | MESolved Solved
+data Solved0 = Solved0 {
+    solved0Locals      :: Locals
+  , solved0Ty          :: Ty
+  , solved0Solution    :: Tm0             -- the type and solution are under the Locals
+  , solved0IsInline    :: Bool            -- should we immediately unfold the meta
+  , solved0OccursCache :: RF.Ref MetaVar
+  }
+makeFields ''Solved0
+
+data MetaEntry = MEUnsolved Unsolved | MESolved Solved | MESolved0 Solved0
 
 type MetaCxt = ADL.Array MetaEntry
 
@@ -99,13 +108,13 @@ makeFields ''LocalInfo
 
 data ISEntry
   = ISNil
-  | ISTopDef    {-# nounpack #-} C.DefInfo
-  | ISTopRec    {-# nounpack #-} C.RecInfo
-  | ISTopTCon   {-# nounpack #-} C.TConInfo
-  | ISTopDef0   {-# nounpack #-} C.Def0Info
-  | ISTopRec0   {-# nounpack #-} C.Rec0Info
-  | ISTopTCon0  {-# nounpack #-} C.TCon0Info
-  | ISTopDCon (List C.DConInfo)
+  | ISTopDef    {-# nounpack #-} DefInfo
+  | ISTopRec    {-# nounpack #-} RecInfo
+  | ISTopTCon   {-# nounpack #-} TConInfo
+  | ISTopDef0   {-# nounpack #-} Def0Info
+  | ISTopRec0   {-# nounpack #-} Rec0Info
+  | ISTopTCon0  {-# nounpack #-} TCon0Info
+  | ISTopDCon (List DConInfo)
   | ISLocal LocalInfo ISEntry
 
 type IdentScope =

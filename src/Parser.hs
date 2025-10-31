@@ -1,10 +1,9 @@
-
-{-# options_ghc -Wno-unused-top-binds #-}
+{-# options_ghc -Wno-unused-binds #-}
 
 module Parser (tm, top) where
 
 import Prelude hiding (pi)
-import Common hiding (some, many, debug, Proj(..), Prim(..), name)
+import Common hiding (some, many, debug, Proj(..), Prim(..), name, Bind(..))
 import qualified FlatParse.Stateful as FP
 import Parser.Lexer
 import Presyntax
@@ -47,11 +46,11 @@ anyWord' = lvl' *> anyWordBase'
 anyLvl' :: Parser (Lvl, FP.Span)
 anyLvl' = coerce anyWord'
 
-anyWord :: Parser (Word, FP.Span)
-anyWord = (lvl' *> anyWordBase') `cut` ["positive integer"]
+-- anyWord :: Parser (Word, FP.Span)
+-- anyWord = (lvl' *> anyWordBase') `cut` ["positive integer"]
 
-anyLvl :: Parser (Lvl, FP.Span)
-anyLvl = coerce anyWord
+-- anyLvl :: Parser (Lvl, FP.Span)
+-- anyLvl = coerce anyWord
 
 arr :: Parser Span
 arr = $(switch [| case _ of "->" -> pure; "→" -> pure |])
@@ -62,7 +61,7 @@ arr' = $(switch' [| case _ of "->" -> pure; "→" -> pure |])
 -- parl    = $(sym "(")
 -- parl'   = $(sym' "(")
 parr    = $(sym ")")
-parr'   = $(sym' ")")
+-- parr'   = $(sym' ")")
 -- bracel  = $(sym "{")
 bracel' = $(sym' "{")
 bracer  = $(sym "}")

@@ -3,7 +3,8 @@ module Pretty (Names, NamesArg, Txt, runTxt, Pretty(..), pretty) where
 
 import Prelude hiding (pi)
 import Common
-import Core
+import Core.Info
+import Core.Syntax hiding (splice)
 
 --------------------------------------------------------------------------------
 
@@ -209,7 +210,7 @@ instance Pretty Tm where
     LocalVar x -> localVar x
     TCon i     -> topName (i^.name)
     DCon i     -> topName (i^.name)
-    RecCon i   -> topName (i^.name)
+    Rec  i     -> topName (i^.name)
     RecTy i    -> topName (i^.name)
     TopDef i   -> topName (i^.name)
     Meta m     -> "?" <> prt m

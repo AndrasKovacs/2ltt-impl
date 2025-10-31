@@ -315,6 +315,9 @@ newtype Lvl = Lvl {unLvl :: Word}
   deriving (Eq, Ord, Show, Num, Enum, Bits, Integral, Real) via Word
 
 type LvlArg = (?lvl :: Lvl)
+{-# inline setLvl #-}
+setLvl :: Lvl -> (LvlArg => a) -> a
+setLvl l k = let ?lvl = l in k
 
 lvlToIx :: Lvl -> Lvl -> Ix
 lvlToIx (Lvl envl) (Lvl x) = Ix (envl - x - 1)
@@ -620,6 +623,10 @@ data Unfold = UnfoldNone | UnfoldAll | UnfoldMetas
   deriving (Eq, Show)
 
 type UnfoldArg = (?unfold :: Unfold)
+
+{-# inline setUnfold #-}
+setUnfold :: Unfold -> (UnfoldArg => a) -> a
+setUnfold uf k = let ?unfold = uf in k
 
 
 -- Binders

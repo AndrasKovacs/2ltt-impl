@@ -1,10 +1,10 @@
 
-module Value where
+module Core.Value where
 
 import GHC.Word
 import Common hiding (Set)
 import qualified Common as C
-import {-# SOURCE #-} Core (DefInfo, TConInfo, DConInfo, DCon0Info, Def0Info, RecInfo)
+import Core.Info
 
 -- rigid heads
 -- the things here can be eliminated further, but never computed
@@ -117,6 +117,8 @@ type VTy = Val
 
 data Val0
   = LocalVar0 Lvl
+  | Meta0 MetaHead
+  | SolvedMeta0 MetaHead ~Val0
   | TopDef0 {-# nounpack #-} Def0Info
   | DCon0   {-# nounpack #-} DCon0Info
   | App0 Val0 Val0
