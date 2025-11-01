@@ -392,41 +392,46 @@ instance PSubst Val0 (IO Tm0) where
 -- Inversion
 ----------------------------------------------------------------------------------------------------
 
--- invertVal0 :: Lvl -> PartialSub -> Lvl -> Val0 -> Path -> IO PartialSub
--- invertVal0 solvable psub param t path = case setLvl param $ whnf0 t of
---   LocalVar0 x -> uf
+data InvSpine
+  = ISId
+  | ISSplice InvSpine
+  | ISApp InvSpine Val Icit
+  | ISProj InvSpine Proj
+  deriving Show
 
--- invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Path -> IO PartialSub
--- invertVal solvable psub param t path = case setLvl param $ whmnf t of
+invertVal0 :: Lvl -> PartialSub -> Val0 -> Lvl -> InvSpine -> IO PartialSub
+invertVal0 solvable psub t rhsVar rhsSp = case setLvl (psub^.cod) $ whmnf0 t of
+  _ -> uf
 
---   Lam t -> do
---     -- a <- setPSub psub $ psubst (t^.ty)
---     -- let ~va = evalIn (psub^.domEnv) a
---     -- let ~qa = setLvl (psub^.dom) readb
---     let var = LocalVar param (t^.ty)
---     let ?lvl = param + 1
---     invertVal solvable psub ?lvl (t ∙ var) (PApp _ (t^.name) (t^.icit) path)
+invertVal :: Lvl -> PartialSub -> Val -> Lvl -> InvSpine -> IO PartialSub
+invertVal solvable psub t rhsVar rhsSp = case setLvl (psub^.cod) $ whmnf t of
 
---   Quote t -> do
---     invertVal0 solvable psub param t (PSplice path)
+  Lam t -> do
+    a' <- setPSub psub $ psubst (t^.ty)
+    let ~va' = evalIn (psub^.domEnv) a'
+    let var = LocalVar (psub^.cod) (t^.ty)
+    unlift ! invertVal solvable (lift va' psub) (t ∙ var) rhsVar (ISApp rhsSp var (t^.icit))
 
---   Rigid (RHLocalVar x a) sp -> do
---     unless (solvable <= x && x < psub^.cod) unifyError
+  Quote t -> do
+    invertVal0 solvable psub t rhsVar _
 
---     let psub' = PSub Nothing False (psub^.domEnv) (psub^.dom) param (psub^.sub)
---     (path, sol) <- solveNestedSp (psub^.cod) psub' uf (reverseSpine sp) uf
---     uf
+  -- Rigid (RHLocalVar x a) sp -> do
+  --   unless (solvable <= x && x < psub^.cod) unifyError
 
---   Rigid (RHRec i) sp -> do
---     uf
+  --   let psub' = PSub Nothing False (psub^.domEnv) (psub^.dom) param (psub^.sub)
+  --   (path, sol) <- solveNestedSp (psub^.cod) psub' uf (reverseSpine sp) uf
+  --   uf
 
---   Unfold (UHLocalDef x) sp t -> do
---     uf
+  -- Rigid (RHRec i) sp -> do
+  --   uf
 
---   Unfold _ _ t ->
---     invertVal solvable psub param t path
+  -- Unfold (UHLocalDef x) sp t -> do
+  --   uf
 
---   _ -> unifyError
+  -- Unfold _ _ t ->
+  --   invertVal solvable psub param t path
+
+  -- _ -> unifyError
 
 -- solveNestedSp :: Lvl -> PartialSub -> VTy -> RevSpine -> (Lvl, Path) -> IO (Path, PClosure)
 -- solveNestedSp solvable psub a sp (!rhsVar, !rhsPath) = do
