@@ -208,6 +208,10 @@ type EnvArg = (?env :: Env)
 setEnv :: Env -> (EnvArg => a) -> a
 setEnv e act = let ?env = e in act
 
+envTail :: Env -> Env
+envTail (EDef e _) = e
+envTail _          = impossible
+
 instance Sized Env where
   size = go 0 where
     go acc ENil        = acc

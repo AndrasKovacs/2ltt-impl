@@ -173,18 +173,13 @@ unifyError :: Dbg => IO a
 unifyError = throwIO UETodo
 
 
--- Partial values
+-- Partial Substitutions
 ----------------------------------------------------------------------------------------------------
 
--- | Closures abstract over all enclosing lambda binders in a PartialVal. PartialVal can be viewed
---   as a partial *term* wrapped in an explicit weakening. The weakenings are pushed down to the
---   types & terms in the inside and represented as closures.
-newtype PClosure = PCl ([Val] -> Val)
-
-instance Show PClosure where showsPrec _ _ acc = "<closure>" ++ acc
-
-instance Apply PClosure [Val] Val where
-  (∙∘) (PCl f) (vs,_) = f vs; {-# inline (∙∘) #-}
+newtype MultiClosure = MCl ([Val] -> Val)
+instance Show MultiClosure where show _ = "<closure>"
+instance Apply MultiClosure [Val] Val where
+  MCl f ∙∘ (e,_) = f e; {-# inline (∙∘) #-}
 
 data PartialRecFields
   = PRFNil
@@ -192,41 +187,44 @@ data PartialRecFields
   deriving Show
 
 instance ElemAt PartialRecFields Ix PartialVal where
-  elemAt pvs i = case (pvs, i) of
+  elemAt ts i = case (ts, i) of
     (PRFSnoc _ v _  , 0) -> v
-    (PRFSnoc pvs _ _, i) -> elemAt pvs (i - 1)
+    (PRFSnoc ts _ _, i)  -> elemAt ts (i - 1)
     _                    -> impossible
 
 instance UpdateAt PartialRecFields Ix PartialVal where
   {-# inline updateAt #-}
-  updateAt pvs ix f = go pvs ix where
-    go (PRFSnoc pvs v i) 0  = PRFSnoc pvs (f v) i
-    go (PRFSnoc pvs v i) ix = PRFSnoc (go pvs (ix - 1)) v i
-    go _                 _  = impossible
+  updateAt ts ix f = go ts ix where
+    go (PRFSnoc ts v i) 0  = PRFSnoc ts (f v) i
+    go (PRFSnoc ts v i) ix = PRFSnoc (go ts (ix - 1)) v i
+    go _                _  = impossible
 
 data PartialVal
   = PVTop
   | PVBot
-  | PVVal0 Lvl
-  | PVVal PClosure
-  | PVLam PClosure Name Icit PartialVal
+  | PVTotal MultiClosure
+  | PVLam Name Icit MultiClosure PartialVal
   | PVRec {-# nounpack #-} RecInfo PartialRecFields
   deriving Show
 
-data Path
-  = PNil
-  | PApp PClosure Name Icit Path
-  | PSplice Path
-  | PProj {-# nounpack #-} RecInfo Proj Path
+data PartialVal0
+  = PV0Top
+  | PV0Bot
+  | PV0Total Lvl
+  deriving Show
+
+data PSubEntry
+  = PSEVal  PartialVal
+  | PSEVal0 PartialVal0
   deriving Show
 
 data PartialSub = PSub {
-    partialSubOccurs       :: Maybe MetaVar     -- ^ Optional meta occurs check
-  , partialSubAllowPruning :: Bool              -- ^ Can we prune metas
-  , partialSubDomEnv       :: Env               -- ^ Identity environment for the domain
-  , partialSubDom          :: Lvl               -- ^ Domain (size of the map)
-  , partialSubCod          :: Lvl               -- ^ Codomain (next fresh Lvl)
-  , partialSubSub          :: IntMap PartialVal -- ^ Total map from codomain vars to partial values
+    partialSubOccurs       :: Maybe MetaVar    -- ^ Optional meta occurs check
+  , partialSubAllowPruning :: Bool             -- ^ Can we prune metas
+  , partialSubDomEnv       :: Env              -- ^ Identity environment for the domain
+  , partialSubDom          :: Lvl              -- ^ Domain (size of the map)
+  , partialSubCod          :: Lvl              -- ^ Codomain (next fresh Lvl)
+  , partialSubSub          :: IntMap PSubEntry -- ^ Total map from codomain vars to partial values
   }
 makeFields ''PartialSub
 
@@ -235,55 +233,43 @@ type PSubArg = (?psub :: PartialSub)
 setPSub :: PartialSub -> (PSubArg => a) -> a
 setPSub s act = let ?psub = s in act
 
-extendPVal :: Path -> PClosure -> PartialVal -> PartialVal
-extendPVal path def pv = go path pv where
+instance Semigroup PartialRecFields where
+  PRFNil         <> PRFNil         = PRFNil
+  PRFSnoc ts t i <> PRFSnoc us u _ = PRFSnoc (ts <> us) (t <> u) i
+  _              <> _              = impossible
 
-  botFields :: FieldInfo -> PartialRecFields
-  botFields = \case
-    FINil           -> PRFNil
-    FISnoc fs x i a -> PRFSnoc (botFields fs) PVBot i
+instance Semigroup PartialVal where
+  PVBot         <> u             = u
+  t             <> PVBot         = t
+  PVLam x i a t <> PVLam _ _ _ u = PVLam x i a (t <> u)
+  PVRec i ts    <> PVRec _ us    = PVRec i (ts <> us)
+  _             <> _             = PVTop
 
-  mkFields :: FieldInfo -> Ix -> Path -> PartialRecFields
-  mkFields fs ix path = case (fs, ix) of
-    (FISnoc fs x i a, 0 ) -> PRFSnoc (botFields fs) (go path PVBot) i
-    (FISnoc fs x i a, ix) -> PRFSnoc (mkFields fs (ix - 1) path) PVBot i
-    _                     -> impossible
-
-  go :: Path -> PartialVal -> PartialVal
-  go path pv = case (path, pv) of
-    (PNil           , PVBot         ) -> PVVal def
-    (PApp _ _ _ path, PVLam a x i pv) -> PVLam a x i (go path pv)
-    (PProj i p path , PVRec _ pvs   ) -> PVRec i (updateAt pvs (p^.index) (go path))
-    (PApp a x i path, PVBot         ) -> PVLam a x i (go path PVBot)
-    (PProj i p path , PVBot         ) -> PVRec i (mkFields (i^.fields) (p^.index) path)
-    _                                 -> PVTop
+instance Semigroup PartialVal0 where
+  PV0Bot <> u      = u
+  t      <> PV0Bot = t
+  _      <> _      = PV0Top
 
 lift :: VTy -> PartialSub -> PartialSub
 lift ~a (PSub occ pr idenv dom cod sub) =
   let var = LocalVar dom a in
   PSub occ pr (EDef idenv var) (dom + 1) (cod + 1) $
-    IM.insert (fromIntegral cod) (PVVal $ PCl \_ -> var) sub
+    IM.insert (fromIntegral cod) (PSEVal (PVTotal (MCl \_ -> var))) sub
+
+unlift :: PartialSub -> PartialSub
+unlift (PSub occ pr idenv dom cod sub) =
+  PSub occ pr (envTail idenv) (dom - 1) (cod - 1) (IM.delete (fromIntegral dom) sub)
 
 lift0 :: PartialSub -> PartialSub
 lift0 (PSub occ pr idenv dom cod sub) =
   PSub occ pr (EDef0 idenv dom) (dom + 1) (cod + 1) $
-    IM.insert (fromIntegral cod) (PVVal0 dom) sub
-
-updatePSub :: Lvl -> Path -> PClosure -> PartialSub -> PartialSub
-updatePSub x path def psub =
-  let ~newpv   = extendPVal path def PVBot
-      ext _ pv = extendPVal path def pv in
-  psub & sub %~ IM.insertWith ext (fromIntegral x) newpv
-
+    IM.insert (fromIntegral cod) (PSEVal0 (PV0Total dom)) sub
 
 -- Partial substitution
 ----------------------------------------------------------------------------------------------------
 
 class PSubst a b | a -> b where
   psubst :: PSubArg => a -> b
-
-instance PSubst Lvl PartialVal where
-  psubst x = (?psub^.sub) IM.! fromIntegral x
 
 instance PSubst Spine (Tm -> IO Tm) where
   psubst t hd = case t of
@@ -304,15 +290,38 @@ instance PSubst Env (IO S.MetaSub) where
       ENil      -> pure S.TENil
       ELet e v  -> S.TELet  ! go e ∙ psubst v
       EDef e v  -> S.TEDef  ! go e ∙ psubst v
-      EDef0 e x -> S.TEDef0 ! go e ∙ setLvl (?psub^.dom) (readbPVal0 (psubst x))
+      EDef0 e x -> S.TEDef0 ! go e ∙ readbLvl0 x
+
+readbLvl0 :: PSubArg => Lvl -> IO Ix
+readbLvl0 x = case (?psub^.sub) IM.! fromIntegral x of
+  PSEVal0 (PV0Total x) -> pure $! lvlToIx (?psub^.dom) x
+  PSEVal0 _            -> unifyError
+  PSEVal{}             -> impossible
+
+instance ReadBack PartialRecFields (Tm -> [Val] -> IO Tm) where
+  readb pvs hd args = case pvs of
+    PRFNil          -> pure hd
+    PRFSnoc pvs t i -> S.App ! readb pvs hd args ∙ readb t args ∙ pure i
+
+instance ReadBack MultiClosure ([Val] -> Tm) where
+  readb v args = uf
+
+instance ReadBack PartialVal ([Val] -> IO Tm) where
+  readb pv args = case pv of
+    PVTotal v      -> pure $! readb v args
+    PVTop          -> unifyError
+    PVBot          -> unifyError
+    PVLam x i a pv -> let va = a ∙ args in
+                      S.Lam . BindI x i (readb va) ! fresh va \v -> readb pv (v:args)
+    PVRec i pvs    -> readb pvs (S.Rec i) args
 
 applyPVal :: PSubArg => PartialVal -> RevSpine -> [Val] -> IO Tm
 applyPVal pv sp args = case (pv, sp) of
   (PVLam a _ _ pv, RSApp t i sp  ) -> do t <- psubst t
                                          applyPVal pv sp (evalIn (?psub^.domEnv) t : args)
   (PVRec i pvs   , RSProject p sp) -> applyPVal (elemAt pvs (p^.index)) sp args
-  (PVVal v       , sp            ) -> psubst sp (readBackNoUnfold (?psub^.dom) (v ∙ args))
-  (pv            , RSId          ) -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readbPVal pv args
+  (PVTotal v     , sp            ) -> psubst sp (readBackNoUnfold (?psub^.dom) (v ∙ args))
+  (pv            , RSId          ) -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb pv args
   _                                -> unifyError
 
 approxOccursInMeta :: MetaVar -> MetaVar -> IO ()
@@ -323,15 +332,21 @@ checkMetaOccurs m = case ?psub^.occurs of
   Just m' -> when (m == m') unifyError
   _       -> pure ()
 
+psubstLvl :: PSubArg => Lvl -> PartialVal
+psubstLvl x = case (?psub^.sub) IM.! fromIntegral x of
+  PSEVal v -> v
+  _        -> impossible
+
 instance PSubst ClosureI (IO (BindI Tm)) where
-  psubst (ClI a x i t) = _
-    -- BindI ! (psubst a) ∙ pure a ∙
-    -- setPSub (lift ?psub) $ BindI x i ! psubst (t (LocalVar (?psub^.cod)))
+  psubst (ClI x i a t) = do
+    a' <- psubst a
+    BindI x i a' ! setPSub (lift (evalIn (?psub^.domEnv) a') ?psub)
+                   (psubst (t (LocalVar (?psub^.cod) a)))
 
 instance PSubst Val (IO Tm) where
   psubst v = case force v of
     Rigid h sp -> case h of
-      RHLocalVar x _ -> applyPVal (psubst x) (reverseSpine sp) []
+      RHLocalVar x _ -> applyPVal (psubstLvl x) (reverseSpine sp) []
       RHPrim i       -> psubst sp (S.Prim i)
       RHDCon i       -> psubst sp (S.DCon i)
       RHTCon i       -> psubst sp (S.TCon i)
@@ -346,9 +361,9 @@ instance PSubst Val (IO Tm) where
 
     Unfold h sp v -> do
       let goHead = case h of
-            UHMeta (MetaHead m e) -> do {checkMetaOccurs m; S.Meta m ! psubst e}
+            UHMeta (MetaHead m e) -> checkMetaOccurs m *> S.Meta m ! psubst e
             UHTopDef i            -> pure $ S.TopDef i
-            UHLocalDef x          -> applyPVal (psubst x) (reverseSpine sp) []
+            UHLocalDef x          -> applyPVal (psubstLvl x) (reverseSpine sp) []
       catch @UnifyEx (psubst sp =<< goHead) \_ -> psubst v
 
     Pi b    -> S.Pi ! psubst b
@@ -356,15 +371,14 @@ instance PSubst Val (IO Tm) where
     Quote t -> S.Quote ! psubst t
 
 instance PSubst Closure0 (IO (Bind Tm0)) where
-  psubst (Cl0 x a f) = _
-    -- setPSub (lift0 ?psub) $ Bind x ! psubst (f (?psub^.cod))
+  psubst (Cl0 x a f) =
+    Bind x ! psubst a ∙ setPSub (lift0 ?psub) (psubst (f (?psub^.cod)))
 
 instance PSubst Val0 (IO Tm0) where
   psubst t = case force0 t of
-    LocalVar0 x                  -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $
-                                           (S.LocalVar0 ! readbPVal0 (psubst x))
-    Meta0 (MetaHead m e)         -> do {checkMetaOccurs m; S.Meta0 m ! psubst e}
-    SolvedMeta0 (MetaHead m e) v -> catch @UnifyEx (do {checkMetaOccurs m; S.Meta0 m ! psubst e}) \_ -> psubst v
+    LocalVar0 x                  -> S.LocalVar0 ! readbLvl0 x
+    Meta0 (MetaHead m e)         -> checkMetaOccurs m *> S.Meta0 m ! psubst e
+    SolvedMeta0 (MetaHead m e) v -> catch @UnifyEx (checkMetaOccurs m *> S.Meta0 m ! psubst e) \_ -> psubst v
     TopDef0 i                    -> pure $ S.TopDef0 i
     DCon0 i                      -> pure $ S.DCon0 i
     App0 t u                     -> S.App0 ! psubst t ∙ psubst u
@@ -372,79 +386,57 @@ instance PSubst Val0 (IO Tm0) where
     Decl0 t                      -> S.Decl0 ! psubst t
     Project0 t p                 -> S.Project0 ! psubst t ∙ pure p
     Splice t                     -> S.Splice ! psubst t
-
-instance ReadBack PartialRecFields ([Val] -> Tm -> IO Tm) where
-  readb pvs args hd = case pvs of
-    PRFNil           -> pure hd
-    PRFSnoc pvs pv i -> S.App ! readb pvs args hd ∙ readbPVal pv args ∙ pure i
-
-readbPVal :: LvlArg => UnfoldArg => PartialVal -> [Val] -> IO Tm
-readbPVal pv args = case pv of
-  PVTop          -> unifyError
-  PVBot          -> unifyError
-  PVVal v        -> pure $! readb (v ∙ args)
-  PVVal0 x       -> impossible
-  PVLam a x i pv -> _
-                    -- let a' = readb (a ∙ args) in
-                    -- fresh \v -> S.Lam a' . BindI x i a' ! readbPVal pv (v:args)
-  PVRec i pvs    -> readb pvs args (S.Rec i)
-
-readbPVal0 :: LvlArg => PartialVal -> IO Ix
-readbPVal0 pv = case pv of
-  PVTop    -> unifyError
-  PVBot    -> unifyError
-  PVVal0 x -> pure $! lvlToIx ?lvl x
-  PVVal{};PVLam{};PVRec{} -> impossible
+    Let0 t u                     -> S.Let0 ! psubst t ∙ psubst u
 
 
 -- Inversion
 ----------------------------------------------------------------------------------------------------
 
-invertVal0 :: Lvl -> PartialSub -> Lvl -> Val0 -> Path -> IO PartialSub
-invertVal0 solvable psub param t path = case setLvl param $ whnf0 t of
-  LocalVar0 x -> uf
+-- invertVal0 :: Lvl -> PartialSub -> Lvl -> Val0 -> Path -> IO PartialSub
+-- invertVal0 solvable psub param t path = case setLvl param $ whnf0 t of
+--   LocalVar0 x -> uf
 
-invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Path -> IO PartialSub
-invertVal solvable psub param t path = case setLvl param $ whmnf t of
+-- invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Path -> IO PartialSub
+-- invertVal solvable psub param t path = case setLvl param $ whmnf t of
 
-  Lam t -> do
-    -- a <- setPSub psub $ psubst (t^.ty)
-    -- let ~va = evalIn (psub^.domEnv) a
-    -- let ~qa = setLvl (psub^.dom) readb
-    let var = LocalVar param (t^.ty)
-    let ?lvl = param + 1
-    invertVal solvable psub ?lvl (t ∙ var) (PApp _ (t^.name) (t^.icit) path)
+--   Lam t -> do
+--     -- a <- setPSub psub $ psubst (t^.ty)
+--     -- let ~va = evalIn (psub^.domEnv) a
+--     -- let ~qa = setLvl (psub^.dom) readb
+--     let var = LocalVar param (t^.ty)
+--     let ?lvl = param + 1
+--     invertVal solvable psub ?lvl (t ∙ var) (PApp _ (t^.name) (t^.icit) path)
 
-  Quote t -> do
-    invertVal0 solvable psub param t (PSplice path)
+--   Quote t -> do
+--     invertVal0 solvable psub param t (PSplice path)
 
-  Rigid (RHLocalVar x a) sp -> do
-    unless (solvable <= x && x < psub^.cod) unifyError
+--   Rigid (RHLocalVar x a) sp -> do
+--     unless (solvable <= x && x < psub^.cod) unifyError
 
-    let psub' = PSub Nothing False (psub^.domEnv) (psub^.dom) param (psub^.sub)
-    (path, sol) <- solveNestedSp (psub^.cod) psub' uf (reverseSpine sp) uf
-    uf
+--     let psub' = PSub Nothing False (psub^.domEnv) (psub^.dom) param (psub^.sub)
+--     (path, sol) <- solveNestedSp (psub^.cod) psub' uf (reverseSpine sp) uf
+--     uf
 
-  Rigid (RHRec i) sp -> do
-    uf
+--   Rigid (RHRec i) sp -> do
+--     uf
 
-  Unfold (UHLocalDef x) sp t -> do
-    uf
+--   Unfold (UHLocalDef x) sp t -> do
+--     uf
 
-  Unfold _ _ t ->
-    invertVal solvable psub param t path
+--   Unfold _ _ t ->
+--     invertVal solvable psub param t path
 
-  _ -> unifyError
+--   _ -> unifyError
 
-solveNestedSp :: Lvl -> PartialSub -> VTy -> RevSpine -> (Lvl, Path) -> IO (Path, PClosure)
-solveNestedSp solvable psub a sp (!rhsVar, !rhsPath) = do
-  uf
-
-
--- solveTop :: PartialSub
--- solveTopSp :: PartialSub ->
+-- solveNestedSp :: Lvl -> PartialSub -> VTy -> RevSpine -> (Lvl, Path) -> IO (Path, PClosure)
+-- solveNestedSp solvable psub a sp (!rhsVar, !rhsPath) = do
+--   uf
 
 
+-- -- solveTop :: PartialSub
+-- -- solveTopSp :: PartialSub ->
 
 
-----------------------------------------------------------------------------------------------------
+
+
+-- ----------------------------------------------------------------------------------------------------
