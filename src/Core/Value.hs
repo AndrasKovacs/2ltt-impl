@@ -1,7 +1,6 @@
 
 module Core.Value where
 
-import GHC.Word
 import Common hiding (Set)
 import qualified Common as C
 import Core.Info
@@ -79,11 +78,10 @@ instance Apply ClosureI Val Val where
   {-# inline (∙∘) #-}
   ClI _ _ _ f ∙∘ (!x,_) = f x
 
-data Closure0 = Cl0# Name VTy (Word# -> Val0)
+data Closure0 = Cl0# Name VTy (Val0 -> Val0)
 instance Show Closure0 where showsPrec _ _ acc = "<closure>" ++ acc
 
-pattern Cl0 x a f <- ((\(Cl0# x a f) -> (x, a, (\x -> case x of Lvl (W# x) -> f x))) -> (x, a, f)) where
-  Cl0 x a f = Cl0# x a (\x -> f (Lvl (W# x)))
+pattern Cl0 x a f <- Cl0# x a f where Cl0 x ~a f = Cl0# x a (oneShot f)
 {-# inline Cl0 #-}
 {-# complete Cl0 #-}
 
@@ -195,11 +193,11 @@ gSet = G Set Set
 
 data Env
   = ENil
-  | ELet Env  Val -- ^ Let-definition in outer local scope
-                  --   NOTE: the value here is already the Unfold that we want to lookup!
-                  --   To get the definition body, we have to project from the Unfold.
-  | EDef Env ~Val -- ^ Meta-stage binder
-  | EDef0 Env Lvl -- ^ Object binder, only supports renaming.
+  | ELet Env Val -- ^ Let-definition in outer local scope
+                 -- NOTE: the value here is already the Unfold that we want to lookup (we do this
+                 -- for sharing). To get the definition body, we have to project from the Unfold.
+  | EDef Env ~Val   -- ^ Meta-stage binder
+  | EDef0 Env ~Val0 -- ^ Object binder.
   deriving Show
 
 type EnvArg = (?env :: Env)
@@ -211,6 +209,14 @@ setEnv e act = let ?env = e in act
 envTail :: Env -> Env
 envTail (EDef e _) = e
 envTail _          = impossible
+
+dropEnv :: Lvl -> Env -> Env
+dropEnv x e = case (x, e) of
+  (0, e        ) -> e
+  (x, ELet e _ ) -> dropEnv (x - 1) e
+  (x, EDef e _ ) -> dropEnv (x - 1) e
+  (x, EDef0 e _) -> dropEnv (x - 1) e
+  _              -> impossible
 
 instance Sized Env where
   size = go 0 where

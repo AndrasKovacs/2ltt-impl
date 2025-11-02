@@ -12,7 +12,7 @@ def :: Val -> (Val -> EnvArg => a) -> EnvArg => a
 def v k = let ?env = EDef ?env v in k v
 
 {-# inline def0 #-}
-def0 :: Lvl -> (Lvl -> EnvArg => a) -> EnvArg => a
+def0 :: Val0 -> (Val0 -> EnvArg => a) -> EnvArg => a
 def0 v k = let ?env = EDef0 ?env v in k v
 
 {-# inline freshLvl #-}
@@ -21,7 +21,11 @@ freshLvl k = let v = ?lvl in let ?lvl = v + 1 in k v
 
 {-# inline fresh #-}
 fresh :: VTy -> (LvlArg => Val -> a) -> LvlArg => a
-fresh ~a k = freshLvl \l -> k $! LocalVar l a
+fresh ~a k = freshLvl \l -> k (LocalVar l a)
+
+{-# inline fresh0 #-}
+fresh0 :: (LvlArg => Val0 -> a) -> LvlArg => a
+fresh0 k = freshLvl \l -> k (LocalVar0 l)
 
 {-# inline defLazy #-}
 defLazy :: Val -> (EnvArg => a) -> EnvArg => a
@@ -42,7 +46,7 @@ lookupIx x = go ?env x where
   go (ELet e _)  x = go e (x - 1)
   go _           _ = impossible
 
-lookupIx0 :: EnvArg => Ix -> Lvl
+lookupIx0 :: EnvArg => Ix -> Val0
 lookupIx0 x = go ?env x where
   go (EDef0 _ l) 0 = l
   go (EDef e _)  x = go e (x - 1)
@@ -140,7 +144,7 @@ instance Eval S.TmEnv Env where
     S.TENil      -> ENil
     S.TELet e t  -> ELet (eval e) (eval t)
     S.TEDef e t  -> EDef (eval e) (eval t)
-    S.TEDef0 e x -> EDef0 (eval e) (lookupIx0 x)
+    S.TEDef0 e t -> EDef0 (eval e) (eval t)
 
 instance Eval S.MetaSub Env where
   eval = \case
@@ -149,7 +153,7 @@ instance Eval S.MetaSub Env where
 
 instance Eval S.Tm0 Val0 where
   eval = \case
-    S.LocalVar0 x  -> LocalVar0 (lookupIx0 x)
+    S.LocalVar0 x  -> lookupIx0 x
     S.Meta0 m sub  -> meta0 m (eval sub)
     S.TopDef0 di   -> TopDef0 di
     S.DCon0 di     -> DCon0 di
@@ -301,7 +305,7 @@ instance ReadBack ClosureI (S.BindI S.Tm) where
   readb (ClI x i a t) = S.BindI x i (readb a) $ fresh a \v -> readb (t v)
 
 instance ReadBack Closure0 (S.Bind S.Tm0) where
-  readb (Cl0 x a t) = S.Bind x (readb a) $ freshLvl \l -> readb (t l)
+  readb (Cl0 x a t) = S.Bind x (readb a) $ fresh0 \v -> readb (t v)
 
 forceUnfold :: UnfoldArg => Val -> Val
 forceUnfold t = case ?unfold of

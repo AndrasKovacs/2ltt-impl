@@ -159,6 +159,17 @@ Partial substitution returning partial result:
 Pruning
   TODO
 
+
+
+IMPL:
+  - copy from my sett version
+  - except that partial values have transparent multi-closure defn
+  - I don't have to check rhs type psubst in nested spine solution
+     - because non-linear args always blow up there and we psubst
+       every solution lambda binder anyway
+  - But I do have to check it in top spine solution
+     (if there's any non-linearity in the psubst)
+
 -}
 
 ----------------------------------------------------------------------------------------------------
@@ -179,8 +190,6 @@ unifyError = throwIO UETodo
 newtype MultiClosure a = MCl ([Val] -> a)
 instance Show (MultiClosure a) where show _ = "<closure>"
 instance Apply (MultiClosure Val) [Val] Val where
-  MCl f ∙∘ (e,_) = f e; {-# inline (∙∘) #-}
-instance Apply (MultiClosure Val0) [Val] Val0 where
   MCl f ∙∘ (e,_) = f e; {-# inline (∙∘) #-}
 
 data PartialRecFields
@@ -204,6 +213,7 @@ instance UpdateAt PartialRecFields Ix PartialVal where
 data PartialVal
   = PVTop
   | PVBot
+  | PVQuote PartialVal0
   | PVTotal (MultiClosure Val)
   | PVLam Name Icit (MultiClosure Val) PartialVal
   | PVRec {-# nounpack #-} RecInfo PartialRecFields
@@ -212,7 +222,7 @@ data PartialVal
 data PartialVal0
   = PV0Top
   | PV0Bot
-  | PV0Total (MultiClosure Val0)
+  | PV0Total Val0
   deriving Show
 
 data PSubEntry
@@ -264,15 +274,15 @@ lift ~a (PSub occ pr idenv dom cod sub) =
   PSub occ pr (EDef idenv var) (dom + 1) (cod + 1) $
     IM.insert (fromIntegral cod) (PSEVal (PVTotal (MCl \_ -> var))) sub
 
-unlift :: PartialSub -> PartialSub
-unlift (PSub occ pr idenv dom cod sub) =
-  PSub occ pr (envTail idenv) (dom - 1) (cod - 1) (IM.delete (fromIntegral dom) sub)
+-- unlift :: PartialSub -> PartialSub
+-- unlift (PSub occ pr idenv dom cod sub) =
+--   PSub occ pr (envTail idenv) (dom - 1) (cod - 1) (IM.delete (fromIntegral dom) sub)
 
 lift0 :: PartialSub -> PartialSub
 lift0 (PSub occ pr idenv dom cod sub) =
   let var = LocalVar0 dom in
-  PSub occ pr (EDef0 idenv dom) (dom + 1) (cod + 1) $
-    IM.insert (fromIntegral cod) (PSEVal0 (PV0Total (MCl \_ -> var))) sub
+  PSub occ pr (EDef0 idenv var) (dom + 1) (cod + 1) $
+    IM.insert (fromIntegral cod) (PSEVal0 (PV0Total var)) sub
 
 updatePSub :: PartialSub -> Lvl -> PartialVal -> PartialSub
 updatePSub psub x pv =
@@ -287,6 +297,9 @@ updatePSub0 psub x pv =
 
 class PSubst a b | a -> b where
   psubst :: PSubArg => a -> b
+
+psubstIn :: PSubst a b => PartialSub -> a -> b
+psubstIn psub a = setPSub psub (psubst a)
 
 instance PSubst Spine (Tm -> IO Tm) where
   psubst t hd = case t of
@@ -307,33 +320,26 @@ instance PSubst Env (IO S.MetaSub) where
       ENil      -> pure S.TENil
       ELet e v  -> S.TELet  ! go e ∙ psubst v
       EDef e v  -> S.TEDef  ! go e ∙ psubst v
-      EDef0 e x -> S.TEDef0 ! go e ∙ _
-
--- readbLvl0 :: PSubArg => Lvl -> IO Ix
--- readbLvl0 x = case (?psub^.sub) IM.! fromIntegral x of
---   PSEVal0 (PV0Total pv) -> pure $! readb pv _
---   PSEVal0 _             -> unifyError
---   PSEVal{}              -> impossible
+      EDef0 e v -> S.TEDef0 ! go e ∙ psubst v
 
 instance ReadBack PartialRecFields (Tm -> [Val] -> IO Tm) where
   readb pvs hd args = case pvs of
     PRFNil          -> pure hd
     PRFSnoc pvs t i -> S.App ! readb pvs hd args ∙ readb t args ∙ pure i
 
-instance ReadBack (MultiClosure Val) ([Val] -> Tm) where
-  readb v args = uf
-
-instance ReadBack (MultiClosure Val0) ([Val] -> Tm0) where
-  readb v args = uf
-
 instance ReadBack PartialVal ([Val] -> IO Tm) where
   readb pv args = case pv of
-    PVTotal v      -> pure $! readb v args
+    PVTotal v      -> pure $! readb (v ∙ args)
     PVTop          -> unifyError
     PVBot          -> unifyError
     PVLam x i a pv -> let va = a ∙ args in
                       S.Lam . BindI x i (readb va) ! fresh va \v -> readb pv (v:args)
     PVRec i pvs    -> readb pvs (S.Rec i) args
+
+instance ReadBack PartialVal0 (IO Tm0) where
+  readb = \case
+    PV0Total v     -> pure $! readb v
+    PV0Top; PV0Bot -> unifyError
 
 applyPVal :: PSubArg => PartialVal -> RevSpine -> [Val] -> IO Tm
 applyPVal pv sp args = case (pv, sp) of
@@ -357,11 +363,16 @@ psubstLvl x = case (?psub^.sub) IM.! fromIntegral x of
   PSEVal v -> v
   _        -> impossible
 
+psubstLvl0 :: PSubArg => Lvl -> PartialVal0
+psubstLvl0 x = case (?psub^.sub) IM.! fromIntegral x of
+  PSEVal0 v -> v
+  _         -> impossible
+
 instance PSubst ClosureI (IO (BindI Tm)) where
   psubst (ClI x i a t) = do
     a' <- psubst a
-    BindI x i a' ! setPSub (lift (evalIn (?psub^.domEnv) a') ?psub)
-                   (psubst (t (LocalVar (?psub^.cod) a)))
+    BindI x i a' ! psubstIn (lift (evalIn (?psub^.domEnv) a') ?psub)
+                            (t (LocalVar (?psub^.cod) a))
 
 instance PSubst Val (IO Tm) where
   psubst v = case force v of
@@ -392,11 +403,11 @@ instance PSubst Val (IO Tm) where
 
 instance PSubst Closure0 (IO (Bind Tm0)) where
   psubst (Cl0 x a f) =
-    Bind x ! psubst a ∙ setPSub (lift0 ?psub) (psubst (f (?psub^.cod)))
+    Bind x ! psubst a ∙ setPSub (lift0 ?psub) (psubst (f (LocalVar0 (?psub^.cod))))
 
 instance PSubst Val0 (IO Tm0) where
   psubst t = case force0 t of
-    LocalVar0 x                  -> S.LocalVar0 ! readbLvl0 x
+    LocalVar0 x                  -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb $ psubstLvl0 x
     Meta0 (MetaHead m e)         -> checkMetaOccurs m *> S.Meta0 m ! psubst e
     SolvedMeta0 (MetaHead m e) v -> catch @UnifyEx (checkMetaOccurs m *> S.Meta0 m ! psubst e) \_ -> psubst v
     TopDef0 i                    -> pure $ S.TopDef0 i
@@ -412,52 +423,104 @@ instance PSubst Val0 (IO Tm0) where
 -- Inversion
 ----------------------------------------------------------------------------------------------------
 
-data RHSSpine0
-  = IS0Splice RHSSpine
-  | IS0Id
-  deriving Show
+data Spine0 = S0Splice Spine | S0Id deriving Show
 
-data RHSSpine
-  = ISId
-  | ISApp RHSSpine Val Icit
-  | ISProj RHSSpine Proj
-  deriving Show
+data Rhs sp = Rhs {rhsLvl :: Lvl, rhsTy :: ~VTy, rhs_ :: sp} deriving Show
+makeFields ''Rhs
 
-invertVal0 :: Lvl -> PartialSub -> Val0 -> Lvl -> RHSSpine0 -> IO PartialSub
-invertVal0 solvable psub t rhsVar rhsSp = case setLvl (psub^.cod) $ whnf0 t of
-  LocalVar0 x -> pure $! updatePSub0 psub x uf
-  _           -> unifyError
+rhsSpine :: Lens (Rhs sp) (Rhs sp') sp sp'
+rhsSpine f (Rhs x a sp) = Rhs x a <$> f sp
 
-invertVal :: Lvl -> PartialSub -> Val -> Lvl -> RHSSpine -> IO PartialSub
-invertVal solvable psub t rhsVar rhsSp = case setLvl (psub^.cod) $ whmnf t of
+spine0 :: Rhs Spine0 -> Val0
+spine0 (Rhs x a sp) = case sp of
+  S0Id        -> LocalVar0 x
+  S0Splice sp -> Splice $ Rigid (RHLocalVar x a) sp
+
+invertVal0 :: Lvl -> PartialSub -> Lvl -> Val0 -> Rhs Spine0 -> IO PartialSub
+invertVal0 solvable psub param t rhs = case whnf0 t of
+  LocalVar0 x -> do
+    unless (solvable <= x && x < psub^.cod) unifyError
+    pure $! updatePSub0 psub x $ PV0Total $ spine0 rhs
+  Splice (LocalVar x a) -> do
+    unless (solvable <= x && x < psub^.cod) unifyError
+    let v = Quote (spine0 rhs)
+    pure $! updatePSub psub x $ PVTotal $ MCl \_ -> v
+  _  -> unifyError
+
+invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Rhs Spine -> IO PartialSub
+invertVal solvable psub param t rhs = case setLvl (psub^.cod) $ whmnf t of
 
   Lam t -> do
-    a' <- setPSub psub $ psubst (t^.ty)
-    let ~va' = evalIn (psub^.domEnv) a'
-    let var = LocalVar (psub^.cod) (t^.ty)
-    unlift ! invertVal solvable (lift va' psub) (t ∙ var) rhsVar (ISApp rhsSp var (t^.icit))
+    let var = LocalVar param (t^.ty)
+    invertVal solvable psub (param + 1) (t ∙ var)
+              (rhs & rhsSpine %~ \sp -> SApp sp var (t^.icit))
 
   Quote t -> do
-    invertVal0 solvable psub t rhsVar (IS0Splice rhsSp)
-
-  -- TODO: shortcut plain variable case
-  Rigid (RHLocalVar x a) sp -> do
-    unless (solvable <= x && x < rhsVar) unifyError
-    updatePSub psub x ! solveNestedSp rhsVar psub a (reverseSpine sp) rhsVar rhsSp
+    invertVal0 solvable psub param t (rhs & rhsSpine %~ S0Splice)
 
   Rigid (RHRec i) sp -> do
-    uf
 
-  -- TODO preserve local definitions
-  Unfold (UHLocalDef x) sp t -> do
-    uf
+    let go :: PartialSub -> FieldInfo -> Spine -> Ix -> IO PartialSub
+        go psub fs sp ix = case (fs, sp) of
+          (FINil, SId                  ) -> pure psub
+          (FISnoc fs x i a, SApp sp t _) -> do
+            psub <- go psub fs sp (ix + 1)
+            invertVal solvable psub param t (rhs & rhsSpine %~ (`SProject` Proj ix x))
+          _ -> impossible
 
+    go psub (i^.fields) sp 0
+
+  Rigid (RHLocalVar x a) sp -> do
+    unless (solvable <= x && x < psub^.cod) unifyError
+    updatePSub psub x ! solveNestedSp (psub^.domEnv) (psub^.cod) psub a (reverseSpine sp) rhs
+
+  -- TODO: preserve local definitions (if we are mapping to a local definition!)
   Unfold _ _ t -> do
-    invertVal solvable psub t rhsVar rhsSp
+    invertVal solvable psub param t rhs
 
   _ -> unifyError
 
-solveNestedSp :: Lvl -> PartialSub -> VTy -> RevSpine -> Lvl -> RHSSpine -> IO PartialVal
-solveNestedSp solvable psub a sp rhsVar rhsSp = uf
+makeMCl :: Env -> Tm -> MultiClosure Val
+makeMCl rootEnv t = MCl \args -> evalIn (foldl' EDef rootEnv args) t
+
+solveNestedSp :: Env -> Lvl -> PartialSub -> VTy -> RevSpine -> Rhs Spine -> IO PartialVal
+solveNestedSp rootEnv solvable psub a rsp rhs = case rsp of
+
+  RSId -> do
+    let hd = S.LocalVar (lvlToIx (psub^.dom) (rhs^.lvl))
+    pv <- psubstIn psub (rhs^.rhsSpine) hd
+    pure $! PVTotal $ makeMCl rootEnv pv
+
+  sp -> case (whnf a, rsp) of
+    (Pi b, RSApp u _ sp) -> do
+      a <- psubstIn psub (b^.ty)
+      let ~va = evalIn (psub^.domEnv) a
+      let d = psub^.dom
+      let v = LocalVar d va
+      psub' <- invertVal solvable (psub & domEnv %~ (`EDef` v) & dom +~ 1)
+                                  (psub^.cod) u (Rhs d va SId)
+      pv <- solveNestedSp rootEnv solvable psub' (b ∙ v) sp rhs
+      pure $! PVLam (b^.name) (b^.icit) (makeMCl rootEnv a) pv
+
+    (Rigid (RHRecTy i) sp, RSProject p rsp) -> do
+      pv <- solveNestedSp rootEnv solvable psub _ rsp rhs
+      _
+
+
+-- solveNestedSp :: Lvl -> PartialSub -> VTy -> RevSpine -> Lvl -> VTy -> Spine -> IO PartialVal
+-- solveNestedSp solvable psub a sp rhsVar rhsVarTy rhsSp = case sp of
+
+--   RSId -> do
+--     let rhs = setLvl (psub^.dom) $ setUnfold UnfoldNone $ readb rhsSp (S.LocalVar (readb rhsVar))
+--     pure $! PVTotal $! mkMCl psub rhsVar rhs
+
+--   sp -> case (whnf a, sp) of
+--     (Pi b, RSApp u _ t) -> do
+--       a <- setPSub psub $ psubst (b^.ty)
+--       psub <- invertVal solvable psub _ _ _ _
+--       _
+
+--       -- PVLam (b^.name) (b^.icit) (mkMCl psub rhsVar a) !
+
 
 ----------------------------------------------------------------------------------------------------

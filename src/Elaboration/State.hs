@@ -27,7 +27,10 @@ data Solved = Solved {
   , solvedTy          :: Ty
   , solvedSolution    :: Tm     -- the type and solution are under the Locals
   , solvedIsInline    :: Bool   -- should we immediately unfold the meta
-  , solvedOccursCache :: RF.Ref MetaVar
+  , solvedOccursCache :: RF.Ref MetaVar -- mutable cache for approximate occurs checking
+                                        -- we initialize it to (-1). It holds the last meta
+                                        -- that we succefully checked for *not occurring*
+                                        -- in the solution
   }
 makeFields ''Solved
 
