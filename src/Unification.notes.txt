@@ -143,7 +143,7 @@ Partial substitution returning partial result:
 Pruning
   TODO
 
-IMPL:
+TODO
   - copy from my sett version
   - except that partial values have transparent multi-closure defn
   - I don't have to check rhs type psubst in nested spine solution
@@ -151,3 +151,7 @@ IMPL:
        every solution lambda binder anyway
   - But I do have to check it in top spine solution
      (if there's any non-linearity in the psubst)
+
+TODO
+  - We don't need Rhs data, because the head is always stored in the top of the rootEnv
+  - "smart" spine reversals, also to reverse the metasubst

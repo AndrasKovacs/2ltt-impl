@@ -389,7 +389,7 @@ solveTopMetaSub psub ls env sp rhs = case (ls, env) of
   (S.LNil, ENil) -> solveTopSpine psub sp rhs
 
   (S.LBind ls x a, EDef e t) -> do
-    psub' <-
+    _
 
   (S.LBind0 ls x a, EDef0 e t) -> do
     _
