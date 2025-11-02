@@ -4,6 +4,7 @@ module Evaluation where
 import Common hiding (Prim(..))
 import qualified Common      as S
 import qualified Core.Syntax as S
+import Core.Info
 import Core.Value
 import Elaboration.State
 
@@ -341,3 +342,42 @@ instance ReadBack Val S.Tm where
     Pi b                   -> S.Pi (readb b)
     Lam t                  -> S.Lam (readb t)
     Quote t                -> S.Quote (readb t)
+
+-- Type computation
+----------------------------------------------------------------------------------------------------
+
+-- | Input: type of function, arg value.
+--   Output: Binder name, icitness, type, type of application.
+appTy :: VTy -> Val -> (Name, Icit, VTy, VTy)
+appTy funty ~arg = case whnf funty of
+  Pi b -> (b^.name, b^.icit, b^.ty, b ∙ arg)
+  _    -> impossible
+
+-- | Input: value, its type, projection.
+--   Output: RecInfo, type of projected value.
+projTy :: Val -> VTy -> Proj -> (RecInfo, VTy)
+projTy t a (Proj ix x) = case whnf t of
+  RecTy i params ->
+
+    let go :: FieldInfo -> Ix -> Ix -> VTy
+        go fs ix here = case (fs, ix) of
+          (FISnoc fs x i a, 0 ) -> evalIn (mkEnv fs here) a
+          (FISnoc fs _ _ _, ix) -> go fs (ix - 1) (here + 1)
+          _                     -> impossible
+
+        mkEnv :: FieldInfo -> Ix -> Env
+        mkEnv fs here = case fs of
+          FINil           -> paramEnv params
+          FISnoc fs _ _ _ -> EDef (mkEnv fs (here + 1)) (proj t (Proj here x))
+
+        paramEnv :: Spine -> Env
+        paramEnv = \case
+          SId         -> ENil
+          SApp sp t _ -> EDef (paramEnv sp) t
+          _           -> impossible
+
+    in (i, go (i^.fields) ix 0)
+
+  _ -> impossible
+
+----------------------------------------------------------------------------------------------------

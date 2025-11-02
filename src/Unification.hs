@@ -12,165 +12,6 @@ import Evaluation
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 
-----------------------------------------------------------------------------------------------------
-{- quick list of todo fancy features
-  - nested pattern unification
-  - weak Libal-Miller unification
-  - partial substitution returning partial results
-  - eliminator inversions
-  - non-escaping meta optimization
-  - local let-def preservation
-  - observational def-eq coercions
--}
-
-{-
-
-Libal-Miller unification: https://www.lix.polytechnique.fr/Labo/Dale.Miller/papers/fcu-final.pdf
-
-    - It's very hard to do in a full & stable way.
-      Checking subterms is best done with hash-consing and eta-short normalization.
-      Then, we have to somehow do tree matching during psubst. For that, starting
-      with eta-short normal hash-consing on the rhs would also be an option.
-      However, eta-short normal hash-consing is extremely expensive and doesn't
-      support incremental unfolding.
-
-    - We may try a simpler limited version:
-        - Instead of checking subterm relations, we require bound variables to be *disjoint* in
-          spine terms. If we invert some term, we only attach path information to the
-          preorder-first bound var ("anchor"), and mark all other bound vars in the term as
-          illegal. During psubst, if we hit an anchor var, we throw the anchor path as an exception
-          and bubble up to the root of the path. At that point, we can do a conversion check to see
-          if the inversion rule fires.
-        - This is also rather complex, and I don't see an obvious way to do it in a nested way.
-          Doing it in a nested way would be important, because nested pattern unification handles
-          eta-expansions, and if I do Libal-Miller separately in the top spine, I have to do
-          eta-reductions.
-
-    - We might just hardwire simple cases like Lift, ElVal and ElComp. And see in practice which
-      Libal-Miller problem pop up, to assess the practical benefit.
-
-Optimization for non-escaping metas
-
-  Most metas don't escape the scope of their creation, so we want to optimize for that case.
-  Concretely, the cost of operations on non-escaping metas should not depend on the size of the
-  local scope.
-
-    - fresh meta creation is already O(1) in local scope
-    - TODO metasub inversion should be O(1). We need to represent weakened identity env-s in values,
-      shortcut inversion for that case.
-    - TODO pruning should be O(1). Need to shortcut pruning subst creation if one meta scope is contained
-      in the other one.
-
-Inverting local defs
-
-  Mapping to a defined domain var is an merely an *optimization* whose goal is preserving unfoldings,
-  it can't fail in a hard way.
-
-    - If inversion fails, we can simply continue; the only effect is that the domain definition will
-      be unused in the solution (but may be still used in the solution type).
-      When psubst-ing the solution candidate, we simply unfold those local defs which are not mapped
-      in the psub.
-    - We can invert codomain definitions opportunistically
-
-  Example: "a" and "x" are both defined.
-
-       a
-     α x =? rhs
-     x ↦ a
-     α := λ a. rhs[x↦a]
-
-     We simply rename local definitions.
-
-  Example: "a", "x", "y" are defined
-
-       a
-    α (x, y) =? rhs
-    x ↦ a.1
-    y ↦ a.2
-    α := λ a. rhs[x↦a.1, y↦a.2]
-
-  Codomain local defs behave like bound vars for the purpose of inversion
-  When inversion fails for a defvar-headed spine, we unfold and retry.
-
-  We need two different modes for inversion
-    - mapping to defvar: don't whnf, retry localdef inversion with unfolding
-    - mapping to bvar: always whnf
-
-
-Postponing
-
-  - TODO
-  - Need to track strong rigid/rigid/flex occurrences in errors
-  - Need placeholders metas
-  - NEW: fine-grain blocking: psubst failure gets *locally* replaced with placeholder metas
-    - We bubble up to the outermost rigid or flex context
-    - At *that* point we make a postponed problem and return a placeholder meta
-    - Makes more progress than Agda!
-
-  - Do we want to block on a single meta or more?
-     In psubst, we might fail under multiple metas
-
-  - JUST LEARNED ABOUT AGDA'S ANTI-UNIFICATION
-    - Can we *just* keep unifying telescopes in a syntax-directed setting, by doing
-      absolutely nothing???
-    - Is this "typing modulo"?
-    - IDEA: we relax the homogenity of unification. Since we only need homogenity for syntax-directed
-      eta rules, we only need that:
-        - when one side is Π, the other one is Π too with the same Icit-ness
-        - when one side is a record, the other one is a record with the same arity
-
-    - Does it even work?
-
-         f : (b : Bool) → (if b then (Bool → Bool) else Bool) → C
-
-         f true (λ x. x) =? f (α true) y
-
-         postpone "true =? α true"
-
-         (λ x. x : Bool → Bool) =? (y : if α true then (Bool → Bool) else Bool)
-
-         No, it doesn't work!
-         In Agda, anti-unification works because eta-expansion is type-directed,
-         and it can only happen if both sides have Π/Σ type
-
-    - Lesson: heterogeneous unification can make progress, but it requires computing types
-
-    - Can we use some kind of computing meta-transport, without OTT or cubical, to get
-      progress under postponed equality?
-
-       f : (x : A) → B x → C
-       f t u =? f t' u'
-
-       cast (B t) (B t') u =? u'
-
-       fancy "cast" operation which becomes definitional identity if t ≡ t'
-
-      Basically: Yes, and it's probably a better solution than heterogeneous
-      unification
-
-Observational conversion
-  TODO
-
-Partial substitution returning partial result:
-  TODO
-  - if we have a soft failure of psubst, we bubble up to the enclosing strong
-    rigid context and plug in a placeholder meta, and succeed.
-
-Pruning
-  TODO
-
-
-
-IMPL:
-  - copy from my sett version
-  - except that partial values have transparent multi-closure defn
-  - I don't have to check rhs type psubst in nested spine solution
-     - because non-linear args always blow up there and we psubst
-       every solution lambda binder anyway
-  - But I do have to check it in top spine solution
-     (if there's any non-linearity in the psubst)
-
--}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -274,10 +115,6 @@ lift ~a (PSub occ pr idenv dom cod sub) =
   PSub occ pr (EDef idenv var) (dom + 1) (cod + 1) $
     IM.insert (fromIntegral cod) (PSEVal (PVTotal (MCl \_ -> var))) sub
 
--- unlift :: PartialSub -> PartialSub
--- unlift (PSub occ pr idenv dom cod sub) =
---   PSub occ pr (envTail idenv) (dom - 1) (cod - 1) (IM.delete (fromIntegral dom) sub)
-
 lift0 :: PartialSub -> PartialSub
 lift0 (PSub occ pr idenv dom cod sub) =
   let var = LocalVar0 dom in
@@ -285,15 +122,25 @@ lift0 (PSub occ pr idenv dom cod sub) =
     IM.insert (fromIntegral cod) (PSEVal0 (PV0Total var)) sub
 
 updatePSub :: PartialSub -> Lvl -> PartialVal -> PartialSub
-updatePSub psub x pv =
-  psub & sub %~ IM.insertWith (<>) (fromIntegral x) (PSEVal pv)
+updatePSub isub x pv = isub & sub %~ IM.insertWith (<>) (fromIntegral x) (PSEVal pv)
 
 updatePSub0 :: PartialSub -> Lvl -> PartialVal0 -> PartialSub
-updatePSub0 psub x pv =
-  psub & sub %~ IM.insertWith (<>) (fromIntegral x) (PSEVal0 pv)
+updatePSub0 isub x pv = isub & sub %~ IM.insertWith (<>) (fromIntegral x) (PSEVal0 pv)
 
 -- Partial substitution
 ----------------------------------------------------------------------------------------------------
+
+data RevSpine
+  = RSId
+  | RSApp Val Icit RevSpine
+  | RSProject Proj RevSpine
+  deriving Show
+
+reverseSpine :: Spine -> RevSpine
+reverseSpine = go RSId where
+  go acc SId            = acc
+  go acc (SApp t u i)   = go (RSApp u i acc) t
+  go acc (SProject t p) = go (RSProject p acc) t
 
 class PSubst a b | a -> b where
   psubst :: PSubArg => a -> b
@@ -377,7 +224,7 @@ instance PSubst ClosureI (IO (BindI Tm)) where
 instance PSubst Val (IO Tm) where
   psubst v = case force v of
     Rigid h sp -> case h of
-      RHLocalVar x _ -> applyPVal (psubstLvl x) (reverseSpine sp) []
+      RHLocalVar x a -> applyPVal (psubstLvl x) (reverseSpine sp) []
       RHPrim i       -> psubst sp (S.Prim i)
       RHDCon i       -> psubst sp (S.DCon i)
       RHTCon i       -> psubst sp (S.TCon i)
@@ -420,8 +267,25 @@ instance PSubst Val0 (IO Tm0) where
     Let0 t u                     -> S.Let0 ! psubst t ∙ psubst u
 
 
--- Inversion
+-- Spine Inversion
 ----------------------------------------------------------------------------------------------------
+
+data RevSpine'
+  = RSId'
+  | RSApp' Val Name Icit ~VTy RevSpine'
+  | RSProject' {-# nounpack #-} RecInfo Proj RevSpine'
+  deriving Show
+
+reverseSpine' :: RigidHead -> VTy -> Spine -> RevSpine'
+reverseSpine' h ~a sp = snd (go sp) where
+  go :: Spine -> (VTy, RevSpine')
+  go SId           = (a, RSId')
+  go (SApp sp t i) = case go sp of
+    (a, rsp) -> case appTy a t of
+      (x, i, tty, a) -> (tty, RSApp' t x i tty rsp)
+  go (SProject sp p) = case go sp of
+    (a, rsp) -> case projTy (Rigid h sp) a p of
+      (inf, a) -> (a, RSProject' inf p rsp)
 
 data Spine0 = S0Splice Spine | S0Id deriving Show
 
@@ -470,11 +334,12 @@ invertVal solvable psub param t rhs = case setLvl (psub^.cod) $ whmnf t of
 
     go psub (i^.fields) sp 0
 
-  Rigid (RHLocalVar x a) sp -> do
+  Rigid rh@(RHLocalVar x a) sp -> do
     unless (solvable <= x && x < psub^.cod) unifyError
-    updatePSub psub x ! solveNestedSp (psub^.domEnv) (psub^.cod) psub a (reverseSpine sp) rhs
+    let rsp = reverseSpine' rh a sp
+    updatePSub psub x ! solveNestedSp (psub^.domEnv) (psub^.cod) psub rsp rhs
 
-  -- TODO: preserve local definitions (if we are mapping to a local definition!)
+  -- TODO: preserve local definitions (TODO: detect if we're mapping to a local def)
   Unfold _ _ t -> do
     invertVal solvable psub param t rhs
 
@@ -483,44 +348,62 @@ invertVal solvable psub param t rhs = case setLvl (psub^.cod) $ whmnf t of
 makeMCl :: Env -> Tm -> MultiClosure Val
 makeMCl rootEnv t = MCl \args -> evalIn (foldl' EDef rootEnv args) t
 
-solveNestedSp :: Env -> Lvl -> PartialSub -> VTy -> RevSpine -> Rhs Spine -> IO PartialVal
-solveNestedSp rootEnv solvable psub a rsp rhs = case rsp of
+solveNestedSp :: Env -> Lvl -> PartialSub -> RevSpine' -> Rhs Spine -> IO PartialVal
+solveNestedSp rootEnv solvable psub rsp rhs = case rsp of
 
-  RSId -> do
+  RSId' -> do
     let hd = S.LocalVar (lvlToIx (psub^.dom) (rhs^.lvl))
-    pv <- psubstIn psub (rhs^.rhsSpine) hd
-    pure $! PVTotal $ makeMCl rootEnv pv
+    body <- psubstIn psub (rhs^.rhsSpine) hd
+    pure $! PVTotal $ makeMCl rootEnv body
 
-  sp -> case (whnf a, rsp) of
-    (Pi b, RSApp u _ sp) -> do
-      a <- psubstIn psub (b^.ty)
-      let ~va = evalIn (psub^.domEnv) a
-      let d = psub^.dom
-      let v = LocalVar d va
-      psub' <- invertVal solvable (psub & domEnv %~ (`EDef` v) & dom +~ 1)
-                                  (psub^.cod) u (Rhs d va SId)
-      pv <- solveNestedSp rootEnv solvable psub' (b ∙ v) sp rhs
-      pure $! PVLam (b^.name) (b^.icit) (makeMCl rootEnv a) pv
+  RSApp' u x i a rsp -> do
+    a <- psubstIn psub a
+    let ~va = evalIn (psub^.domEnv) a
+    let d = psub^.dom
+    let var = LocalVar d va
+    psub' <- invertVal solvable (psub & domEnv %~ (`EDef` var) & dom +~ 1)
+                                (psub^.cod) u (Rhs d va SId)
+    pv <- solveNestedSp rootEnv solvable psub' rsp rhs
+    pure $! PVLam x i (makeMCl rootEnv a) pv
 
-    (Rigid (RHRecTy i) sp, RSProject p rsp) -> do
-      pv <- solveNestedSp rootEnv solvable psub _ rsp rhs
-      _
+  RSProject' inf p rsp -> do
+    pv <- solveNestedSp rootEnv solvable psub rsp rhs
+
+    let mkFields :: FieldInfo -> Ix -> PartialRecFields
+        mkFields fs ix = case (fs, ix) of
+          (FISnoc fs _ i _, 0 ) -> PRFSnoc (bottoms fs) pv i
+          (FISnoc fs _ i _, ix) -> PRFSnoc (mkFields fs (ix - 1)) PVBot i
+          _                     -> impossible
+
+        bottoms :: FieldInfo -> PartialRecFields
+        bottoms = \case
+          FINil           -> PRFNil
+          FISnoc fs _ i _ -> PRFSnoc (bottoms fs) PVBot i
+
+    pure $! PVRec inf $ mkFields (inf^.fields) (p^.index)
+
+-- TODO: reverse the locals and the environment
+solveTopMetaSub :: PartialSub -> S.Locals -> Env -> Spine -> Val -> IO S.Tm
+solveTopMetaSub psub ls env sp rhs = case (ls, env) of
+
+  (S.LNil, ENil) -> solveTopSpine psub sp rhs
+
+  (S.LBind ls x a, EDef e t) -> do
+    psub' <-
+
+  (S.LBind0 ls x a, EDef0 e t) -> do
+    _
+
+  (S.LDef ls x a t, ELet e tv) -> do
+    _
+
+  _ -> impossible
+
+solveTopSpine :: PartialSub -> Spine -> Val -> IO S.Tm
+solveTopSpine psub sp rhs = _
 
 
--- solveNestedSp :: Lvl -> PartialSub -> VTy -> RevSpine -> Lvl -> VTy -> Spine -> IO PartialVal
--- solveNestedSp solvable psub a sp rhsVar rhsVarTy rhsSp = case sp of
 
---   RSId -> do
---     let rhs = setLvl (psub^.dom) $ setUnfold UnfoldNone $ readb rhsSp (S.LocalVar (readb rhsVar))
---     pure $! PVTotal $! mkMCl psub rhsVar rhs
-
---   sp -> case (whnf a, sp) of
---     (Pi b, RSApp u _ t) -> do
---       a <- setPSub psub $ psubst (b^.ty)
---       psub <- invertVal solvable psub _ _ _ _
---       _
-
---       -- PVLam (b^.name) (b^.icit) (mkMCl psub rhsVar a) !
 
 
 ----------------------------------------------------------------------------------------------------

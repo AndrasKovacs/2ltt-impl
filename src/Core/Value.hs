@@ -38,19 +38,6 @@ instance Apply Spine Val Spine where
   {-# inline (∘) #-}
   spn ∘ v = SApp spn v Impl
 
--- reversed
-data RevSpine
-  = RSId
-  | RSApp Val Icit RevSpine
-  | RSProject Proj RevSpine
-  deriving Show
-
-reverseSpine :: Spine -> RevSpine
-reverseSpine = go RSId where
-  go acc SId            = acc
-  go acc (SApp t u i)   = go (RSApp u i acc) t
-  go acc (SProject t p) = go (RSProject p acc) t
-
 {-# inline spineApps #-}
 spineApps :: Traversal' Spine (Ix, Val,Icit)
 spineApps f = go 0 where
