@@ -10,11 +10,11 @@ import Elaboration.State
 
 {-# inline def #-}
 def :: Val -> (Val -> EnvArg => a) -> EnvArg => a
-def v k = let ?env = EDef ?env v in k v
+def v k = let ?env = EBind ?env v in k v
 
 {-# inline def0 #-}
 def0 :: Val0 -> (Val0 -> EnvArg => a) -> EnvArg => a
-def0 v k = let ?env = EDef0 ?env v in k v
+def0 v k = let ?env = EBind0 ?env v in k v
 
 {-# inline freshLvl #-}
 freshLvl :: (LvlArg => Lvl -> a) -> LvlArg => a
@@ -40,20 +40,20 @@ evalIn e a = let ?env = e in eval a
 
 lookupIx :: EnvArg => Ix -> Val
 lookupIx x = go ?env x where
-  go (EDef _ v)  0 = v
-  go (ELet _ v)  0 = v
-  go (EDef e _)  x = go e (x - 1)
-  go (EDef0 e _) x = go e (x - 1)
-  go (ELet e _)  x = go e (x - 1)
-  go _           _ = impossible
+  go (EBind _ v)  0 = v
+  go (EDef _ v)   0 = v
+  go (EBind e _)  x = go e (x - 1)
+  go (EBind0 e _) x = go e (x - 1)
+  go (EDef e _)   x = go e (x - 1)
+  go _            _ = impossible
 
 lookupIx0 :: EnvArg => Ix -> Val0
 lookupIx0 x = go ?env x where
-  go (EDef0 _ l) 0 = l
-  go (EDef e _)  x = go e (x - 1)
-  go (EDef0 e _) x = go e (x - 1)
-  go (ELet e _)  x = go e (x - 1)
-  go _           _ = impossible
+  go (EBind0 _ l) 0 = l
+  go (EBind e _)  x = go e (x - 1)
+  go (EBind0 e _) x = go e (x - 1)
+  go (EDef e _)   x = go e (x - 1)
+  go _            _ = impossible
 
 {-# inline geval #-}
 geval :: Eval a Val => EnvArg => a -> G
@@ -142,10 +142,10 @@ meta0 m e =
 
 instance Eval S.TmEnv Env where
   eval = \case
-    S.TENil      -> ENil
-    S.TELet e t  -> ELet (eval e) (eval t)
-    S.TEDef e t  -> EDef (eval e) (eval t)
-    S.TEDef0 e t -> EDef0 (eval e) (eval t)
+    S.TENil       -> ENil
+    S.TEDef e t   -> EDef   (eval e) (eval t)
+    S.TEBind e t  -> EBind  (eval e) (eval t)
+    S.TEBind0 e t -> EBind0 (eval e) (eval t)
 
 instance Eval S.MetaSub Env where
   eval = \case
@@ -283,18 +283,18 @@ instance ReadBack RigidHead S.Tm where
 
 instance ReadBack UnfoldHead S.Tm where
   readb = \case
-    UHMeta m     -> readbMetaHead m
-    UHTopDef i   -> S.TopDef i
-    UHLocalDef l -> S.LocalVar (readb l)
+    UHMeta m       -> readbMetaHead m
+    UHTopDef i     -> S.TopDef i
+    UHLocalDef l _ -> S.LocalVar (readb l)
 
 instance ReadBack Env S.MetaSub where
   readb e = S.MSSub (go e) where
     go :: LvlArg => Env -> S.TmEnv
     go = \case
-      ENil      -> S.TENil
-      ELet e v  -> S.TELet (go e) (readb v)
-      EDef e v  -> S.TEDef (go e) (readb v)
-      EDef0 e l -> S.TEDef0 (go e) (readb l)
+      ENil       -> S.TENil
+      EDef e v   -> S.TEDef   (go e) (readb v)
+      EBind e v  -> S.TEBind  (go e) (readb v)
+      EBind0 e l -> S.TEBind0 (go e) (readb l)
 
 instance ReadBack Spine (S.Tm -> S.Tm) where
   readb t h = case t of

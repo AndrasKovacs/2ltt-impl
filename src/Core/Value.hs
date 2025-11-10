@@ -23,7 +23,7 @@ data MetaHead = MetaHead MetaVar Env
 data UnfoldHead
   = UHMeta MetaHead
   | UHTopDef {-# nounpack #-} DefInfo
-  | UHLocalDef Lvl
+  | UHLocalDef Lvl ~VTy
   deriving Show
 
 data Spine
@@ -130,6 +130,9 @@ data Val
 pattern LocalVar x a <- Rigid (RHLocalVar x a) SId where
   LocalVar x ~a = Rigid (RHLocalVar x a) SId
 
+pattern LocalDef x a v <- Unfold (UHLocalDef x a) SId v where
+  LocalDef x ~a ~v = Unfold (UHLocalDef x a) SId v
+
 pattern Λ x i a t = Lam (ClI x i    a t)
 pattern ΛE x a t  = Lam (ClI x Expl a t)
 pattern ΛI x a t  = Lam (ClI x Impl a t)
@@ -180,11 +183,11 @@ gSet = G Set Set
 
 data Env
   = ENil
-  | ELet Env Val -- ^ Let-definition in outer local scope
+  | EDef Env Val -- ^ Let-definition in outer local scope
                  -- NOTE: the value here is already the Unfold that we want to lookup (we do this
                  -- for sharing). To get the definition body, we have to project from the Unfold.
-  | EDef Env ~Val   -- ^ Meta-stage binder
-  | EDef0 Env ~Val0 -- ^ Object binder.
+  | EBind Env ~Val   -- ^ Meta-stage binder
+  | EBind0 Env ~Val0 -- ^ Object binder.
   deriving Show
 
 type EnvArg = (?env :: Env)
@@ -199,17 +202,17 @@ envTail _          = impossible
 
 dropEnv :: Lvl -> Env -> Env
 dropEnv x e = case (x, e) of
-  (0, e        ) -> e
-  (x, ELet e _ ) -> dropEnv (x - 1) e
-  (x, EDef e _ ) -> dropEnv (x - 1) e
-  (x, EDef0 e _) -> dropEnv (x - 1) e
-  _              -> impossible
+  (0, e         ) -> e
+  (x, EDef e  _ ) -> dropEnv (x - 1) e
+  (x, EBind e _ ) -> dropEnv (x - 1) e
+  (x, EBind0 e _) -> dropEnv (x - 1) e
+  _               -> impossible
 
 instance Sized Env where
   size = go 0 where
-    go acc ENil        = acc
-    go acc (EDef e _)  = go (acc + 1) e
-    go acc (ELet e _)  = go (acc + 1) e
-    go acc (EDef0 e _) = go (acc + 1) e
+    go acc ENil         = acc
+    go acc (EBind e _)  = go (acc + 1) e
+    go acc (EDef e _)   = go (acc + 1) e
+    go acc (EBind0 e _) = go (acc + 1) e
 
 makeFields ''ClosureI

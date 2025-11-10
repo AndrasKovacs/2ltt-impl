@@ -155,3 +155,9 @@ TODO
 TODO
   - We don't need Rhs data, because the head is always stored in the top of the rootEnv
   - "smart" spine reversals, also to reverse the metasubst
+
+
+Local definition preservation:
+
+  - It is kinda pointless to do anything more than mapping localdefs to localdefs!
+    We can handle this case on the top, and then forget about def mapping everywhere else

@@ -20,9 +20,9 @@ type Ty = Tm
 
 data TmEnv
   = TENil
-  | TELet TmEnv Tm
   | TEDef TmEnv Tm
-  | TEDef0 TmEnv Tm0
+  | TEBind TmEnv Tm
+  | TEBind0 TmEnv Tm0
 
 data MetaSub
   = MSId
