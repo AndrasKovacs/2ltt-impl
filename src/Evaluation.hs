@@ -102,6 +102,11 @@ spine v = \case
   SApp t u i    -> spine v t ∙∘ (u, i)
   SProject t p  -> proj (spine v t) p
 
+spine0 :: Val0 -> Spine0 -> Val0
+spine0 v sp = case sp of
+  S0Id            -> v
+  S0CProject sp p -> cproject0 (spine0 v sp) p
+
 projFromSpine :: Spine -> Ix -> Val
 projFromSpine sp x = case (sp, x) of
   (SApp _ u _ , 0) -> u
@@ -118,13 +123,13 @@ proj t p = case t of
 
 quote :: Val0 -> Val
 quote = \case
-  Splice t -> t
-  t        -> Quote t
+  Splice v S0Id -> v
+  v             -> Quote v
 
 splice :: Val -> Val0
 splice = \case
   Quote t -> t
-  t       -> Splice t
+  t       -> Splice t S0Id
 
 meta :: MetaVar -> Env -> Val
 meta m e =
@@ -136,9 +141,9 @@ meta m e =
 meta0 :: MetaVar -> Env -> Val0
 meta0 m e =
   let h = MetaHead m e in
-  unblock0 h (Meta0 h) \ ~v -> \case
+  unblock0 h (Flex0 h S0Id) \ ~v -> \case
     True  -> v
-    False -> SolvedMeta0 h v
+    False -> Unfold0 h S0Id v
 
 instance Eval S.TmEnv Env where
   eval = \case
@@ -152,18 +157,33 @@ instance Eval S.MetaSub Env where
     S.MSId    -> ?env
     S.MSSub s -> eval s
 
+cproject0 :: Val0 -> Proj -> Val0
+cproject0 v p = case v of
+  CRec i args    -> elemAt args (p^.index)
+  Unfold0 m sp v -> Unfold0 m (S0CProject sp p) (cproject0 v p)
+  Flex0 m sp     -> Flex0  m (S0CProject sp p)
+  Rigid0 v sp    -> Rigid0 v (S0CProject sp p)
+  Splice v sp    -> Splice v (S0CProject sp p)
+  v              -> Rigid0 v (S0CProject S0Id p)
+
+-- | TODO: share this value in Rec0Info
+rec0 :: Rec0Info -> Val0
+rec0 i = if i^.isComp then CRec i Nil else Rec0 i
+
 instance Eval S.Tm0 Val0 where
   eval = \case
-    S.LocalVar0 x  -> lookupIx0 x
-    S.Meta0 m sub  -> meta0 m (eval sub)
-    S.TopDef0 di   -> TopDef0 di
-    S.DCon0 di     -> DCon0 di
-    S.Project0 t p -> Project0 (eval t) p
-    S.App0 t u     -> App0 (eval t) (eval u)
-    S.Lam0 t       -> Lam0 (eval t)
-    S.Decl0 t      -> Decl0 (eval t)
-    S.Splice t     -> splice (eval t)
-    S.Let0 t u     -> Let0 (eval t) (eval u)
+    S.LocalVar0 x   -> lookupIx0 x
+    S.Meta0 m sub   -> meta0 m (eval sub)
+    S.TopDef0 di    -> TopDef0 di
+    S.DCon0 di      -> DCon0 di
+    S.Project0 t p  -> Project0 (eval t) p
+    S.App0 t u      -> App0 (eval t) (eval u)
+    S.Lam0 t        -> Lam0 (eval t)
+    S.Decl0 t       -> Decl0 (eval t)
+    S.Splice t      -> splice (eval t)
+    S.Let0 t u      -> Let0 (eval t) (eval u)
+    S.CProject hd p -> cproject0 (eval hd) p
+    S.Rec0 i        -> rec0 i
 
 instance Eval S.Tm Val where
   eval = \case
@@ -181,6 +201,7 @@ instance Eval S.Tm Val where
     S.Project t p -> proj (eval t) p
     S.Quote t     -> quote (eval t)
     S.Meta m sub  -> meta m (eval sub)
+
 
 -- Forcing
 --------------------------------------------------------------------------------
@@ -210,12 +231,15 @@ whnf = \case
 
 whnf0 :: Val0 -> Val0
 whnf0 = \case
-  top@(Meta0 m)            -> unblock0 m top \v _ -> whnf0 v
-  top@(Splice (Flex m sp)) -> unblock m top \v _ -> case whnf $ spine v sp of
-    Quote v -> whnf0 v
-    v       -> Splice v
-  SolvedMeta0 _ v -> whnf0 v
-  v               -> v
+  Unfold0 _ _ v                -> whnf0 v
+  top@(Flex0 m sp)             -> unblock0 m top \v _ -> whnf0 $ spine0 v sp
+  top@(Splice (Flex m sp) sp') -> unblock m top \v _ -> case whnf $ spine v sp of
+    Quote v -> whnf0 $ spine0 v sp'
+    v       -> Splice v sp'
+  top@(Splice (Unfold _ _ v) sp') -> case whnf v of
+    Quote v -> whnf0 $ spine0 v sp'
+    v       -> Splice v sp'
+  v -> v
 
 -- Update head, unfold metas ("weak head meta normal")
 whmnf :: Val -> Val
@@ -225,10 +249,11 @@ whmnf = \case
 
 whmnf0 :: Val0 -> Val0
 whmnf0 = \case
-  top@(Meta0 m) -> unblock0 m top \v _ -> whmnf0 v
-  top@(Splice (Flex m sp)) -> unblock m top \v _ -> case whmnf $ spine v sp of
-    Quote v -> whmnf0 v
-    v       -> Splice v
+  Unfold0 _ _ v                -> whmnf0 v
+  top@(Flex0 m sp)             -> unblock0 m top \v _ -> whmnf0 $ spine0 v sp
+  top@(Splice (Flex m sp) sp') -> unblock m top \v _ -> case whmnf $ spine v sp of
+    Quote v -> whmnf0 $ spine0 v sp'
+    v       -> Splice v sp'
   v -> v
 
 -- Update head, preserve all unfoldings
@@ -236,17 +261,19 @@ force ::  Val -> Val
 force = \case
   top@(Flex m sp) -> unblock m top \ ~v -> \case
     True -> force $ spine v sp
-    _    -> Unfold (UHMeta m) sp v
+    _    -> Unfold (UHMeta m) sp (spine v sp)
   v -> v
 
 force0 :: Val0 -> Val0
 force0 = \case
-  top@(Meta0 m) -> unblock0 m top \ ~v -> \case
-    True -> force0 v
-    _    -> SolvedMeta0 m v
-  top@(Splice (Flex m sp)) -> unblock m top \ ~v -> \case
-    True  -> case force $ spine v sp of Quote v -> force0 v; v -> Splice v
-    False -> Splice (Unfold (UHMeta m) sp v)
+  top@(Flex0 m sp) -> unblock0 m top \ ~v -> \case
+    True -> force0 $ spine0 v sp
+    _    -> Unfold0 m sp (spine0 v sp)
+  top@(Splice (Flex m sp) sp') -> unblock m top \ ~v -> \case
+    True -> case force $ spine v sp of
+      Quote v -> force0 $ spine0 v sp'
+      v       -> Splice v sp'
+    _    -> Splice (Unfold (UHMeta m) sp (spine v sp)) sp'
   v -> v
 
 
@@ -320,11 +347,22 @@ forceUnfold0 t = case ?unfold of
   UnfoldNone  -> force0 t
   UnfoldMetas -> whmnf0 t
 
+instance ReadBack Spine0 (S.Tm0 -> S.Tm0) where
+  readb sp hd = case sp of
+    S0Id            -> hd
+    S0CProject sp p -> S.CProject (readb sp hd) p
+
+instance ReadBack (SnocList Val0) (S.Tm0 -> S.Tm0) where
+  readb args hd = case args of
+    Nil         -> hd
+    Snoc args v -> S.App0 (readb args hd) (readb v)
+
 instance ReadBack Val0 S.Tm0 where
   readb t = case forceUnfold0 t of
-    LocalVar0 x     -> S.LocalVar0 (readb x)
-    Meta0 m         -> readbMetaHead0 m
-    SolvedMeta0 m _ -> readbMetaHead0 m
+    Unfold0 m sp _  -> readb sp (readbMetaHead0 m)
+    Rigid0 v sp     -> readb sp (readb v)
+    Flex0 m sp      -> readb sp (readbMetaHead0 m)
+    Splice v sp     -> readb sp (S.splice (readb v))
     TopDef0 i       -> S.TopDef0 i
     DCon0 i         -> S.DCon0 i
     App0 t u        -> S.App0 (readb t) (readb u)
@@ -332,7 +370,9 @@ instance ReadBack Val0 S.Tm0 where
     Decl0 t         -> S.Decl0 (readb t)
     Let0 t u        -> S.Let0 (readb t) (readb u)
     Project0 t p    -> S.Project0 (readb t) p
-    Splice t        -> S.Splice (readb t)
+    LocalVar0 x     -> S.LocalVar0 (readb x)
+    CRec i args     -> readb args (S.Rec0 i)
+    Rec0 i          -> S.Rec0 i
 
 instance ReadBack Val S.Tm where
   readb t = case forceUnfold t of

@@ -9,7 +9,9 @@ data Tm0
   | Meta0 MetaVar MetaSub
   | TopDef0 {-# nounpack #-} Def0Info
   | DCon0   {-# nounpack #-} DCon0Info
+  | Rec0    {-# nounpack #-} Rec0Info
   | Project0 Tm0 Proj
+  | CProject Tm0 Proj
   | App0 Tm0 Tm0
   | Lam0 (Bind Tm0)
   | Let0 Tm0 (Bind Tm0)
@@ -67,8 +69,8 @@ deriving instance Show Tm0
 data Locals
   = LNil
   | LDef Locals Name Tm Ty
-  | LBind Locals Name Ty
-  | LBind0 Locals Name Ty
+  | LBind Locals Name ~Ty
+  | LBind0 Locals Name ~Ty
   deriving Show
 
 type LocalsArg = (?locals :: Locals)

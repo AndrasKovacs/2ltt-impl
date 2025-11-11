@@ -38,13 +38,6 @@ instance Apply Spine Val Spine where
   {-# inline (∘) #-}
   spn ∘ v = SApp spn v Impl
 
-{-# inline spineApps #-}
-spineApps :: Traversal' Spine (Ix, Val,Icit)
-spineApps f = go 0 where
-  go ix SId            = pure SId
-  go ix (SApp t u i)   = (\t (!_,!u,!i) -> SApp t u i) <$> go (ix - 1) t <*> f (ix,u,i)
-  go ix (SProject t p) = (\t -> SProject t p) <$> go ix t
-
 --------------------------------------------------------------------------------
 
 data ClosureI = ClI# {
@@ -100,21 +93,32 @@ instance Apply Val Val Val where
 
 --------------------------------------------------------------------------------
 
-type VTy = Val
+-- | List of computation projections.
+data Spine0
+  = S0Id
+  | S0CProject Spine0 Proj
+  deriving Show
 
 data Val0
-  = LocalVar0 Lvl
-  | Meta0 MetaHead
-  | SolvedMeta0 MetaHead ~Val0
+  = Unfold0 MetaHead Spine0 ~Val0
+  | Rigid0 Val0 Spine0              -- Val0 must be really rigid (ugly, I know)
+  | Flex0 MetaHead Spine0
+  | Splice Val Spine0
+
+  | CRec    {-# nounpack #-} Rec0Info (SnocList Val0)
   | TopDef0 {-# nounpack #-} Def0Info
   | DCon0   {-# nounpack #-} DCon0Info
+  | Rec0    {-# nounpack #-} Rec0Info -- value record (no beta-eta)
+
+  | LocalVar0 Lvl
+  | Project0 Val0 Proj -- value projection (no beta-eta)
   | App0 Val0 Val0
   | Lam0 Closure0
   | Decl0 Closure0
   | Let0 Val0 Closure0
-  | Project0 Val0 Proj
-  | Splice Val
   deriving Show
+
+type VTy = Val
 
 data Val
   = Rigid RigidHead Spine

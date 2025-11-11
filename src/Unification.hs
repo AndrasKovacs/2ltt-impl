@@ -184,6 +184,7 @@ instance ReadBack PartialVal ([Val] -> IO Tm) where
     PVLam x i a pv -> let va = a ∙ args in
                       S.Lam . BindI x i (readb va) ! fresh va \v -> readb pv (v:args)
     PVRec i pvs    -> readb pvs (S.Rec i) args
+    PVQuote pv     -> S.quote ! readb pv
 
 instance ReadBack PartialVal0 (IO Tm0) where
   readb = \case
@@ -254,23 +255,65 @@ instance PSubst Closure0 (IO (Bind Tm0)) where
   psubst (Cl0 x a f) =
     Bind x ! psubst a ∙ setPSub (lift0 ?psub) (psubst (f (LocalVar0 (?psub^.cod))))
 
+psubstMetaHead0 :: PSubArg => MetaHead -> IO S.Tm0
+psubstMetaHead0 (MetaHead m e) = do
+  checkMetaOccurs m
+  S.Meta0 m ! psubst e
+
+instance PSubst Spine0 (Tm0 -> IO Tm0) where
+  psubst sp hd = case sp of
+    S0Id            -> pure hd
+    S0CProject sp p -> S.CProject ! psubst sp hd ∙ pure p
+
+instance PSubst (SnocList Val0) (Tm0 -> IO Tm0) where
+  psubst sp hd = case sp of
+    Nil       -> pure hd
+    Snoc sp v -> S.App0 ! psubst sp hd ∙ psubst v
+
 instance PSubst Val0 (IO Tm0) where
   psubst t = case force0 t of
+    Unfold0 m sp v               -> catch @UnifyEx (psubst sp =<< psubstMetaHead0 m) \_ -> psubst v
+    Rigid0 v sp                  -> psubst sp =<< psubst v
+    Flex0 m sp                   -> psubst sp =<< psubstMetaHead0 m
     LocalVar0 x                  -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb $ psubstLvl0 x
-    Meta0 (MetaHead m e)         -> checkMetaOccurs m *> S.Meta0 m ! psubst e
-    SolvedMeta0 (MetaHead m e) v -> catch @UnifyEx (checkMetaOccurs m *> S.Meta0 m ! psubst e) \_ -> psubst v
+    Splice v sp                  -> psubst sp =<< (S.splice ! psubst v)
     TopDef0 i                    -> pure $ S.TopDef0 i
     DCon0 i                      -> pure $ S.DCon0 i
     App0 t u                     -> S.App0 ! psubst t ∙ psubst u
     Lam0 t                       -> S.Lam0 ! psubst t
     Decl0 t                      -> S.Decl0 ! psubst t
     Project0 t p                 -> S.Project0 ! psubst t ∙ pure p
-    Splice t                     -> S.Splice ! psubst t
     Let0 t u                     -> S.Let0 ! psubst t ∙ psubst u
+    CRec i vs                    -> psubst vs (S.Rec0 i)
+    Rec0 i                       -> pure $ S.Rec0 i
 
 
 -- Nested solving
 ----------------------------------------------------------------------------------------------------
+
+
+-- data RevSpine' = RevSpine' {
+--     revSpine'Head   :: Spine -> Val
+--   , revSpine'HeadTy :: VTy
+--   , revSpine'Locals :: S.Locals
+--   , revSpine'Spine  :: RevSpine
+--   }
+-- makeFields ''RevSpine'
+
+-- reverseSpine' :: (Spine -> Val) -> VTy -> S.Locals -> Spine -> RevSpine'
+-- reverseSpine' hd ~a ls sp = RevSpine' hd a ls (reverseSpine sp)
+
+-- data SplitRevSpine'
+--   = SRSId'
+--   | SRSApp' Val Name Icit ~VTy RevSpine'
+--   | SRSProject' {-# nounpack #-} RecInfo Proj RevSpine'
+
+-- splitRevSpine' :: RevSpine' -> SplitRevSpine'
+-- splitRevSpine' (RevSpine' hd a ls sp) = case sp of
+--   RSId -> SRSId'
+--   RSApp v i sp -> case appTy a v of
+--     (x, _, vty, a) -> SRSApp' v x i vty $ RevSpine' hd a (S.LBind ls x _) sp
+
 
 data RevSpine'
   = RSId'
@@ -289,30 +332,30 @@ reverseSpine' hd ~a sp = snd (go sp) where
     (a, rsp) -> case projTy (hd sp) a p of
       (inf, a) -> (a, RSProject' inf p rsp)
 
-data Spine0 = S0Splice Spine | S0Id deriving (Show)
+-- data Spine0 = S0Splice Spine | S0Id deriving (Show)
 
-invertVal0 :: Lvl -> PartialSub -> Lvl -> Val0 -> Spine0 -> IO PartialSub
-invertVal0 solvable psub param t rhsSp = case whnf0 t of
-  LocalVar0 x -> do
-    -- NOTE the "param == psub^.cod"
-    -- This enforces that the rhsSp can only contain projections
-    -- Otherwise we can't hope to solve, since the LHS is an object expression, so it can never be
-    -- applied to invertible args. On the other hand, a spine that only contains projections can
-    -- be trivially plugged into the solution.
-    unless (solvable <= x && x < psub^.cod && param == psub^.cod) unifyError
-    pure $! updatePSub0 psub x $ PV0Total $ case (rhsSp, psub^.domEnv) of
-      (S0Id          , EBind0 _ v              ) -> v
-      (S0Splice rhsSp, EBind _ (LocalDef y a v)) -> Splice $ Rigid (RHLocalVar y a) rhsSp
-      _                                          -> impossible
+-- invertVal0 :: Lvl -> PartialSub -> Lvl -> Val0 -> Spine0 -> IO PartialSub
+-- invertVal0 solvable psub param t rhsSp = case whnf0 t of
+--   LocalVar0 x -> do
+--     -- NOTE the "param == psub^.cod"
+--     -- This enforces that the rhsSp can only contain projections
+--     -- Otherwise we can't hope to solve, since the LHS is an object expression, so it can never be
+--     -- applied to invertible args. On the other hand, a spine that only contains projections can
+--     -- be trivially plugged into the solution.
+--     unless (solvable <= x && x < psub^.cod && param == psub^.cod) unifyError
+--     pure $! updatePSub0 psub x $ PV0Total $ case (rhsSp, psub^.domEnv) of
+--       (S0Id          , EBind0 _ v              ) -> v
+--       (S0Splice rhsSp, EBind _ (LocalDef y a v)) -> Splice $ Rigid (RHLocalVar y a) rhsSp
+--       _                                          -> impossible
 
-  Splice (whnf -> Rigid rh@(RHLocalVar x a) sp) -> do
-    case rhsSp of S0Id -> pure (); _ -> impossible
-    unless (solvable <= x && x < psub^.cod) unifyError
-    let rsp = reverseSpine' (Rigid rh) a sp
-    pv <- solveNestedSp (psub^.domEnv) (psub^.cod) psub rsp SId
-    pure $! updatePSub psub x pv
+--   Splice (whnf -> Rigid rh@(RHLocalVar x a) sp) -> do
+--     case rhsSp of S0Id -> pure (); _ -> impossible
+--     unless (solvable <= x && x < psub^.cod) unifyError
+--     let rsp = reverseSpine' (Rigid rh) a sp
+--     pv <- solveNestedSp (psub^.domEnv) (psub^.cod) psub rsp SId
+--     pure $! updatePSub psub x pv
 
-  _  -> unifyError
+--   _  -> unifyError
 
 -- TODO: should return an extra isLinear
 invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Spine -> IO PartialSub
@@ -324,7 +367,8 @@ invertVal solvable psub param t rhsSp = case setLvl (psub^.cod) $ whnf t of
               (SApp rhsSp var (t^.icit))
 
   Quote t -> do
-    invertVal0 solvable psub param t (S0Splice rhsSp)
+    uf
+    -- invertVal0 solvable psub param t (S0Splice rhsSp)
 
   Rigid (RHRec i) sp -> do
 
@@ -438,12 +482,12 @@ solveTopMetaSub psub psubIsLinear renv rsp rhs = case renv of
     unless psubIsLinear (() <$ psubstIn psub codva)
     solveTopMetaSub psub' psubIsLinear renv rsp rhs
 
-  REBind0 x codv a codva renv -> do
-    let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
-    let psub' = psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
-    psub' <- invertVal0 0 psub' (psub^.cod) codv S0Id
-    unless psubIsLinear (() <$ psubstIn psub codva)
-    solveTopMetaSub psub' psubIsLinear renv rsp rhs
+  -- REBind0 x codv a codva renv -> do
+  --   let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
+  --   let psub' = psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
+  --   psub' <- invertVal0 0 psub' (psub^.cod) codv S0Id
+  --   unless psubIsLinear (() <$ psubstIn psub codva)
+  --   solveTopMetaSub psub' psubIsLinear renv rsp rhs
 
 solveTopSpine :: PartialSub -> RevSpine' -> Val -> IO S.Tm
 solveTopSpine psub rsp rhs = case rsp of
@@ -463,7 +507,7 @@ solveTopSpine psub rsp rhs = case rsp of
   -- here I have to create fresh metas, so I need S.Locals
   -- I also need the type and value of the lhs "so far"
   RSProject' inf p rsp -> do
-    _
+    uf
 
 
 

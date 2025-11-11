@@ -140,8 +140,8 @@ class ElemAt a i b | a -> i b where
 class UpdateAt a i b | a -> i b where
   updateAt :: a -> i -> (b -> b) -> a
 
-instance ElemAt [a] Int a where
-  elemAt = (!!)
+instance ElemAt [a] Ix a where
+  elemAt as i = as !! fromIntegral i
 
 instance UpdateAt [a] Int a where
   {-# inline updateAt #-}
@@ -212,13 +212,13 @@ instance Traversable List where
     go Nil         = pure Nil
     go (Cons a as) = Cons ! f a ∙ go as
 
-instance ElemAt (List a) Int a where
+instance ElemAt (List a) Ix a where
   elemAt as x = case (as, x) of
     (Cons a as, 0) -> a
     (Cons _ as, x) -> elemAt as (x - 1)
     _              -> impossible
 
-instance UpdateAt (List a) Int a where
+instance UpdateAt (List a) Ix a where
   {-# inline updateAt #-}
   updateAt as i f = go as i where
     go (Cons a as) 0 = Cons (f a) as

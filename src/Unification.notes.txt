@@ -161,3 +161,99 @@ Local definition preservation:
 
   - It is kinda pointless to do anything more than mapping localdefs to localdefs!
     We can handle this case on the top, and then forget about def mapping everywhere else
+
+
+----------------------------------------------------------------------------------------------------
+
+BIG NEWS
+
+Computational object functions SHOULD HAVE ETA but no beta ofc.
+
+How does unification even work with eta but no beta??
+
+What about basic pattern unif?
+
+ValTy : Set
+
+A     : ValTy
+B     : Ty
+A → B : CompTy
+
+α : () ⊢ A → B
+
+α () x =? x
+
+α := λ x. x     is that good?
+
+nope, beacuse (λ x. x) x /= x  !!!
+
+so we *don't* have pattern unification
+
+what about arg inversion?
+
+α : (f : Nat0 → Nat0) ⊢ Nat0 → Nat0
+
+α (λ x. f x) =? f
+
+  λ x. f x ↦ a
+  f ↦ λ x. a x
+
+α (a) := λ x. a x
+
+thus
+
+α (λ x. f x) = λ x. (λ x. f x) x = λ x. f x    OK BUT WEIRD
+
+
+α (λ x y. f y x) = f
+
+  f ↦ λ x y. a y x
+
+   α a = λ x y. a y x
+
+α (λ x y . f y x) = λ x y. (λ x y. f y x) y x
+
+
+α (λ x y. f y x) = f 10 20
+
+  α (a) = a 20 10
+
+So we can only do eta-reduction in args, but no general
+nested inversion!!!
+
+Computational product beta/eta seems reasonable
+
+  - In arg inversion, we can still only do eta-reductions to variables
+  - In spine solution:
+
+       α .fst =? rhs
+       α := (rhs, freshMeta)  OK
+
+       In general, we can solve iterated projections
+
+  - Will we need to have projection spines in Val0? (probably yes)
+
+  - What about mixing splice into spines?
+
+
+  α x y .~ .fst =? rhs
+  α := λ x y. <rhs, freshMeta()>
+  we need Stage 0 spine solving
+
+  α .fst .snd .<> =? rhs
+
+
+
+Level 0 arg inversion:
+
+  - we can invert CRec & CProjection in a nested way
+  - when we hit a lambda, we can only check eta-reduction to variable
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------------------------------------

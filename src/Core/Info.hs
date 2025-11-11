@@ -41,8 +41,9 @@ data Def0Info = D0I {
   }
 
 data Rec0Info = R0I {
-    rec0InfoUid   :: Int
-  , rec0InfoName  :: Name
+    rec0InfoUid    :: Int
+  , rec0InfoName   :: Name
+  , rec0InfoIsComp :: Bool
   }
 
 data TCon0Info = TC0I {
