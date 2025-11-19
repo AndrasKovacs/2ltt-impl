@@ -74,3 +74,7 @@ data Locals
   deriving Show
 
 type LocalsArg = (?locals :: Locals)
+
+{-# inline setLocals #-}
+setLocals :: Locals -> (LocalsArg => a) -> a
+setLocals ls act = let ?locals = ls in act

@@ -78,6 +78,7 @@ default-extensions:
   - StandaloneKindSignatures
   - Strict
   - TemplateHaskell
+  - TupleSections
   - TypeApplications
   - TypeFamilies
   - TypeFamilyDependencies

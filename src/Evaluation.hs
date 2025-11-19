@@ -387,15 +387,21 @@ instance ReadBack Val S.Tm where
 ----------------------------------------------------------------------------------------------------
 
 -- | Input: type of function, arg value.
---   Output: Binder name, icitness, type, type of application.
+--   Output: Domain name, icitness, type, type of result
 appTy :: VTy -> Val -> (Name, Icit, VTy, VTy)
 appTy funty ~arg = case whnf funty of
   Pi b -> (b^.name, b^.icit, b^.ty, b ∙ arg)
   _    -> impossible
 
+recParamEnv :: Spine -> Env
+recParamEnv = \case
+  SId         -> ENil
+  SApp sp t _ -> EDef (recParamEnv sp) t
+  _           -> impossible
+
 -- | Input: value, its type, projection.
---   Output: RecInfo, type of projected value.
-projTy :: Val -> VTy -> Proj -> (RecInfo, VTy)
+--   Output: RecInfo, record parameters, type of result
+projTy :: Val -> VTy -> Proj -> (RecInfo, Spine, VTy)
 projTy t a (Proj ix x) = case whnf t of
   RecTy i params ->
 
@@ -407,17 +413,10 @@ projTy t a (Proj ix x) = case whnf t of
 
         mkEnv :: FieldInfo -> Ix -> Env
         mkEnv fs here = case fs of
-          FINil           -> paramEnv params
+          FINil           -> recParamEnv params
           FISnoc fs _ _ _ -> EDef (mkEnv fs (here + 1)) (proj t (Proj here x))
 
-        paramEnv :: Spine -> Env
-        paramEnv = \case
-          SId         -> ENil
-          SApp sp t _ -> EDef (paramEnv sp) t
-          _           -> impossible
-
-    in (i, go (i^.fields) ix 0)
-
+    in (i, params, go (i^.fields) ix 0)
   _ -> impossible
 
 ----------------------------------------------------------------------------------------------------

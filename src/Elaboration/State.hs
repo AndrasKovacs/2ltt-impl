@@ -62,6 +62,12 @@ lookupMeta :: MetaVar -> MetaEntry
 lookupMeta (MkMetaVar i) = runIO (ADL.read metaCxt i)
 {-# inline lookupMeta #-}
 
+lookupUnsolved :: MetaVar -> IO Unsolved
+lookupUnsolved m = ADL.read metaCxt (coerce m) >>= \case
+  MEUnsolved e -> pure e
+  _            -> impossible
+{-# inline lookupUnsolved #-}
+
 writeMeta :: MetaVar -> MetaEntry -> IO ()
 writeMeta (MkMetaVar i) e = ADL.write metaCxt i e
 {-# inline writeMeta #-}

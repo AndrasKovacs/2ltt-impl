@@ -13,6 +13,8 @@ import Evaluation
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 
+import Utils.State
+
 
 ----------------------------------------------------------------------------------------------------
 
@@ -26,7 +28,7 @@ unifyError :: Dbg => IO a
 unifyError = throwIO UETodo
 
 
--- Partial Substitutions
+-- Partial substitutions
 ----------------------------------------------------------------------------------------------------
 
 newtype MultiClosure a = MCl ([Val] -> a)
@@ -75,6 +77,7 @@ data PSubEntry
 data PartialSub = PSub {
     partialSubOccurs       :: Maybe MetaVar    -- ^ Optional meta occurs check
   , partialSubAllowPruning :: Bool             -- ^ Can we prune metas
+  , partialSubIsLinear     :: Bool             -- ^ Does the sub contain PVTop
   , partialSubDomEnv       :: Env              -- ^ Identity environment for the domain
   , partialSubDom          :: Lvl              -- ^ Domain (size of the map)
   , partialSubCod          :: Lvl              -- ^ Codomain (next fresh Lvl)
@@ -88,46 +91,56 @@ type PSubArg = (?psub :: PartialSub)
 setPSub :: PartialSub -> (PSubArg => a) -> a
 setPSub s act = let ?psub = s in act
 
-instance Semigroup PartialRecFields where
-  PRFNil         <> PRFNil         = PRFNil
-  PRFSnoc ts t i <> PRFSnoc us u _ = PRFSnoc (ts <> us) (t <> u) i
-  _              <> _              = impossible
+class Merge a where
+  merge :: a -> a -> State Bool a
 
-instance Semigroup PartialVal where
-  PVBot         <> u             = u
-  t             <> PVBot         = t
-  PVLam x i a t <> PVLam _ _ _ u = PVLam x i a (t <> u)
-  PVRec i ts    <> PVRec _ us    = PVRec i (ts <> us)
-  _             <> _             = PVTop
+instance Merge PartialRecFields where
+  merge (PRFNil        ) (PRFNil        ) = pure PRFNil
+  merge (PRFSnoc ts t i) (PRFSnoc us u _) = PRFSnoc ! merge ts us ∙ merge t u ∙ pure i
+  merge (_             ) (_             ) = impossible
 
-instance Semigroup PartialVal0 where
-  PV0Bot <> u      = u
-  t      <> PV0Bot = t
-  _      <> _      = PV0Top
+instance Merge PartialVal where
+  merge (PVBot        ) (u            ) = pure u
+  merge (t            ) (PVBot        ) = pure t
+  merge (PVLam x i a t) (PVLam _ _ _ u) = PVLam x i a ! merge t u
+  merge (PVRec i ts   ) (PVRec _ us   ) = PVRec i ! merge ts us
+  merge (_            ) (_            ) = PVTop <$ put False
 
-instance Semigroup PSubEntry where
-  PSEVal  pv <> PSEVal  pv' = PSEVal  (pv <> pv')
-  PSEVal0 pv <> PSEVal0 pv' = PSEVal0 (pv <> pv')
-  _          <> _           = impossible
+instance Merge PartialVal0 where
+  merge (PV0Bot) (u     ) = pure u
+  merge (t     ) (PV0Bot) = pure t
+  merge (_     ) (_     ) = PV0Top <$ put False
+
+instance Merge PSubEntry where
+  merge (PSEVal  pv) (PSEVal  pv') = PSEVal  ! merge pv pv'
+  merge (PSEVal0 pv) (PSEVal0 pv') = PSEVal0 ! merge pv pv'
+  merge (_         ) (_          ) = impossible
 
 lift :: VTy -> PartialSub -> PartialSub
-lift ~a (PSub occ pr idenv dom cod sub) =
+lift ~a (PSub occ pr lin idenv dom cod sub) =
   let var = LocalVar dom a in
-  PSub occ pr (EDef idenv var) (dom + 1) (cod + 1) $
+  PSub occ pr lin (EDef idenv var) (dom + 1) (cod + 1) $
     IM.insert (fromIntegral cod) (PSEVal (PVTotal (MCl \_ -> var))) sub
 
 lift0 :: PartialSub -> PartialSub
-lift0 (PSub occ pr idenv dom cod sub) =
+lift0 (PSub occ pr lin idenv dom cod sub) =
   let var = LocalVar0 dom in
-  PSub occ pr (EBind0 idenv var) (dom + 1) (cod + 1) $
+  PSub occ pr lin (EBind0 idenv var) (dom + 1) (cod + 1) $
     IM.insert (fromIntegral cod) (PSEVal0 (PV0Total var)) sub
 
 updatePSub :: PartialSub -> Lvl -> PartialVal -> PartialSub
-updatePSub psub x pv = psub & sub %~ IM.insertWith (<>) (fromIntegral x) (PSEVal pv)
+updatePSub psub x (PSEVal -> pv) = case IM.lookup (fromIntegral x) (psub^.sub) of
+  Nothing    -> psub & sub %~ IM.insert (fromIntegral x) pv
+  Just oldpv -> case runState (merge oldpv pv) (psub^.isLinear) of
+    (pv, isLin) -> psub & sub %~ IM.insert (fromIntegral x) pv
+                        & isLinear .~ isLin
 
 updatePSub0 :: PartialSub -> Lvl -> PartialVal0 -> PartialSub
-updatePSub0 psub x pv = psub & sub %~ IM.insertWith (<>) (fromIntegral x) (PSEVal0 pv)
-
+updatePSub0 psub x (PSEVal0 -> pv) = case IM.lookup (fromIntegral x) (psub^.sub) of
+  Nothing    -> psub & sub %~ IM.insert (fromIntegral x) pv
+  Just oldpv -> case runState (merge oldpv pv) (psub^.isLinear) of
+    (pv, isLin) -> psub & sub %~ IM.insert (fromIntegral x) pv
+                        & isLinear .~ isLin
 
 -- Partial substitution
 ----------------------------------------------------------------------------------------------------
@@ -291,34 +304,10 @@ instance PSubst Val0 (IO Tm0) where
 -- Nested solving
 ----------------------------------------------------------------------------------------------------
 
-
--- data RevSpine' = RevSpine' {
---     revSpine'Head   :: Spine -> Val
---   , revSpine'HeadTy :: VTy
---   , revSpine'Locals :: S.Locals
---   , revSpine'Spine  :: RevSpine
---   }
--- makeFields ''RevSpine'
-
--- reverseSpine' :: (Spine -> Val) -> VTy -> S.Locals -> Spine -> RevSpine'
--- reverseSpine' hd ~a ls sp = RevSpine' hd a ls (reverseSpine sp)
-
--- data SplitRevSpine'
---   = SRSId'
---   | SRSApp' Val Name Icit ~VTy RevSpine'
---   | SRSProject' {-# nounpack #-} RecInfo Proj RevSpine'
-
--- splitRevSpine' :: RevSpine' -> SplitRevSpine'
--- splitRevSpine' (RevSpine' hd a ls sp) = case sp of
---   RSId -> SRSId'
---   RSApp v i sp -> case appTy a v of
---     (x, _, vty, a) -> SRSApp' v x i vty $ RevSpine' hd a (S.LBind ls x _) sp
-
-
 data RevSpine'
   = RSId'
-  | RSApp' Val Name Icit ~VTy RevSpine'
-  | RSProject' {-# nounpack #-} RecInfo Proj RevSpine'
+  | RSApp' Val (Name, Icit, VTy) RevSpine' -- arg val, Pi dom info
+  | RSProject' Proj (RecInfo, Spine) RevSpine' -- proj, Rec type info
   deriving Show
 
 reverseSpine' :: (Spine -> Val) -> VTy -> Spine -> RevSpine'
@@ -327,10 +316,11 @@ reverseSpine' hd ~a sp = snd (go sp) where
   go SId           = (a, RSId')
   go (SApp sp t i) = case go sp of
     (a, rsp) -> case appTy a t of
-      (x, i, tty, a) -> (tty, RSApp' t x i tty rsp)
+      (x, i, tty, a) -> (tty, RSApp' t (x, i, tty) rsp)
   go (SProject sp p) = case go sp of
-    (a, rsp) -> case projTy (hd sp) a p of
-      (inf, a) -> (a, RSProject' inf p rsp)
+    (a, rsp) -> case hd sp of
+      v -> case projTy v a p of
+        (inf, params, a) -> (a, RSProject' p (inf, params) rsp)
 
 -- data Spine0 = S0Splice Spine | S0Id deriving (Show)
 
@@ -357,7 +347,6 @@ reverseSpine' hd ~a sp = snd (go sp) where
 
 --   _  -> unifyError
 
--- TODO: should return an extra isLinear
 invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Spine -> IO PartialSub
 invertVal solvable psub param t rhsSp = case setLvl (psub^.cod) $ whnf t of
 
@@ -400,9 +389,9 @@ solveNestedSp rootEnv solvable psub rsp rhsSp = case rsp of
           EBind _ (LocalVar x a) -> S.LocalVar (lvlToIx (psub^.dom) x)
           _                      -> impossible
     body <- psubstIn psub rhsSp hd
-    pure $! PVTotal $ makeMCl rootEnv body
+    pure $! PVTotal (makeMCl rootEnv body)
 
-  RSApp' u x i a rsp -> do
+  RSApp' u (x, i, a) rsp -> do
     a <- psubstIn psub a
     let ~va = evalIn (psub^.domEnv) a
     let d = psub^.dom
@@ -411,7 +400,7 @@ solveNestedSp rootEnv solvable psub rsp rhsSp = case rsp of
     pv <- solveNestedSp rootEnv solvable psub rsp rhsSp
     pure $! PVLam x i (makeMCl rootEnv a) pv
 
-  RSProject' inf p rsp -> do
+  RSProject' p (inf, params) rsp -> do
     pv <- solveNestedSp rootEnv solvable psub rsp rhsSp
 
     let mkFields :: FieldInfo -> Ix -> PartialRecFields
@@ -425,11 +414,12 @@ solveNestedSp rootEnv solvable psub rsp rhsSp = case rsp of
           FINil           -> PRFNil
           FISnoc fs _ i _ -> PRFSnoc (bottoms fs) PVBot i
 
-    pure $! PVRec inf $ mkFields (inf^.fields) (p^.index)
+    pure $! PVRec inf (mkFields (inf^.fields) (p^.index))
 
 
 -- Top solving
 ----------------------------------------------------------------------------------------------------
+
 
 -- | "Reverse environment" annotated with everything that we need to invert the Env.
 data RevEnv
@@ -448,28 +438,38 @@ reverseEnv ls e = go ls e RENil where
     (S.LBind0 ls x a, EBind0 e v) -> go ls e (REBind0 x v a   (evalIn e a) acc)
     _                             -> impossible
 
--- We pass if the psub is linear, i.e. doesn't contain any Top.
-solveTopMetaSub :: PartialSub -> Bool -> RevEnv -> RevSpine' -> Val -> IO S.Tm
-solveTopMetaSub psub psubIsLinear renv rsp rhs = case renv of
-  RENil -> solveTopSpine psub rsp rhs
+solveTopMetaSub ::
+     PartialSub  -- ^ Partial substitution from dom to cod
+  -> Env         -- ^ Original Env in "(MetaVar, Env) Spine =? Rhs"
+  -> RevEnv      -- ^ Reversed Env
+  -> Spine       -- ^ Rhs spine
+  -> Val         -- ^ Rhs value
+  -> IO S.Tm
+solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
+  RENil -> do
+    uf
+    -- (m, ES.Unsolved ls mty) <- case psub^.occurs of
+    --   Just m -> (m,) ! ES.lookupUnsolved m
+    --   _      -> impossible
+    -- solveTopSpine psub (reverseSpine'' (Flex (MetaHead m lhsEnv) _) _ _ sp) rhs
 
   -- checks: 1) arg is invertible 2) if psubst is nonlinear, problem-scope *def* is psubst-able
   --         if either fails, we proceed without extending the psub
   REDef x t codvt a _ renv -> do
     let domVar = LocalDef (psub^.dom) (evalIn (psub^.domEnv) a) (evalIn (psub^.domEnv) t)
-    let psub'  = psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
+    psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
 
     -- It only makes sense to map local defs to local defs. We don't need to worry about beta-eta
     -- stability, because local def inversion is purely an optimization and it's transparent to
     -- conversion.
     case whnf codvt of
       LocalDef x _ _ -> do
-        psub' <- handle @UnifyEx (\_ -> pure psub') do
-          unless psubIsLinear (() <$ psubstIn psub codvt)
-          pure $! updatePSub psub' x $ PVTotal $ MCl \_ -> domVar
-        solveTopMetaSub psub' psubIsLinear renv rsp rhs
+        entry <- handle @UnifyEx (\_ -> pure PVTop) do
+          unless (psub^.isLinear) (() <$ psubstIn psub codvt)
+          pure $ PVTotal $ MCl \_ -> domVar
+        solveTopMetaSub (updatePSub psub x entry) lhsEnv renv sp rhs
       _ -> do
-        solveTopMetaSub psub' psubIsLinear renv rsp rhs
+        solveTopMetaSub psub lhsEnv renv sp rhs
 
   -- checks: 1) arg is invertible 2) if psubst is nonlinear, problem-scope binder *type* is psubst-able
   --         we block/fail if either fails
@@ -477,51 +477,111 @@ solveTopMetaSub psub psubIsLinear renv rsp rhs = case renv of
 
   REBind x codv a codva renv -> do
     let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
-    let psub' = psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
-    psub' <- invertVal 0 psub' (psub^.cod) codv SId
-    unless psubIsLinear (() <$ psubstIn psub codva)
-    solveTopMetaSub psub' psubIsLinear renv rsp rhs
+    psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
+    psub <- invertVal 0 psub (psub^.cod) codv SId
+    unless (psub^.isLinear) (() <$ psubstIn psub codva)
+    solveTopMetaSub psub lhsEnv renv sp rhs
 
-  -- REBind0 x codv a codva renv -> do
-  --   let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
-  --   let psub' = psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
-  --   psub' <- invertVal0 0 psub' (psub^.cod) codv S0Id
-  --   unless psubIsLinear (() <$ psubstIn psub codva)
-  --   solveTopMetaSub psub' psubIsLinear renv rsp rhs
-
-solveTopSpine :: PartialSub -> RevSpine' -> Val -> IO S.Tm
-solveTopSpine psub rsp rhs = case rsp of
-
-  -- we don't need to check for invalid result type, because
-  -- we already checked the types of all in-scope vars
-  RSId' -> do
-    psubstIn psub rhs
-
-  RSApp' codv x i codva rsp -> do
-    a <- psubstIn psub codva
-    let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
-    let psub' = psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
-    psub' <- invertVal 0 psub' (psub^.cod) codv SId
-    S.Lam . BindI x i a ! solveTopSpine psub' rsp rhs
-
-  -- here I have to create fresh metas, so I need S.Locals
-  -- I also need the type and value of the lhs "so far"
-  RSProject' inf p rsp -> do
+  REBind0 x codv a codva renv ->
     uf
 
+data RevSpine'' = RevSpine'' {
+    revSpine''LhsTy       :: VTy
+  , revSpine''LhsMetaHead :: {-# nounpack #-} MetaHead
+  , revSpine''LhsSpine    :: Spine
+  , revSpine''DomLocals   :: S.Locals
+  , revSpine''RhsSpine    :: RevSpine
+  }
+makeFields ''RevSpine''
+
+reverseSpine'' :: VTy -> MetaHead -> Spine -> S.Locals -> Spine -> RevSpine''
+reverseSpine'' lhsTy lhsHd lhsSp ls sp =
+  RevSpine'' lhsTy lhsHd lhsSp ls (reverseSpine sp)
+
+solveTopSpine :: PartialSub -> RevSpine'' -> Val -> IO Tm
+solveTopSpine psub rsp rhs = case rsp^.rhsSpine of
+  RSId ->
+    psubstIn psub rhs
+
+  RSApp argv i rhsSp -> do
+    let (x , _, codva, appty) = appTy (rsp^.lhsTy) argv
+    a <- psubstIn psub codva
+    let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
+    psub <- invertVal 0 (psub & domEnv %~ (`EBind` domVar) & dom +~ 1) (psub^.cod) argv SId
+    let rsp' = RevSpine'' appty (rsp^.lhsMetaHead)
+                                (SApp (rsp^.lhsSpine) argv i)
+                                (S.LBind (rsp^.domLocals) x a)
+                                rhsSp
+    S.Lam . BindI x i a ! solveTopSpine psub rsp' rhs
+
+  RSProject p rhsSp -> do
+
+    (info, params) <- case whnf (rsp^.lhsTy) of
+      RecTy info params -> pure (info,params)
+      _                 -> impossible
+
+    let go :: Ix -> FieldInfo -> IO (Env, Tm)
+        go ix = \case
+          FINil ->
+            pure $! recParamEnv params // S.Rec info
+          FISnoc fields x i a -> do
+            (codenv, t) <- go (ix - 1) fields
+            let codva = evalIn codenv a
+            a <- psubstIn psub codva
+            let codprojv = Flex (rsp^.lhsMetaHead) (SProject (rsp^.lhsSpine) (Proj ix x))
+            let codenv'  = EBind codenv codprojv
+            if ix == p^.index then do
+              u <- solveTopSpine psub (rsp & lhsTy .~ codva & rhsSpine .~ rhsSp) rhs
+              pure (codenv', S.App t u i)
+            else do
+              u <- S.setLocals (rsp^.domLocals) (freshMeta a)
+              pure (codenv', S.App t u i)
+
+    snd ! go 0 (info^.fields)
+
+{-
+
+Do we need to psubst the eta-expansion freshmetas??
+They
+
+α () .snd =? rhs
+
+α () := (freshMeta(), rhs()⁻¹)
+α : () -> (A : Type) × A
+
+β : α () .fst
+α () .snd =? β
+γ ← freshMeta()
+
+α () := (
+
+Should we always compute stuff in the codomain?
+Probably: yes
+
+What if the type of a freshmeta depends on nonlinear vars?
+
+α : (U,U) → (A : U) × A
 
 
--- data RevSpine'
---   = RSId'
---   | RSApp' Val Name Icit ~VTy RevSpine'
---   | RSProject' {-# nounpack #-} RecInfo Proj RevSpine'
---   deriving Show
+β (A, B) : α (A, B) . fst
+
+   a  b
+α (A, A) .snd =? β (A, A)
+
+α (a, b) .snd =? (freshmeta a b, β)       β : α (A, A).fst
+
+-- γ : (U,U) → U
+-- β : γ (A, A)
+-- α (A, A) =? β
+-- α (A, A) (x : A) =? x
+
+aIT LOOKS OK TO DO THE FOLLOWING:
+  - use the psubted codomain types everywhere
+  - if a lambda binder type is not psubstable, catch error and bind PVError
 
 
 
 
 
-
-
-
-----------------------------------------------------------------------------------------------------
+-}
+-- ----------------------------------------------------------------------------------------------------
