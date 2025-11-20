@@ -175,7 +175,7 @@ infixr 1 ∙>
 infixr 1 ∘>
 (∘>) a b = PiI N_ a \_ -> b
 
-data G    = G {g1 :: Val, g2 :: Val}
+data G    = G {g1 :: ~Val, g2 :: Val}
 type GTy  = G
 type GVal = G
 
