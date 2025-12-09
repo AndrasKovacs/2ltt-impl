@@ -46,14 +46,17 @@ executable 2lttc
       Elaboration.State
       Errors
       Evaluation
+      Experiments.AbstractMachine.Proto
+      Experiments.AbstractMachine.Proto2
+      Experiments.AbstractMachine.Proto3
+      Experiments.Parsing.Pratt
+      Experiments.Parsing.Proto
       MainInteraction
       Notes
       Parser
       Parser.Batteries
       Parser.Config
       Parser.Lexer
-      Parser.Prototype.Pratt
-      Parser.Prototype.Proto
       Presyntax
       Pretty
       Unification
@@ -81,6 +84,7 @@ executable 2lttc
       FunctionalDependencies
       GADTs
       ImplicitParams
+      ImportQualifiedPost
       InstanceSigs
       KindSignatures
       LambdaCase

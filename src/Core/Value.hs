@@ -16,6 +16,16 @@ data RigidHead
   | RHRec   {-# nounpack #-} RecInfo
   deriving Show
 
+instance Eq RigidHead where
+  h == h' = case (h, h') of
+    (RHLocalVar x _, RHLocalVar x' _) -> x == x'
+    (RHPrim p      , RHPrim p'      ) -> p == p'
+    (RHDCon i      , RHDCon i'      ) -> i == i'
+    (RHTCon i      , RHTCon i'      ) -> i == i'
+    (RHRecTy i     , RHRecTy i'     ) -> i == i'
+    (RHRec i       , RHRec i'       ) -> i == i'
+    _                                 -> False
+
 data MetaHead = MetaHead MetaVar Env
   deriving Show
 

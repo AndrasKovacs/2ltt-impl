@@ -3,7 +3,7 @@
 Parser where operators produce an "error value" for unparsed spines.
 -}
 
-module Parser.Prototype.Proto where
+module Experiments.Parsing.Proto where
 
 import Common hiding (name)
 import Parser.Lexer

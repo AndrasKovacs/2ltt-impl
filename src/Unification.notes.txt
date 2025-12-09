@@ -33,6 +33,27 @@ Libal-Miller unification: https://www.lix.polytechnique.fr/Labo/Dale.Miller/pape
     - We might just hardwire simple cases like Lift, ElVal and ElComp. And see in practice which
       Libal-Miller problem pop up, to assess the practical benefit.
 
+
+α (List A) =? List A → List A
+
+  α := λ x. x → x
+
+α (f x) (g x) =? f x → g x
+
+α := λ x y. x → y
+
+α x x =? x → x   -- no most general solution
+
+α t₁ ... tₙ =? rhs
+
+
+
+
+
+
+
+
+
 Optimization for non-escaping metas
 
   Most metas don't escape the scope of their creation, so we want to optimize for that case.

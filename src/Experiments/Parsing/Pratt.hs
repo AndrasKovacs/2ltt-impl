@@ -1,7 +1,7 @@
 
 {-# options_ghc -Wno-unused-imports -Wno-orphans #-}
 
-module Parser.Prototype.Pratt where
+module Experiments.Parsing.Pratt where
 
 import Control.Monad.State.Strict
 import Control.Monad.Except

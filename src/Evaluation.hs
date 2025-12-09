@@ -121,6 +121,9 @@ proj t p = case t of
   Unfold h spn v -> Unfold h (SProject spn p) (proj v p)
   _              -> impossible
 
+gproj :: G -> S.Proj -> G
+gproj (G v fv) p = G (proj v p) (proj fv p)
+
 quote :: Val0 -> Val
 quote = \case
   Splice v S0Id -> v

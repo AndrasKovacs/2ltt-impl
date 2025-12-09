@@ -59,6 +59,7 @@ default-extensions:
   - FunctionalDependencies
   - GADTs
   - ImplicitParams
+  - ImportQualifiedPost
   - InstanceSigs
   - KindSignatures
   - LambdaCase

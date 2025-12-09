@@ -256,6 +256,10 @@ impossible :: Dbg => a
 impossible = error "impossible"
 {-# noinline impossible #-}
 
+noStage0 :: Dbg => a
+noStage0 = error "stage 0 not yet supported"
+{-# noinline noStage0 #-}
+
 -- strictness & primops
 --------------------------------------------------------------------------------
 
@@ -606,6 +610,10 @@ class HasIcit s a | s -> a where
 class HasClosure s a | s -> a where
   closure :: Lens' s a
   {-# minimal closure #-}
+
+class HasLocals s a | s -> a where
+  locals :: Lens' s a
+  {-# minimal locals #-}
 
 -- Projections
 --------------------------------------------------------------------------------

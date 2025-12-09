@@ -331,6 +331,15 @@ reverseSpine' hd ~a sp = snd (go sp) where
       v -> case projTy v a p of
         (inf, params, a) -> (a, RSProject' p (inf, params) rsp)
 
+data RevSpine'' = RevSpine'' {
+    revSpine''LhsTy       :: VTy
+  , revSpine''LhsMetaHead :: {-# nounpack #-} MetaHead
+  , revSpine''LhsSpine    :: Spine
+  , revSpine''DomLocals   :: S.Locals
+  , revSpine''RhsSpine    :: RevSpine
+  }
+makeFields ''RevSpine''
+
 -- data Spine0 = S0Splice Spine | S0Id deriving (Show)
 
 -- invertVal0 :: Lvl -> PartialSub -> Lvl -> Val0 -> Spine0 -> IO PartialSub
@@ -365,8 +374,7 @@ invertVal solvable psub param t rhsSp = case setLvl (psub^.cod) $ whnf t of
               (SApp rhsSp var (t^.icit))
 
   Quote t -> do
-    uf
-    -- invertVal0 solvable psub param t (S0Splice rhsSp)
+    noStage0
 
   Rigid (RHRec i) sp -> do
 
@@ -456,11 +464,14 @@ solveTopMetaSub ::
   -> IO S.Tm
 solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
   RENil -> do
-    uf
-    -- (m, ES.Unsolved ls mty) <- case psub^.occurs of
-    --   Just m -> (m,) ! ES.lookupUnsolved m
-    --   _      -> impossible
-    -- solveTopSpine psub (reverseSpine'' (Flex (MetaHead m lhsEnv) _) _ _ sp) rhs
+
+    (m, lhsTy, locals) <- case psub^.occurs of
+      Just m -> do inf <- ES.lookupUnsolved m
+                   let ~vty = evalIn lhsEnv (inf^.ty)
+                   pure (m, vty, inf^.locals)
+      _      -> impossible
+
+    solveTopSpine psub (reverseSpine'' lhsTy (MetaHead m lhsEnv) SId locals sp) rhs
 
   -- checks: 1) arg is invertible 2) if psubst is nonlinear, problem-scope *def* is psubst-able
   --         if either fails, we proceed without extending the psub
@@ -482,8 +493,6 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
 
   -- checks: 1) arg is invertible 2) if psubst is nonlinear, problem-scope binder *type* is psubst-able
   --         we block/fail if either fails
-  ----------------------------------------------------------------------------------------------------
-
   REBind x codv a codva renv -> do
     let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
     psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
@@ -492,16 +501,7 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
     solveTopMetaSub psub lhsEnv renv sp rhs
 
   REBind0 x codv a codva renv ->
-    uf
-
-data RevSpine'' = RevSpine'' {
-    revSpine''LhsTy       :: VTy
-  , revSpine''LhsMetaHead :: {-# nounpack #-} MetaHead
-  , revSpine''LhsSpine    :: Spine
-  , revSpine''DomLocals   :: S.Locals
-  , revSpine''RhsSpine    :: RevSpine
-  }
-makeFields ''RevSpine''
+    noStage0
 
 reverseSpine'' :: VTy -> MetaHead -> Spine -> S.Locals -> Spine -> RevSpine''
 reverseSpine'' lhsTy lhsHd lhsSp ls sp =
@@ -570,47 +570,74 @@ forceUS v = case ?unifyState of
   USPrecise 0 -> whnf v
   _           -> force v
 
+unifyEq :: Eq a => a -> a -> IO ()
+unifyEq a a' = if a == a' then pure () else unifyError
+
 class Unify a where
   unify :: LvlArg => UnifyStateArg => a -> a -> IO ()
 
 instance Unify RigidHead where
+  unify = unifyEq
+
+instance Unify Proj where
+  unify p p' = unifyEq (p^.index) (p'^.index)
+
+instance Unify Val where
+  unify t t' = unify (gjoin t) (gjoin t')
 
 instance Unify Spine where
+  unify sp sp' = case (sp, sp') of
+    (SId          , SId            ) -> pure ()
+    (SApp sp t _  , SApp sp' t' _  ) -> do unify sp sp'; unify t t'
+    (SProject sp p, SProject sp' p') -> do unify sp sp'; unify p p'
+    _                                -> unifyError
 
 instance Unify ClosureI where
+  unify t t' = fresh (t^.ty) \x -> unify (t ∙ x) (t' ∙ x)
 
 instance Unify Val0 where
+  unify = noStage0
 
+-- Only in speculative unification!
+instance Unify MetaHead where
+  unify (MetaHead m e) (MetaHead m' e') = do unifyEq m m'; unify e e'
+
+-- Only in Speculative unification!
 instance Unify UnfoldHead where
+  unify h h' = case (h, h') of
+    (UHMeta m      , UHMeta m'      ) -> unify m m'
+    (UHTopDef i    , UHTopDef i'    ) -> unifyEq i i'
+    (UHLocalDef x _, UHLocalDef x' _) -> unifyEq x x'
+    _                                 -> unifyError
 
 instance Unify Env where
+  unify e e' = case (e, e') of
+    (ENil     , ENil       ) -> pure ()
+    (EDef e _ , EDef e' _  ) -> unify e e'
+    (EBind e t, EBind e' t') -> do unify e e'; unify t t'
+    (EBind0{} , EBind0{}   ) -> noStage0
+    _                        -> impossible
 
 instance (Unify a, Unify b) => Unify (a, b) where
   {-# inline unify #-}
   unify (a, b) (a', b') = unify a a' >> unify b b'
 
-
-lopsidedUnfold :: LvlArg => UnifyStateArg => G -> G -> IO ()
-lopsidedUnfold g g' = case ?unifyState of
-  USPrecise{}   -> unify g g'
-  USSpeculating -> unifyError
-
--- TODO: this changes unification orientation
+-- TODO: this changes unification orientation, have 2 copies or pass a direction argument
+-- TODO: disallow unit eta case
 recordEta :: LvlArg => UnifyStateArg => RecInfo -> Spine -> G -> IO ()
-recordEta i sp v = go (i^.fields) sp v 0 where
-  go :: LvlArg => UnifyStateArg => FieldInfo -> Spine -> G -> Ix -> IO ()
-  go fs sp (G v fv) ix = case (fs, sp) of
-    (FINil, SId) -> pure ()
+recordEta i sp v = go (i^.fields) sp 0 where
+  go :: FieldInfo -> Spine -> Ix -> IO ()
+  go fs sp ix = case (fs, sp) of
+    (FINil, SId)                   -> pure ()
     (FISnoc fs x i a, SApp sp t _) -> do
-      let p = Proj ix x
-      unify (gjoin t) (G (proj v p) (proj fv p))
+      unify (gjoin t) (gproj v (Proj ix x))
+      go fs sp (ix - 1)
     _ -> impossible
 
 registerSolution :: MetaVar -> Tm -> IO ()
 registerSolution m t = do
   ES.Unsolved ls a <- ES.lookupUnsolved m
   -- TODO: decide on solution inlining
-
   occCache <- RF.new (-1)
   ES.writeMeta m $ ES.MESolved $ ES.Solved ls a t False occCache
 
@@ -627,17 +654,34 @@ solve (MetaHead m e) sp rhs = do
   -- TODO: wake up constraints here
 
 
--- | Try to solve a meta without eta-contracting the RHS. This can fail by spurious occurs
---   checking. If it fails, we retry with eta expansion. We don't have to backtrack metastate
---   updates because everything should be stable under eta expansions.
+-- | Try to solve a meta without eta expansions. This can fail by spurious occurs checking. If it
+--   fails, we retry with eta expansion. We don't have to backtrack metastate updates because
+--   everything should be stable under eta.
 solveEtaShort :: LvlArg => UnifyStateArg => MetaHead -> Spine -> Val -> IO ()
 solveEtaShort m sp rhs =
   -- TODO: should only backtrack from occurs checks of "m", otherwise the eta expansion doesn't
   -- help and we're better off postponing
   solve m sp rhs `catchUnify` solveEtaLong m sp rhs
 
-solveEtaLong :: LvlArg => MetaHead -> Spine -> Val -> IO ()
-solveEtaLong m sp rhs = uf
+-- TODO: disallow unit eta case
+solveEtaLongRec :: LvlArg => UnifyStateArg => MetaHead -> Spine -> RecInfo -> Spine -> IO ()
+solveEtaLongRec m sp inf args = go (inf^.fields) 0 args where
+  go :: FieldInfo -> Ix -> Spine -> IO ()
+  go fs ix args = case (fs, args) of
+    (FINil, SId) -> pure ()
+    (FISnoc fs x i a, SApp args t _) -> do
+      let p = Proj ix x
+      solveEtaLongRec m (SProject sp p) inf args
+      go fs (ix - 1) args
+    _ -> impossible
+
+
+solveEtaLong :: LvlArg => UnifyStateArg => MetaHead -> Spine -> Val -> IO ()
+solveEtaLong m sp rhs = case whnf rhs of
+  Lam t    -> fresh (t^.ty) \x -> solveEtaLong m (SApp sp x (t^.icit)) (t ∙ x)
+  Rec i ts -> solveEtaLongRec m sp i ts
+  rhs      -> solve m sp rhs
+
 
 -- | We try to solve the newer metas first, to minimize the number of scope-escaping metas.
 --   IMPORTANT: we only backtrack from the current spine inversion, which is OK because
@@ -645,7 +689,7 @@ solveEtaLong m sp rhs = uf
 --   because it can trigger pruning and retry arbitrary constraints.
 --
 --   TODO: ideally, if both spines are invertible, then both spines should be also partial subst-able
---   with pruning, so there should be no point trying to backtrack from partial subst.  However,
+--   with pruning, so there should be no point trying to backtrack from partial subst. However,
 --   this requires that pruning is at least as smart as inversion, so it can handle all invertible
 --   values, which is not going to be the case for a while.
 
@@ -661,6 +705,10 @@ flexFlex mh@(MetaHead m e) sp topt mh'@(MetaHead m' e') sp' topt' = case compare
   --       spine unification should not be a hard fail
   EQ -> unify (e, sp) (e', sp')
 
+lopsidedUnfold :: LvlArg => UnifyStateArg => G -> G -> IO ()
+lopsidedUnfold g g' = case ?unifyState of
+  USPrecise{}   -> unify g g'
+  USSpeculating -> unifyError
 
 instance Unify G where
   unify (G topt ftopt) (G topt' ftopt') = case forceUS ftopt // forceUS ftopt' of
