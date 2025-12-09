@@ -1,21 +1,19 @@
-{-# options_ghc -Wno-unused-imports #-}
 
 module Unification where
 
+import Data.IntMap (IntMap)
+import Data.IntMap qualified as IM
+import Data.Ref.F qualified as RF
+
 import Common
 import Core.Info
-import Core.Syntax (Ty, Tm, Locals, LocalsArg, Tm0)
-import qualified Core.Syntax as S
+import Core.Syntax (Ty, Tm, LocalsArg, Tm0)
+import Core.Syntax qualified as S
 import Core.Value
-import qualified Elaboration.State as ES
+import Elaboration.State qualified as ES
 
 import Evaluation
-import Data.IntMap (IntMap)
-import qualified Data.IntMap as IM
-import qualified Data.Ref.F as RF
-
 import Utils.State
-
 
 ----------------------------------------------------------------------------------------------------
 
@@ -222,8 +220,9 @@ applyPVal pv sp args = case (pv, sp) of
   (pv            , RSId          ) -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb pv args
   _                                -> unifyError
 
+-- TODO
 approxOccursInMeta :: MetaVar -> MetaVar -> IO ()
-approxOccursInMeta occ m = error "TODO"
+approxOccursInMeta occ m = uf
 
 checkMetaOccurs :: PSubArg => MetaVar -> IO ()
 checkMetaOccurs m = case ?psub^.occurs of
@@ -637,8 +636,8 @@ recordEta i sp v = go (i^.fields) sp 0 where
 registerSolution :: MetaVar -> Tm -> IO ()
 registerSolution m t = do
   ES.Unsolved ls a <- ES.lookupUnsolved m
-  -- TODO: decide on solution inlining
   occCache <- RF.new (-1)
+    -- TODO: decide solution inlining
   ES.writeMeta m $ ES.MESolved $ ES.Solved ls a t False occCache
 
 solve :: LvlArg => UnifyStateArg => MetaHead -> Spine -> Val -> IO ()
@@ -651,7 +650,7 @@ solve (MetaHead m e) sp rhs = do
   ES.Unsolved ls _ <- ES.lookupUnsolved m
   sol <- solveTopMetaSub psub e (reverseEnv ls e) sp rhs
   registerSolution m sol
-  -- TODO: wake up constraints here
+  -- TODO: when we have constraints, we need to wake them up here
 
 
 -- | Try to solve a meta without eta expansions. This can fail by spurious occurs checking. If it

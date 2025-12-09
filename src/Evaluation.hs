@@ -2,8 +2,8 @@
 module Evaluation where
 
 import Common hiding (Prim(..))
-import qualified Common      as S
-import qualified Core.Syntax as S
+import Common      qualified as S
+import Core.Syntax qualified as S
 import Core.Info
 import Core.Value
 import Elaboration.State
@@ -173,6 +173,11 @@ cproject0 v p = case v of
 rec0 :: Rec0Info -> Val0
 rec0 i = if i^.isComp then CRec i Nil else Rec0 i
 
+weaken :: (EnvArg => a) -> (EnvArg => a)
+weaken act = case ?env of
+  EBind e _ -> let ?env = e in act
+  _         -> impossible
+
 instance Eval S.Tm0 Val0 where
   eval = \case
     S.LocalVar0 x   -> lookupIx0 x
@@ -204,7 +209,7 @@ instance Eval S.Tm Val where
     S.Project t p -> proj (eval t) p
     S.Quote t     -> quote (eval t)
     S.Meta m sub  -> meta m (eval sub)
-
+    S.Wk t        -> weaken $ eval t
 
 -- Forcing
 --------------------------------------------------------------------------------
@@ -285,6 +290,9 @@ force0 = \case
 
 class ReadBack a b | a -> b where
   readb :: LvlArg => UnfoldArg => a -> b
+
+readbNoUnfold :: ReadBack a b => LvlArg => a -> b
+readbNoUnfold = readBackNoUnfold ?lvl
 
 {-# inline readBack #-}
 readBack :: ReadBack a b => Lvl -> Unfold -> a -> b

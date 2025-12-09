@@ -45,6 +45,7 @@ data Tm
   | Lam (BindI Tm)
   | Project Tm Proj
   | Quote Tm0
+  | Wk Tm -- ^ Explicit weakening over a stage 1 bound var.
 
 instance Apply Tm Tm Tm where
   {-# inline (∙∘) #-}
@@ -78,3 +79,10 @@ type LocalsArg = (?locals :: Locals)
 {-# inline setLocals #-}
 setLocals :: Locals -> (LocalsArg => a) -> a
 setLocals ls act = let ?locals = ls in act
+
+localsLength :: Locals -> Lvl
+localsLength = go 0 where
+  go acc LNil = acc
+  go acc (LDef ls _ _ _) = go (acc + 1) ls
+  go acc (LBind ls _ _)  = go (acc + 1) ls
+  go acc (LBind0 ls _ _) = go (acc + 1) ls

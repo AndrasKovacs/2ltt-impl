@@ -2,7 +2,7 @@
 module Core.Value where
 
 import Common hiding (Set)
-import qualified Common as C
+import Common qualified as C
 import Core.Info
 
 -- rigid heads

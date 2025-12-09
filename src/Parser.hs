@@ -4,7 +4,7 @@ module Parser (tm, top) where
 
 import Prelude hiding (pi)
 import Common hiding (some, many, debug, Proj(..), Prim(..), name, Bind(..))
-import qualified FlatParse.Stateful as FP
+import FlatParse.Stateful qualified as FP
 import Parser.Lexer
 import Presyntax
 
@@ -16,6 +16,9 @@ TODO
 - data types, case splits
 - implicit let
 - indentation-based let
+
+- Andreas suggestion: lambda should be included in the operator parser, so
+  that we can e.g. write  < \x. x >  where <_> is a closed operator.
 -}
 
 debug :: String -> Parser ()
@@ -404,14 +407,12 @@ p1 =
   --   fst : A
   --   snd : B
 
-  record Bar : Set where kuka : Nat
-                         béka : Nat
+  -- record Bar : Set where kuka : Nat
+  --                        béka : Nat
 
-  béka : Set
-  majom : Set
-  béka  : Set
-  majom := x
-  béka := y
+  foo : (x : A)(y : A) -> mallac = Set
+
+
 
   -- Nat  : Set = (N : Set) → (N → N) → N → N
   -- zero : Nat = λ N s z. z

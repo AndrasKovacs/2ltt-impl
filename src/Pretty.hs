@@ -3,7 +3,6 @@ module Pretty (Names, NamesArg, Txt, runTxt, Pretty(..), pretty) where
 
 import Prelude hiding (pi)
 import Common
-import Core.Info
 import Core.Syntax hiding (splice)
 
 --------------------------------------------------------------------------------
@@ -47,7 +46,7 @@ runTxt (Txt f) = f mempty
 
 instance Semigroup Txt where
   {-# inline (<>) #-}
-  Txt x <> Txt y = Txt (\s -> x $! y s)
+  Txt x <> Txt y = Txt (oneShot (\s -> x $! y s))
 
 instance Monoid Txt where
   {-# inline mempty #-}
@@ -83,8 +82,8 @@ class Pretty a where
 prt' :: Pretty a => Int -> NamesArg => a -> Txt
 prt' p a = let ?prec = p in prt a
 
-pretty :: Pretty a => LocalsArg => a -> Txt
-pretty a = let ?prec = (-2); ?names = localsToNames ?locals in prt a
+pretty :: Pretty a => LocalsArg => a -> String
+pretty a = let ?prec = (-2); ?names = localsToNames ?locals in runTxt (prt a)
 
 instance Pretty Name where
   prt = \case
@@ -147,12 +146,12 @@ piBind x Expl a = "(" <> x <> " : " <> a <> ")"
 
 goPis :: DoPretty (Tm -> Txt)
 goPis = \case
-  Pi a (BindI x i b) | x /= N_ -> let pa = app a in bind x \x -> piBind x i pa <> goPis b
+  Pi (BindI x i a b) | x /= N_ -> let pa = app a in bind x \x -> piBind x i pa <> goPis b
   t                            -> " → " <> pi t
 
 goLams' :: DoPretty (Tm -> Txt)
 goLams' = \case
-  Lam a (BindI x i t) -> goLams a x i t
+  Lam (BindI x i a t) -> goLams a x i t
   t                   -> ". " <> prt t
 
 goLams :: DoPretty (Tm -> Name -> Icit -> Tm -> Txt)
@@ -162,12 +161,17 @@ goLams a x i t = case i of
 
 goLams0' :: DoPretty (Tm0 -> Txt)
 goLams0' = \case
-  Lam0 a (Bind x t) -> goLams0 a x t
+  Lam0 (Bind x a t) -> goLams0 a x t
   t                 -> ". " <> prt t
 
 goLams0 :: DoPretty (Tm -> Name -> Tm0 -> Txt)
 goLams0 a x t =
   bind x \x -> "(" <> x <> " : " <> llet a <> ")" <> goLams0' t
+
+weaken :: (NamesArg => a) -> (NamesArg => a)
+weaken act = case ?names of
+  Nil -> impossible
+  Cons _ xs -> let ?names = xs in act
 
 instance Pretty Prim where
   prt = \case
@@ -192,6 +196,20 @@ instance Pretty Proj where
   prt (Proj i N_) = prt i
   prt (Proj i x)  = prt x
 
+instance Pretty TmEnv where
+  prt e = "(" <> go e <> ")" where
+    go :: DoPretty (TmEnv -> Txt)
+    go = \case
+      TENil      -> mempty
+      TEDef e t  -> go e <> splice t
+      TEBind e t -> go e <> splice t
+      TEBind0{}  -> noStage0
+
+instance Pretty MetaSub where
+  prt = \case
+    MSId    -> mempty
+    MSSub s -> prt s
+
 instance Pretty Tm0 where
   prt = \case
     LocalVar0 x         -> localVar x
@@ -199,11 +217,15 @@ instance Pretty Tm0 where
     DCon0 i             -> topName (i^.name)
     Project0 t p        -> projp (proj t <> "." <> prt p)
     App0 t u            -> appp (app t <> " " <> splice u)
-    Lam0 a (Bind x t)   -> lletp ("λ " <> goLams0 a x t)
-    Decl0 a (Bind N_ t) -> lletp ("let _ : " <> llet a <> "; " <> llet t)
-    Decl0 a (Bind x t)  -> let pa = llet a in bind x \x ->
+    Lam0 (Bind x a t)   -> lletp ("λ " <> goLams0 a x t)
+    Decl0 (Bind N_ a t) -> lletp ("let _ : " <> llet a <> "; " <> llet t)
+    Decl0 (Bind x a t)  -> let pa = llet a in bind x \x ->
                            lletp ("let " <> x <> " : " <> pa <> "; " <> llet t)
     Splice t            -> splicep ("~" <> proj t)
+    Meta0{}             -> noStage0
+    Rec0{}              -> noStage0
+    CProject{}          -> noStage0
+    Let0{}              -> noStage0
 
 instance Pretty Tm where
   prt = \case
@@ -213,21 +235,22 @@ instance Pretty Tm where
     Rec  i     -> topName (i^.name)
     RecTy i    -> topName (i^.name)
     TopDef i   -> topName (i^.name)
-    Meta m     -> "?" <> prt m
+    Meta m s   -> appp ("?" <> prt m <> prt s)
 
-    Let a t (Bind x u)   -> let pa = llet a; pt = llet t in bind x \x ->
+    Let t (Bind x a u)   -> let pa = llet a; pt = llet t in bind x \x ->
                             lletp ("let " <> x <> " : " <> pa <> " = " <> pt <> "; " <> llet u)
-    Pi a (BindI N_ i b)  -> let pa = app a in bind N_ \_ -> pip (pa <> " → " <> pi b)
-    Pi a (BindI x i b)   -> let pa = app a in bind x  \x -> pip (piBind x i pa <> goPis b)
+    Pi (BindI N_ i a b)  -> let pa = app a in bind N_ \_ -> pip (pa <> " → " <> pi b)
+    Pi (BindI x i a b)   -> let pa = app a in bind x  \x -> pip (piBind x i pa <> goPis b)
     Prim p               -> prt p
 
     Prim Fun0 `AppE` a `AppE` b -> pip (app a <> " → " <> pi b)
 
     App t u Impl         -> appp (app t <> " {" <> splice u <> "}")
     App t u Expl         -> appp (app t <> " " <> splice u)
-    Lam a (BindI x i t)  -> lletp ("λ " <> goLams a x i t)
+    Lam (BindI x i a t)  -> lletp ("λ " <> goLams a x i t)
     Project t p          -> projp (proj t <> "." <> prt p)
     Quote t              -> "<" <> llet t <> ">"
+    Wk t                 -> weaken $ prt t
 
 
 --------------------------------------------------------------------------------

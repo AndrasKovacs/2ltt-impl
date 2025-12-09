@@ -39,13 +39,13 @@ import Lens.Micro.TH
 import Text.Show
 import Data.Flat
 
-import qualified Data.ByteString.Char8 as B
-import qualified Data.ByteString.Internal as B
-import qualified FlatParse.Stateful as FP
+import Data.ByteString.Char8 qualified as B
+import Data.ByteString.Internal qualified as B
+import FlatParse.Stateful qualified as FP
 
 import Data.Hashable
 
-import {-# source #-} qualified Core.Syntax as S
+import {-# source #-} Core.Syntax qualified as S
 
 
 -- Debug printing, toggled by "debug" cabal flag
