@@ -39,6 +39,7 @@ executable 2lttc
   main-is: Main.hs
   other-modules:
       Common
+      Config
       Core.Info
       Core.Syntax
       Core.Value
@@ -52,7 +53,6 @@ executable 2lttc
       Experiments.Parsing.Pratt
       Experiments.Parsing.Proto
       MainInteraction
-      Notes
       Parser
       Parser.Batteries
       Parser.Config
@@ -60,7 +60,6 @@ executable 2lttc
       Presyntax
       Pretty
       Unification
-      Utils.Fusion
       Utils.State
       Paths_2lttc
   hs-source-dirs:
