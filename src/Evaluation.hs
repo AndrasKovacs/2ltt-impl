@@ -2,7 +2,7 @@
 module Evaluation where
 
 import Common hiding (Prim(..))
-import Common      qualified as S
+import Common      qualified as C
 import Core.Syntax qualified as S
 import Core.Info
 import Core.Value
@@ -59,38 +59,38 @@ lookupIx0 x = go ?env x where
 geval :: Eval a Val => EnvArg => a -> G
 geval a = gjoin (eval a)
 
-instance Eval (S.Bind S.Tm0) Closure0 where
+instance Eval (Bind S.Tm0) Closure0 where
   {-# inline eval #-}
-  eval (S.Bind x a t) = Cl0 x (eval a) \v -> def0 v \_ -> eval t
+  eval (Bind x a t) = Cl0 x (eval a) \v -> def0 v \_ -> eval t
 
-instance Eval (S.BindI S.Tm) ClosureI where
+instance Eval (BindI S.Tm) ClosureI where
   {-# inline eval #-}
-  eval (S.BindI x i a t) = ClI x i (eval a) \v -> def v \_ -> eval t
+  eval (BindI x i a t) = ClI x i (eval a) \v -> def v \_ -> eval t
 
-instance Eval (S.Bind S.Tm) Closure where
+instance Eval (Bind S.Tm) Closure where
   {-# inline eval #-}
-  eval (S.Bind x a t) = Cl x (eval a) \v -> def v \_ -> eval t
+  eval (Bind x a t) = Cl x (eval a) \v -> def v \_ -> eval t
 
-instance Eval S.Prim Val where
+instance Eval C.Prim Val where
   eval = \case
-    S.Lift      -> ΛE A_ Set Lift
-    S.Set       -> Set
-    S.Ty        -> Ty
-    S.ValTy     -> ValTy
-    S.CompTy    -> CompTy
-    S.ElVal     -> ΛE A_ ValTy ElVal
-    S.ElComp    -> ΛE A_ CompTy ElComp
-    S.Fun0      -> ΛE A_ ValTy \a -> ΛE B_ Ty \b -> Fun0 a b
-    S.Eq        -> ΛI A_ Set \a -> ΛE x_ a \x -> ΛE y_ a \y -> Eq a x y
-    S.Refl      -> ΛI A_ Set \a -> ΛI x_ a \x -> Refl a x
-    S.J         -> ΛI A_ Set \a ->
+    C.Lift      -> ΛE A_ Set Lift
+    C.Set       -> Set
+    C.Ty        -> Ty
+    C.ValTy     -> ValTy
+    C.CompTy    -> CompTy
+    C.ElVal     -> ΛE A_ ValTy ElVal
+    C.ElComp    -> ΛE A_ CompTy ElComp
+    C.Fun0      -> ΛE A_ ValTy \a -> ΛE B_ Ty \b -> Fun0 a b
+    C.Eq        -> ΛI A_ Set \a -> ΛE x_ a \x -> ΛE y_ a \y -> Eq a x y
+    C.Refl      -> ΛI A_ Set \a -> ΛI x_ a \x -> Refl a x
+    C.J         -> ΛI A_ Set \a ->
                    ΛI x_ a \x ->
                    ΛE P_ (PiE y_ a \y -> Eq a x y ∙> Set) \bigP ->
                    ΛI y_ a \y ->
                    ΛI p_ (Eq a x y) \p ->
                    ΛE r_ (bigP ∙ x ∙ p) \r ->
                    p ∙ y ∙ p
-    S.K         -> ΛI A_ Set \a ->
+    C.K         -> ΛI A_ Set \a ->
                    ΛI x_ a \x ->
                    ΛE P_ (Eq a x x ∙> Set) \bigP ->
                    ΛE p_ (Eq a x x) \p ->
@@ -113,7 +113,7 @@ projFromSpine sp x = case (sp, x) of
   (SApp sp _ _, x) -> projFromSpine sp (x - 1)
   _                -> impossible
 
-proj :: Val -> S.Proj -> Val
+proj :: Val -> Proj -> Val
 proj t p = case t of
   Rec _ spn      -> projFromSpine spn (p^.index)
   Rigid h spn    -> Rigid  h (SProject spn p)
@@ -121,7 +121,7 @@ proj t p = case t of
   Unfold h spn v -> Unfold h (SProject spn p) (proj v p)
   _              -> impossible
 
-gproj :: G -> S.Proj -> G
+gproj :: G -> Proj -> G
 gproj (G v fv) p = G (proj v p) (proj fv p)
 
 quote :: Val0 -> Val
@@ -340,11 +340,11 @@ instance ReadBack Spine (S.Tm -> S.Tm) where
     SApp t u i   -> S.App (readb t h) (readb u) i
     SProject t p -> S.Project (readb t h) p
 
-instance ReadBack ClosureI (S.BindI S.Tm) where
-  readb (ClI x i a t) = S.BindI x i (readb a) $ fresh a \v -> readb (t v)
+instance ReadBack ClosureI (BindI S.Tm) where
+  readb (ClI x i a t) = BindI x i (readb a) $ fresh a \v -> readb (t v)
 
-instance ReadBack Closure0 (S.Bind S.Tm0) where
-  readb (Cl0 x a t) = S.Bind x (readb a) $ fresh0 \v -> readb (t v)
+instance ReadBack Closure0 (Bind S.Tm0) where
+  readb (Cl0 x a t) = Bind x (readb a) $ fresh0 \v -> readb (t v)
 
 forceUnfold :: UnfoldArg => Val -> Val
 forceUnfold t = case ?unfold of

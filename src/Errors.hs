@@ -17,6 +17,7 @@ data Error
   = UnifyError Val Val UnifyEx
   | MissingAnnotation
   | Generic String
+  | NonFunctionForLambda Val
 
 instance IsString Error where
   fromString = Generic
@@ -36,6 +37,8 @@ instance Show ErrorInCxt where
           UnifyError t u ex ->
                "Can't unify inferred type\n\n  "
                ++ showVal t ++ "\n\nwith expected type\n\n  " ++ showVal u ++ "\n"
+          NonFunctionForLambda a ->
+            "Type mismatch: expected type\n\n" ++ showVal a ++ "\n for a lambda expression"
 
     in render (srcToBs src) (spanOf t) msg
 

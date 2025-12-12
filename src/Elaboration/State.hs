@@ -108,10 +108,10 @@ isFrozen x = do
 -- Identifier scope
 --------------------------------------------------------------------------------
 
+-- TODO: pre-allocate the value
 data LocalInfo = LI {
-    localInfoName :: Name
-  , localInfoLvl  :: Lvl
-  , localInfoVTy  :: VTy
+    localInfoLvl :: Lvl
+  , localInfoTy  :: ~VTy
   }
 makeFields ''LocalInfo
 
@@ -133,6 +133,9 @@ identScope :: IdentScope
 identScope = runIO $ HT.initialize 5
 {-# noinline identScope #-}
 
+lookupIS :: Name -> IO (Maybe ISEntry)
+lookupIS = HT.lookup identScope
+
 {-# noinline localDefineInsert #-}
 localDefineInsert :: LocalInfo -> Name -> IO ()
 localDefineInsert i x =
@@ -147,7 +150,7 @@ localDefineDelete x = HT.alter identScope go x where
 {-# inline localDefineIS #-}
 localDefineIS :: LvlArg => Name -> VTy -> IO a -> IO a
 localDefineIS x a act = do
-  localDefineInsert (LI x ?lvl a) x
+  localDefineInsert (LI ?lvl a) x
   res <- act
   localDefineDelete x
   pure res

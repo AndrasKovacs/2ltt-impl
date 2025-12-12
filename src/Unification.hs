@@ -373,7 +373,7 @@ invertVal solvable psub param t rhsSp = case setLvl (psub^.cod) $ whnf t of
               (SApp rhsSp var (t^.icit))
 
   Quote t -> do
-    noStage0
+    impossible
 
   Rigid (RHRec i) sp -> do
 
@@ -500,7 +500,7 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
     solveTopMetaSub psub lhsEnv renv sp rhs
 
   REBind0 x codv a codva renv ->
-    noStage0
+    impossible
 
 reverseSpine'' :: VTy -> MetaHead -> Spine -> S.Locals -> Spine -> RevSpine''
 reverseSpine'' lhsTy lhsHd lhsSp ls sp =
@@ -595,7 +595,7 @@ instance Unify ClosureI where
   unify t t' = fresh (t^.ty) \x -> unify (t ∙ x) (t' ∙ x)
 
 instance Unify Val0 where
-  unify = noStage0
+  unify = impossible
 
 -- Only in speculative unification!
 instance Unify MetaHead where
@@ -614,7 +614,7 @@ instance Unify Env where
     (ENil     , ENil       ) -> pure ()
     (EDef e _ , EDef e' _  ) -> unify e e'
     (EBind e t, EBind e' t') -> do unify e e'; unify t t'
-    (EBind0{} , EBind0{}   ) -> noStage0
+    (EBind0{} , EBind0{}   ) -> impossible
     _                        -> impossible
 
 instance (Unify a, Unify b) => Unify (a, b) where

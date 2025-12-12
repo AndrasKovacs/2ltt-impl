@@ -256,10 +256,6 @@ impossible :: Dbg => a
 impossible = error "impossible"
 {-# noinline impossible #-}
 
-noStage0 :: Dbg => a
-noStage0 = error "stage 0 not yet supported"
-{-# noinline noStage0 #-}
-
 -- strictness & primops
 --------------------------------------------------------------------------------
 

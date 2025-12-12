@@ -66,7 +66,7 @@ data Tm
   | Quote Pos Tm Pos                       -- <_>
   | Splice Pos Tm                          -- ~t
   | Ident RawName                          -- any general identifier
-  | LocalLvl Pos Lvl Pos                   -- @n (De Bruijn level)
+  | LocalLvl RawName Lvl Pos               -- x@n (De Bruijn level)
   | Dot Tm Projection                      -- field name or qualified name or record field index
 
   | Rec Pos RecFields Pos                  -- TODO

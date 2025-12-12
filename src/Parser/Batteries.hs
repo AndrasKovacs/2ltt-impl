@@ -301,21 +301,44 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     identBase :: Parser RawName
     identBase = FP.withSpan scanIdent \_ span -> do
       FP.fails $ FP.inSpan span anySymbol
-      ws
       RawName <$> FP.unsafeSpanToByteString span
+
+    anyWordBase' :: Parser (Word, FP.Span)
+    anyWordBase' = do
+      FP.withSpan FP.anyAsciiDecimalWord \n s -> do
+      ws
+      pure (n , s)
+
+    anyWord' :: Parser (Word, FP.Span)
+    anyWord' = lvl' *> anyWordBase'
 
     -- | Parse an identifier.
     ident' :: Parser RawName
     ident' = do
       lvl'
-      FP.branch $(FP.char switchChar) operatorBase identBase
+      FP.branch $(FP.char switchChar) (operatorBase <* ws) (identBase <* ws)
     {-# inline ident' #-}
+
+    -- | Parser an identifier optionally followed by De Bruijn dismabiguation,
+    --   e.g. "foo@4".
+    identWithLvl' :: Parser (RawName, Maybe (Word, FP.Span))
+    identWithLvl' = do
+      lvl'
+      FP.branch $(FP.char switchChar)
+        (do x <- operatorBase <* ws
+            pure (x, Nothing))
+        (do x <- identBase
+            l <- FP.optional ($(FP.char '@') *> anyWord')
+            ws
+            pure (x, l))
+    {-# inline identWithLvl' #-}
 
     -- | Parse an identifier.
     ident :: Parser RawName
     ident = do
       lvl
-      FP.branch $(FP.char switchChar) operatorBase identBase `cut` [Lit "identifier"]
+      FP.branch $(FP.char switchChar) (operatorBase <* ws) (identBase <* ws)
+       `cut` [Lit "identifier"]
     {-# inline ident #-}
 
     ------------------------------------------------------------
@@ -336,17 +359,16 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     operatorBase :: Parser RawName
     operatorBase = FP.withSpan scanOperator \_ span -> do
       FP.fails $ FP.inSpan span anySymbol
-      ws
       RawName <$> FP.unsafeSpanToByteString span
 
     -- | Parse an operator.
     operator' :: Parser RawName
-    operator' = lvl' >> operatorBase
+    operator' = lvl' *> operatorBase <* ws
     {-# inline operator' #-}
 
     -- | Parse an operator.
     operator :: Parser RawName
-    operator = lvl >> operatorBase `cut` [Lit "operator"]
+    operator = operator' `cut` [Lit "operator"]
     {-# inline operator #-}
 
     ------------------------------------------------------------

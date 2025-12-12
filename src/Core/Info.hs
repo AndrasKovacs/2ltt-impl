@@ -14,6 +14,7 @@ data DefInfo = DI {
     defInfoUid   :: Int
   , defInfoValue :: ~Val
   , defInfoName  :: Name
+  , defInfoTy    :: VTy
   }
 
 data RecInfo = RI {
@@ -21,6 +22,7 @@ data RecInfo = RI {
   , recInfoValue     :: ~Val
   , recInfoName      :: Name
   , recInfoFields    :: FieldInfo
+  , recInfoTy        :: VTy
   }
 
 data TConInfo = TCI {

@@ -11,12 +11,12 @@ import Presyntax
 
 {-
 TODO
+- Anonymous record constructor expression
 - Grouped binders
 - ML-style definitions
 - data types, case splits
 - implicit let
 - indentation-based let
-
 - Andreas suggestion: lambda should be included in the operator parser, so
   that we can e.g. write  < \x. x >  where <_> is a closed operator.
 -}
@@ -36,18 +36,6 @@ some p = do
   as <- many p
   pure $ Cons a as
 {-# inline some #-}
-
-anyWordBase' :: Parser (Word, FP.Span)
-anyWordBase' = do
-  FP.withSpan FP.anyAsciiDecimalWord \n s -> do
-  ws
-  pure (n , s)
-
-anyWord' :: Parser (Word, FP.Span)
-anyWord' = lvl' *> anyWordBase'
-
-anyLvl' :: Parser (Lvl, FP.Span)
-anyLvl' = coerce anyWord'
 
 -- anyWord :: Parser (Word, FP.Span)
 -- anyWord = (lvl' *> anyWordBase') `cut` ["positive integer"]
@@ -86,6 +74,12 @@ rawRight = $(rawString "right")
 
 --------------------------------------------------------------------------------
 
+{-# inline anyLvl' #-}
+anyLvl' :: Parser (Lvl, Span)
+anyLvl' = do
+  (x, s) <- anyWord'
+  pure (coerce x, toSpan s)
+
 atom' :: Parser Tm
 atom' = $(switch' [| case _ of
   "("      -> \(Span l r) -> do {t <- tm; r <- rightPos <$> parr; pure $ Parens l t r}
@@ -100,9 +94,10 @@ atom' = $(switch' [| case _ of
   "?"      -> \(Span l r) -> pure $ Hole l
   "↑"      -> \(Span l r) -> pure $ Lift l r
   "^"      -> \(Span l r) -> pure $ Lift l r
-  "@"      -> \(Span l _) -> do {(n,rightPos -> r) <- anyLvl'; pure $ LocalLvl l n r}
   |])
-  <|> (Ident <$> ident')
+  <|> (identWithLvl' >>= \case
+        (x, Nothing)       -> pure (Ident x)
+        (x, Just (lvl, s)) -> pure (LocalLvl x (coerce lvl) (rightPos s)))
 
 atom :: Parser Tm
 atom = do
@@ -410,7 +405,10 @@ p1 =
   -- record Bar : Set where kuka : Nat
   --                        béka : Nat
 
-  foo : (x : A)(y : A) -> mallac = Set
+  -- foo : (x : A)(y : A) -> mallac
+  --    = Set
+
+  x
 
 
 
@@ -421,7 +419,3 @@ p1 =
   -- n5 : Nat = suc (suc (suc (suc (suc zero))))
   -- n10 : Nat = n5 + n5
   """
-
-
-
---------------------------------------------------------------------------------

@@ -67,6 +67,9 @@ deriving instance Show MetaSub
 deriving instance Show Tm
 deriving instance Show Tm0
 
+pattern Set :: Tm
+pattern Set = Prim Common.Set
+
 data Locals
   = LNil
   | LDef Locals Name Tm Ty

@@ -2,7 +2,8 @@
 module Pretty (Names, NamesArg, Txt, runTxt, Pretty(..), pretty) where
 
 import Prelude hiding (pi)
-import Common
+import Common hiding (Prim(..))
+import Common qualified as C
 import Core.Syntax hiding (splice)
 
 --------------------------------------------------------------------------------
@@ -173,20 +174,20 @@ weaken act = case ?names of
   Nil -> impossible
   Cons _ xs -> let ?names = xs in act
 
-instance Pretty Prim where
+instance Pretty C.Prim where
   prt = \case
-    Lift   -> "↑"
-    Set    -> "Set"
-    Ty     -> "Ty"
-    ValTy  -> "ValTy"
-    CompTy -> "CompTy"
-    ElVal  -> "ElVal"
-    ElComp -> "ElComp"
-    Eq     -> "Eq"
-    Refl   -> "Refl"
-    J      -> "J"
-    K      -> "K"
-    Fun0   -> "_→_"
+    C.Lift   -> "↑"
+    C.Set    -> "Set"
+    C.Ty     -> "Ty"
+    C.ValTy  -> "ValTy"
+    C.CompTy -> "CompTy"
+    C.ElVal  -> "ElVal"
+    C.ElComp -> "ElComp"
+    C.Eq     -> "Eq"
+    C.Refl   -> "Refl"
+    C.J      -> "J"
+    C.K      -> "K"
+    C.Fun0   -> "_→_"
 
 instance Pretty Int     where prt = str . show
 instance Pretty Ix      where prt = str . show
@@ -203,7 +204,7 @@ instance Pretty TmEnv where
       TENil      -> mempty
       TEDef e t  -> go e <> splice t
       TEBind e t -> go e <> splice t
-      TEBind0{}  -> noStage0
+      TEBind0{}  -> impossible
 
 instance Pretty MetaSub where
   prt = \case
@@ -222,10 +223,10 @@ instance Pretty Tm0 where
     Decl0 (Bind x a t)  -> let pa = llet a in bind x \x ->
                            lletp ("let " <> x <> " : " <> pa <> "; " <> llet t)
     Splice t            -> splicep ("~" <> proj t)
-    Meta0{}             -> noStage0
-    Rec0{}              -> noStage0
-    CProject{}          -> noStage0
-    Let0{}              -> noStage0
+    Meta0{}             -> impossible
+    Rec0{}              -> impossible
+    CProject{}          -> impossible
+    Let0{}              -> impossible
 
 instance Pretty Tm where
   prt = \case
@@ -243,7 +244,7 @@ instance Pretty Tm where
     Pi (BindI x i a b)   -> let pa = app a in bind x  \x -> pip (piBind x i pa <> goPis b)
     Prim p               -> prt p
 
-    Prim Fun0 `AppE` a `AppE` b -> pip (app a <> " → " <> pi b)
+    Prim C.Fun0 `AppE` a `AppE` b -> pip (app a <> " → " <> pi b)
 
     App t u Impl         -> appp (app t <> " {" <> splice u <> "}")
     App t u Expl         -> appp (app t <> " " <> splice u)
