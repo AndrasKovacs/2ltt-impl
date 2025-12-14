@@ -176,11 +176,11 @@ coeChk (Infer t a vt) a' = case whnf a of
     pure $ Check t vt
 
 -- coerce to explicit function type
-coeToPiExpl :: Elab (Infer -> IO (VTy, Val -> Val))
+coeToPiExpl :: Elab (Infer -> IO (Tm, VTy, Val -> Val, Val))
 coeToPiExpl (Infer t a vt) = case whnf a of
   Pi a  -> case a^.icit of
     Impl -> insertApp t a vt >>= coeToPiExpl
-    Expl -> pure (a^.ty, a^.body)
+    Expl -> pure (t, a^.ty, a^.body, vt)
   _ ->
     elabError "expected a function type"
 
@@ -217,9 +217,9 @@ checkPi binds b = case binds of
     a <- checkAnnotation a Set
     checkPiMultiBind xs i a binds b
 
-coeToRecord :: Elab (Infer -> IO (Tm, Val, RecInfo, Spine))
+coeToRecord :: Elab (Infer -> IO (Tm, RecInfo, Spine, Val))
 coeToRecord (Infer t a vt) = case whnf a of
-  Rec i args             -> pure (i, args)
+  Rec i args             -> pure (t, i, args, vt)
   Pi a | a^.icit == Impl -> insertApp t a vt >>= coeToRecord
   _                      -> elabError "expected a record type for projected expression"
 
@@ -262,9 +262,10 @@ infer t = forcePTm t \case
     Just e  -> case e of
       ISLocal i _ -> pure $! Infer (S.LocalVar (lvlToIx ?lvl (i^.lvl)))
                                    (i^.ty) (LocalVar (i^.lvl) (i^.ty))
-      ISNil       -> impossible
-      ISTopDef i  -> pure $! Infer (S.TopDef i) (i^.ty) (i^.value)
-      ISTopRec i  -> pure $! Infer (S.Rec i) (i^.ty) (i^.value)
+      ISNil          -> impossible
+      ISTopDef i     -> pure $! Infer (S.TopDef i) (i^.ty) (i^.value)
+      ISTopRecTCon i -> pure $! Infer (S.Rec i) (i^.tConTy) (i^.tConValue)
+      ISTopRecDCon i -> pure $! Infer (S.Rec i) (i^.dConTy) (i^.dConValue)
       ISTopTCon{}; ISTopDCon{} -> noInductive
       ISTopDef0{}; ISTopRec0{}; ISTopTCon0{} -> noStage0
 
@@ -298,13 +299,36 @@ infer t = forcePTm t \case
     t <- infer t
     (t, i, args, vt) <- coeToRecord t
     case p of
+      P.POp{} -> noOps
+
       P.PName x -> do
-        let go :: FieldInfo -> IO Infer
-            go FINil = elabError $ Generic $ "No such record field: " ++ show x
-            go (FISnoc fs x' i a)
-              | NRawName x == x' = pure _
-              | otherwise        = go fs
-        go (i^.fields)
+        let go :: FieldInfo -> Ix -> IO Infer
+            go FINil _ = elabError $ Generic $ "No such record field: " ++ show x
+            go (FISnoc fs x' i a) ix =
+              if NRawName x == x' then do
+                let p   = Proj ix x'
+                let env = recFieldEnv fs p args vt
+                let ~ty = evalIn env a
+                pure $ Infer (S.Project t p) ty (proj vt p)
+              else
+                go fs (ix - 1)
+        go (i^.fields) 0
+
+      P.PLvl _ lvl _ -> do
+        let topIx = lvlToIx (i^.numFields) lvl
+        let go :: FieldInfo -> Ix -> IO Infer
+            go FINil _ = elabError $ Generic $ "No record field with index " ++ show lvl
+            go (FISnoc fs x _ a) 0  = do
+              let p   = Proj topIx x
+              let env = recFieldEnv fs p args vt
+              let ~ty = evalIn env a
+              pure $ Infer (S.Project t p) ty (proj vt p)
+            go (FISnoc fs _ _ a) ix = go fs (ix - 1)
+        go (i^.fields) topIx
+
+  P.Rec _ fs _ -> elabError "anonymous record construction not yet supported"
+
+
 
 
 --------------------------------------------------------------------------------

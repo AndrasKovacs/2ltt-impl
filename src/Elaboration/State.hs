@@ -117,12 +117,13 @@ makeFields ''LocalInfo
 
 data ISEntry
   = ISNil
-  | ISTopDef    {-# nounpack #-} DefInfo
-  | ISTopRec    {-# nounpack #-} RecInfo
-  | ISTopTCon   {-# nounpack #-} TConInfo
-  | ISTopDef0   {-# nounpack #-} Def0Info
-  | ISTopRec0   {-# nounpack #-} Rec0Info
-  | ISTopTCon0  {-# nounpack #-} TCon0Info
+  | ISTopDef     {-# nounpack #-} DefInfo
+  | ISTopRecTCon {-# nounpack #-} RecInfo
+  | ISTopRecDCon {-# nounpack #-} RecInfo
+  | ISTopTCon    {-# nounpack #-} TConInfo
+  | ISTopDef0    {-# nounpack #-} Def0Info
+  | ISTopRec0    {-# nounpack #-} Rec0Info
+  | ISTopTCon0   {-# nounpack #-} TCon0Info
   | ISTopDCon (List DConInfo)
   | ISLocal LocalInfo ISEntry
 

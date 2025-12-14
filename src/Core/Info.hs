@@ -19,10 +19,13 @@ data DefInfo = DI {
 
 data RecInfo = RI {
     recInfoUid       :: Int
-  , recInfoValue     :: ~Val
+  , recInfoTConTy    :: VTy
+  , recInfoDConTy    :: VTy
+  , recInfoTConValue :: ~Val
+  , recInfoDConValue :: ~Val
   , recInfoName      :: Name
   , recInfoFields    :: FieldInfo
-  , recInfoTy        :: VTy
+  , recInfoNumFields :: Lvl
   }
 
 data TConInfo = TCI {

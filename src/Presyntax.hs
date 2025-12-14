@@ -70,7 +70,6 @@ data Tm
   | Dot Tm Projection                      -- field name or qualified name or record field index
 
   | Rec Pos RecFields Pos                  -- TODO
-  | RecTy Pos (List (Bind, Ty)) Pos        -- TODO
   deriving Show
 
 type Record0Decl = List (Bind, Ty)
@@ -144,7 +143,6 @@ instance SpanOf Tm where
     Inferred x       -> leftPos x
     Splice x _       -> leftPos x
     Rec x _ _        -> leftPos x
-    RecTy x _ _      -> leftPos x
     Spine x _        -> leftPos x
 
   rightPos = \case
@@ -169,6 +167,5 @@ instance SpanOf Tm where
     ElComp _ x       -> rightPos x
     Inferred x       -> rightPos x
     Splice _ x       -> rightPos x
-    RecTy _ _ x      -> rightPos x
     Rec _ _ x        -> rightPos x
     Spine _ x        -> rightPos x

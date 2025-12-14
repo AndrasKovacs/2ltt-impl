@@ -198,8 +198,8 @@ instance Eval S.Tm Val where
     S.LocalVar x  -> lookupIx x
     S.TCon i      -> i^.value
     S.DCon i      -> i^.value
-    S.RecTy i     -> i^.value
-    S.Rec i       -> i^.value
+    S.RecTy i     -> i^.tConValue
+    S.Rec i       -> i^.dConValue
     S.TopDef i    -> i^.value
     S.Let t u     -> def (eval t) \v -> eval u ∙ v
     S.Pi b        -> Pi (eval b)
@@ -410,23 +410,22 @@ recParamEnv = \case
   SApp sp t _ -> EDef (recParamEnv sp) t
   _           -> impossible
 
+recFieldEnv :: FieldInfo -> Proj -> Spine -> Val -> Env
+recFieldEnv fs (Proj ix x) params vt = case fs of
+  FINil           -> recParamEnv params
+  FISnoc fs _ _ _ -> EDef (recFieldEnv fs (Proj (ix + 1) x) params vt)
+                          (proj vt (Proj ix x))
+
 -- | Input: value, its type, projection.
 --   Output: RecInfo, record parameters, type of result
 projTy :: Val -> VTy -> Proj -> (RecInfo, Spine, VTy)
 projTy t a (Proj ix x) = case whnf t of
   RecTy i params ->
-
     let go :: FieldInfo -> Ix -> Ix -> VTy
         go fs ix here = case (fs, ix) of
-          (FISnoc fs x i a, 0 ) -> evalIn (mkEnv fs here) a
+          (FISnoc fs x i a, 0 ) -> evalIn (recFieldEnv fs (Proj here x) params t) a
           (FISnoc fs _ _ _, ix) -> go fs (ix - 1) (here + 1)
           _                     -> impossible
-
-        mkEnv :: FieldInfo -> Ix -> Env
-        mkEnv fs here = case fs of
-          FINil           -> recParamEnv params
-          FISnoc fs _ _ _ -> EDef (mkEnv fs (here + 1)) (proj t (Proj here x))
-
     in (i, params, go (i^.fields) ix 0)
   _ -> impossible
 
