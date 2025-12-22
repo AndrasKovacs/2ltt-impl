@@ -3,10 +3,12 @@ module Presyntax where
 
 import Common hiding (Name, Proj(..), Prim(..), Bind(..))
 
+-- TODO: use TH to generate SpanOf instances
+
 type Ty = Tm
 
 data Bind
-  = BOp Operator
+  = BOp Pos Operator Pos
   | BName RawName
   | BUnused Pos   -- "_" as a binder
   | BNonExistent  -- a binder which doesn't exist in source (like non-dependent fun domain binder)
@@ -68,7 +70,6 @@ data Tm
   | Ident RawName                          -- any general identifier
   | LocalLvl RawName Lvl Pos               -- x@n (De Bruijn level)
   | Dot Tm Projection                      -- field name or qualified name or record field index
-
   | Rec Pos RecFields Pos                  -- TODO
   deriving Show
 
@@ -77,7 +78,7 @@ type Record1Decl = List (Bind, Ty)
 
 data Top
   = TNil
-  | TDef Stage Bind (Maybe Ty) Tm Top
+  | TDef Bind Stage (Maybe Ty) Tm Top
   | TDecl Bind Ty Top
   | TInductive0 Pos Bind
   | TInductive1 Pos Bind
@@ -169,3 +170,32 @@ instance SpanOf Tm where
     Splice _ x       -> rightPos x
     Rec _ _ x        -> rightPos x
     Spine _ x        -> rightPos x
+
+instance SpanOf Bind where
+  leftPos = \case
+    BOp x _ _    -> leftPos x
+    BName x      -> leftPos x
+    BUnused x    -> leftPos x
+    BNonExistent -> impossible
+  rightPos = \case
+    BOp _ _ x    -> rightPos x
+    BName x      -> rightPos x
+    BUnused x    -> rightPos x
+    BNonExistent -> impossible
+
+instance SpanOf Top where
+  leftPos = \case
+    TNil                -> impossible
+    TDef x _ _ _ _      -> leftPos x
+    TDecl x _ _         -> leftPos x
+    TInductive0 x _     -> leftPos x
+    TInductive1 x _     -> leftPos x
+    TRecord x _ _ _ _ _ -> leftPos x
+
+  rightPos = \case
+    TNil                -> impossible
+    TDef _ _ _ _ x      -> rightPos x
+    TDecl _ _ x         -> rightPos x
+    TInductive0 _ x     -> rightPos x
+    TInductive1 x _     -> rightPos x
+    TRecord x _ _ _ _ _ -> rightPos x

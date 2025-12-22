@@ -24,9 +24,8 @@ Use this "Epigram" glued type in Check and Infer.
 Restructure things around the (Tm,Val) pairs!
 -}
 
-type PTmArg = (?ptm :: P.Tm)
-
-type Elab a = LvlArg => EnvArg => LocalsArg => SrcArg => PTmArg => a
+type LazySpanArg = (?span :: LazySpan)
+type Elab a = LvlArg => EnvArg => LocalsArg => SrcArg => LazySpanArg => a
 
 {-# inline forceElab #-}
 forceElab :: Elab a -> Elab a
@@ -64,28 +63,28 @@ insertBind x a va act =
   forceElab $ act val
 
 {-# inline forcePTm #-}
-forcePTm :: P.Tm -> (PTmArg => P.Tm -> a) -> a
+forcePTm :: P.Tm -> (LazySpanArg => P.Tm -> a) -> a
 forcePTm t act = go t where
   go (P.Parens _ t _) = go t
-  go t                = let ?ptm = t in act t
+  go t                = let ?span = LazySpan (spanOf t) in act t
 
 bindToName :: P.Bind -> Name
 bindToName = \case
-  P.BOp op       -> NOp op
+  P.BOp _ op _   -> NOp op
   P.BName x      -> NRawName x
   P.BUnused _    -> N_
   P.BNonExistent -> N_
 
-elabError :: LvlArg => LocalsArg => SrcArg => PTmArg => Error -> IO a
-elabError err = throwIO $ ErrorInCxt ?src ?locals ?lvl ?ptm err
+elabError :: LvlArg => LocalsArg => SrcArg => LazySpanArg => Error -> IO a
+elabError err = throwIO $ ErrorInCxt ?src ?locals ?lvl ?span err
 
-noStage0 :: LvlArg => LocalsArg => SrcArg => PTmArg => IO a
+noStage0 :: LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
 noStage0 = elabError "Stage 0 is not yet supported"
 
-noOps :: LvlArg => LocalsArg => SrcArg => PTmArg => IO a
+noOps :: LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
 noOps = elabError "Operators are not yet supported"
 
-noInductive :: LvlArg => LocalsArg => SrcArg => PTmArg => IO a
+noInductive :: LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
 noInductive = elabError "Inductive types are not yet supported"
 
 unify :: LvlArg => Val -> Val -> IO ()
@@ -263,7 +262,7 @@ infer t = forcePTm t \case
       ISLocal i _ -> pure $! Infer (S.LocalVar (lvlToIx ?lvl (i^.lvl)))
                                    (i^.ty) (LocalVar (i^.lvl) (i^.ty))
       ISNil          -> impossible
-      ISTopDef i     -> pure $! Infer (S.TopDef i) (i^.ty) (i^.value)
+      ISTopDef i     -> pure $! Infer (S.TopDef i) (i^.vTy) (i^.value)
       ISTopRecTCon i -> pure $! Infer (S.Rec i) (i^.tConTy) (i^.tConValue)
       ISTopRecDCon i -> pure $! Infer (S.Rec i) (i^.dConTy) (i^.dConValue)
       ISTopTCon{}; ISTopDCon{} -> noInductive
@@ -329,6 +328,45 @@ infer t = forcePTm t \case
   P.Rec _ fs _ -> elabError "anonymous record construction not yet supported"
 
 
-
-
+-- Top
 --------------------------------------------------------------------------------
+
+data Top
+  = TNil
+  | TDef1 Top {-# nounpack #-} DefInfo
+  | TRecord1 Top {-# nounpack #-} RecInfo
+
+{-# inline forcePTop #-}
+forcePTop :: P.Top -> (LazySpanArg => P.Top -> a) -> a
+forcePTop t act = let ?span = LazySpan (spanOf t) in act t
+
+checkTopShadowing :: Elab (Name -> IO ())
+checkTopShadowing x = lookupIS x >>= \case
+  Nothing -> pure ()
+  Just{}  -> elabError $ TopLevelShadowing x
+
+-- | Add a top-level definition.
+{-# inline defineTop #-}
+defineTop :: Name -> Ty -> VTy -> Tm -> Val -> Elab (DefInfo -> IO a) -> Elab (IO a)
+defineTop x a va t vt act = do
+  checkTopShadowing x
+  uid <- newUid
+  let info = DI uid x t vt a va
+  topDefineIS info
+  act info
+
+inferTop :: Elab (P.Top -> IO Top)
+inferTop = go TNil where
+  go :: Elab (Top -> P.Top -> IO Top)
+  go acc t = forcePTop t \case
+    P.TNil -> pure acc
+    P.TInductive1{} -> noInductive
+    P.TDef _ S0 _ _ _; P.TInductive0{};P.TDecl{} -> noStage0
+
+    P.TDef (bindToName -> x) S1 a t top -> do
+      Check a va <- checkAnnotation a Set
+      Check t vt <- check t va
+      defineTop x a va t vt \inf -> go (TDef1 acc inf) top
+
+    P.TRecord _ (bindToName -> x) c d e f -> do
+      uf

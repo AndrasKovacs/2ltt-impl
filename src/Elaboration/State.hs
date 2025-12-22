@@ -156,6 +156,10 @@ localDefineIS x a act = do
   localDefineDelete x
   pure res
 
+-- | Precondition: no shadowing.
+topDefineIS :: DefInfo -> IO ()
+topDefineIS inf = HT.insert identScope (inf^.name) (ISTopDef inf)
+
 resetIS :: IO () -- HT doesn't export a "clear" function
 resetIS = do
   HT.DRef r <- HT.initialize 5 :: IO IdentScope

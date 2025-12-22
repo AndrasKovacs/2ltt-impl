@@ -540,6 +540,7 @@ class SpanOf a where
 
   rightPos :: a -> Pos
   rightPos a = case spanOf a of Span _ r -> r
+  {-# minimal spanOf | leftPos, rightPos #-}
 
 instance SpanOf Span where
   spanOf s = s

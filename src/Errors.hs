@@ -8,24 +8,26 @@ import FlatParse.Stateful qualified as FP
 import Common
 import Core.Value
 import Core.Syntax
-import Presyntax qualified as P
 import Unification
 import Pretty
 import Evaluation
+
+data LazySpan = LazySpan ~Span
 
 data Error
   = UnifyError Val Val UnifyEx
   | MissingAnnotation
   | Generic String
   | NonFunctionForLambda Val
+  | TopLevelShadowing Name
 
 instance IsString Error where
   fromString = Generic
 
-data ErrorInCxt = ErrorInCxt Src Locals Lvl P.Tm Error
+data ErrorInCxt = ErrorInCxt Src Locals Lvl LazySpan Error
 
 instance Show ErrorInCxt where
-  show (ErrorInCxt src ls l t err) =
+  show (ErrorInCxt src ls l (LazySpan span) err) =
     let ?locals = ls
         ?lvl = l in
     let showVal :: Val -> String
@@ -39,8 +41,10 @@ instance Show ErrorInCxt where
                ++ showVal t ++ "\n\nwith expected type\n\n  " ++ showVal u ++ "\n"
           NonFunctionForLambda a ->
             "Type mismatch: expected type\n\n" ++ showVal a ++ "\n for a lambda expression"
+          TopLevelShadowing x ->
+            "Top-level name already defined: " ++ show x
 
-    in render (srcToBs src) (spanOf t) msg
+    in render (srcToBs src) span msg
 
 instance Exception ErrorInCxt
 

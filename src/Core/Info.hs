@@ -12,9 +12,11 @@ data FieldInfo
 
 data DefInfo = DI {
     defInfoUid   :: Int
-  , defInfoValue :: ~Val
   , defInfoName  :: Name
-  , defInfoTy    :: VTy
+  , defInfoBody  :: Tm
+  , defInfoValue :: ~Val
+  , defInfoTy    :: Ty
+  , defInfoVTy   :: VTy
   }
 
 data RecInfo = RI {
