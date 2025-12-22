@@ -1,5 +1,5 @@
 
-module Pretty (Names, NamesArg, Txt, runTxt, Pretty(..), pretty) where
+module Pretty (Names, NamesArg, Txt, runTxt, Pretty(..), pretty, prettyTop) where
 
 import Prelude hiding (pi)
 import Common hiding (Prim(..))
@@ -85,6 +85,9 @@ prt' p a = let ?prec = p in prt a
 
 pretty :: Pretty a => LocalsArg => a -> String
 pretty a = let ?prec = (-2); ?names = localsToNames ?locals in runTxt (prt a)
+
+prettyTop :: Pretty a => a -> String
+prettyTop a = let ?locals = LNil in pretty a
 
 instance Pretty Name where
   prt = \case
@@ -252,6 +255,13 @@ instance Pretty Tm where
     Project t p          -> projp (proj t <> "." <> prt p)
     Quote t              -> "<" <> llet t <> ">"
     Wk t                 -> weaken $ prt t
+
+instance Pretty Locals where
+  prt = \case
+    LNil          -> mempty
+    LDef ls x t a -> prt ls <> "(" <> prt x <> ":" <> llet a <> " = " <> llet t <> ")"
+    LBind ls x a  -> prt ls <> "(" <> prt x <> ":" <> llet a <> ")"
+    LBind0{}      -> impossible
 
 
 --------------------------------------------------------------------------------

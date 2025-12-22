@@ -1,6 +1,6 @@
 {-# options_ghc -Wno-unused-imports #-}
 
-module Elaboration where
+module Elaboration (elab, Top(..)) where
 
 import Common hiding (Set)
 import Core.Syntax (Tm, Ty, Tm0, LocalsArg, Locals(..))
@@ -333,8 +333,8 @@ infer t = forcePTm t \case
 
 data Top
   = TNil
-  | TDef1 Top {-# nounpack #-} DefInfo
-  | TRecord1 Top {-# nounpack #-} RecInfo
+  | TDef1 {-# nounpack #-} DefInfo MetaVar Top
+  -- | TRecord1 Top {-# nounpack #-} RecInfo
 
 {-# inline forcePTop #-}
 forcePTop :: P.Top -> (LazySpanArg => P.Top -> a) -> a
@@ -355,18 +355,19 @@ defineTop x a va t vt act = do
   topDefineIS info
   act info
 
-inferTop :: Elab (P.Top -> IO Top)
-inferTop = go TNil where
-  go :: Elab (Top -> P.Top -> IO Top)
-  go acc t = forcePTop t \case
-    P.TNil -> pure acc
+elab :: Elab (P.Top -> IO Top)
+elab top = reset >> go top where
+  go :: Elab (P.Top -> IO Top)
+  go t = forcePTop t \case
+    P.TNil -> pure TNil
     P.TInductive1{} -> noInductive
     P.TDef _ S0 _ _ _; P.TInductive0{};P.TDecl{} -> noStage0
 
     P.TDef (bindToName -> x) S1 a t top -> do
       Check a va <- checkAnnotation a Set
       Check t vt <- check t va
-      defineTop x a va t vt \inf -> go (TDef1 acc inf) top
+      frz <- freezeMetas
+      defineTop x a va t vt \inf -> TDef1 inf frz ! go top
 
     P.TRecord _ (bindToName -> x) c d e f -> do
       uf

@@ -383,14 +383,17 @@ timedPure_ ~a = do
 
 data Src
   = SrcFile FilePath B.ByteString
+  | SrcNoFile B.ByteString
   | SrcDontUnbox
 
 instance Show Src where
   show (SrcFile fp _) = "File " ++ fp
+  show SrcNoFile{}    = "NoFile"
   show SrcDontUnbox   = impossible
 
 srcToBs :: Src -> B.ByteString
 srcToBs (SrcFile _ bs) = bs
+srcToBs (SrcNoFile bs) = bs
 srcToBs SrcDontUnbox   = impossible
 
 type SrcArg = (?src :: Src)

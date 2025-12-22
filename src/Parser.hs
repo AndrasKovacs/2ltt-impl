@@ -1,13 +1,12 @@
 {-# options_ghc -Wno-unused-binds #-}
 
-module Parser (tm, top) where
+module Parser (parseString) where
 
 import Prelude hiding (pi)
 import Common hiding (some, many, debug, Proj(..), Prim(..), name, Bind(..))
 import FlatParse.Stateful qualified as FP
 import Parser.Lexer
 import Presyntax
-
 
 {-
 TODO
@@ -181,8 +180,10 @@ spine = do
           SFalse -> pure $ Unparsed $ USTm t sp
       )
 
-prec :: Parser Precedence
-prec = coerce . fst <$> (anyWord' `cut` ["precedence number"])
+prec :: Parser (Precedence, Span)
+prec = do
+  (w, s) <- anyWord' `cut` ["precedence number"]
+  pure $! (coerce w // toSpan s)
 
 -- TODO: errors
 bind' :: Parser Bind
@@ -198,29 +199,31 @@ bind' =
               FP.withOption rawUnderscore
                 (\_ -> do
                   ws <* lvl
-                  fixity <- (rawLeft  *> ws *> (FInLeft <$> prec))
-                        <|> (rawRight *> ws *> (FInLeft <$> prec))
-                        <|> (FInNon <$> prec)
-                  pure $ BOp $ Op fixity (Cons op ops)
+                  (fixity, sp) <-
+                            (do rawLeft; ws; (p, sp) <- prec; pure (FInLeft p, sp))
+                        <|> (do rawRight; ws; (p, sp) <- prec; pure (FInLeft p, sp))
+                        <|> (do (p, sp) <- prec; pure (FInNon p, sp))
+                  pure $ BOp l (Op fixity (Cons op ops)) (rightPos sp)
                 )
                 (do
-                  prec <- ws *> prec
-                  pure $ BOp $ Op (FPost prec) (Cons op ops)
+                  (prec, sp) <- ws *> prec
+                  pure $ BOp l (Op (FPost prec) (Cons op ops)) (rightPos sp)
                 )
           )
           (pure $ BUnused l)
         )
-        (do op <- rawOperator
+        (do l <- getPos
+            op <- rawOperator
             rawUnderscore
             ops <- many (rawOperator <* rawUnderscore)
             FP.withOption rawOperator
               (\op' -> do
                 ws
-                pure $ BOp $ Op FClosed (Cons op ops <> Single op')
+                pure $ BOp l (Op FClosed (Cons op ops <> Single op')) (rightPos op')
               )
               (do
-                prec <- ws *> prec
-                pure $ BOp $ Op (FPre prec) (Cons op ops)
+                (prec, sp) <- ws *> prec
+                pure $ BOp l (Op (FPre prec) (Cons op ops)) (rightPos sp)
               )
         )
     )
@@ -369,7 +372,7 @@ topEntry _ =
          (\s -> do
              t <- tm
              u <- localIndentation 0 $ top' ()
-             pure $ TDef s x a t u
+             pure $ TDef x s a t u
          )
          (case a of
             Just a -> do
@@ -391,6 +394,13 @@ top' _ = topEntry () <|> topEof
 top :: Parser Top
 top = ws *> top' ()
 
+parseString :: String -> IO Top
+parseString str = do
+  case FP.runParserUtf8 top 0 0 str of
+    FP.OK top _ _ -> pure top
+    FP.Fail       -> impossible
+    FP.Err e      -> error $ prettyError (FP.strToUtf8 str) e
+
 p1 :: String
 p1 =
   """
@@ -408,7 +418,7 @@ p1 =
   -- foo : (x : A)(y : A) -> mallac
   --    = Set
 
-  x
+  majom := \\x y z. foobar x
 
 
 
