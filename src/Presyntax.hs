@@ -9,28 +9,28 @@ type Ty = Tm
 
 data Bind
   = BOp Pos Operator Pos
-  | BName RawName
+  | BName SrcName
   | BUnused Pos   -- "_" as a binder
   | BNonExistent  -- a binder which doesn't exist in source (like non-dependent fun domain binder)
   deriving Show
 
 data Projection
-  = PName RawName        -- name
-  | POp RawName          -- operator
+  = PName SrcName        -- name
+  | POp SrcName          -- operator
   | PLvl Pos Lvl Pos  -- record field index
   deriving Show
 
 data Spine (b :: Bool) where
   SNil    :: Spine 'True
   STm     :: Tm -> Icit -> Spine b -> Spine b
-  SOp     :: RawName -> Spine b -> Spine 'False
-  SProjOp :: Tm -> RawName -> Spine b -> Spine 'False
+  SOp     :: SrcName -> Spine b -> Spine 'False
+  SProjOp :: Tm -> SrcName -> Spine b -> Spine 'False
 deriving instance Show (Spine b)
 
 data UnparsedSpine where
   USTm     :: Tm -> Spine 'False -> UnparsedSpine
-  USOp     :: RawName -> Spine b -> UnparsedSpine
-  USProjOp :: Tm -> RawName -> Spine b -> UnparsedSpine
+  USOp     :: SrcName -> Spine b -> UnparsedSpine
+  USProjOp :: Tm -> SrcName -> Spine b -> UnparsedSpine
 deriving instance Show UnparsedSpine
 
 -- TODO
@@ -67,8 +67,8 @@ data Tm
   | Lift Pos Pos                           -- ↑ | ^
   | Quote Pos Tm Pos                       -- <_>
   | Splice Pos Tm                          -- ~t
-  | Ident RawName                          -- any general identifier
-  | LocalLvl RawName Lvl Pos               -- x@n (De Bruijn level)
+  | Ident SrcName                          -- any general identifier
+  | LocalLvl SrcName Lvl Pos               -- x@n (De Bruijn level)
   | Dot Tm Projection                      -- field name or qualified name or record field index
   | Rec Pos RecFields Pos                  -- TODO
   deriving Show
@@ -77,7 +77,7 @@ type Record0Decl = List (Bind, Ty)
 type Record1Decl = List (Bind, Ty)
 
 data Top
-  = TNil
+  = TNil Pos -- end of file position
   | TDef Bind Stage (Maybe Ty) Tm Top
   | TDecl Bind Ty Top
   | TInductive0 Pos Bind
@@ -185,7 +185,7 @@ instance SpanOf Bind where
 
 instance SpanOf Top where
   leftPos = \case
-    TNil                -> impossible
+    TNil x              -> leftPos x
     TDef x _ _ _ _      -> leftPos x
     TDecl x _ _         -> leftPos x
     TInductive0 x _     -> leftPos x
@@ -193,7 +193,7 @@ instance SpanOf Top where
     TRecord x _ _ _ _ _ -> leftPos x
 
   rightPos = \case
-    TNil                -> impossible
+    TNil x              -> rightPos x
     TDef _ _ _ _ x      -> rightPos x
     TDecl _ _ x         -> rightPos x
     TInductive0 _ x     -> rightPos x

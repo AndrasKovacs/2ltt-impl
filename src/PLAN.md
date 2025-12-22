@@ -1,6 +1,4 @@
 
-PLAN:
-
 - WITS presentation:
   - ONLY meta stage
   - nested pattern unification
@@ -8,5 +6,3 @@ PLAN:
   - LocalDef preservation
   - basic parser
   - single-file elaborator
-
--

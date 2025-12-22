@@ -1,6 +1,6 @@
 {-# options_ghc -Wno-unused-imports #-}
 
-module Elaboration (elab, Top(..)) where
+module Elaboration (elab, Top(..), TopDef(..)) where
 
 import Common hiding (Set)
 import Core.Syntax (Tm, Ty, Tm0, LocalsArg, Locals(..))
@@ -71,20 +71,20 @@ forcePTm t act = go t where
 bindToName :: P.Bind -> Name
 bindToName = \case
   P.BOp _ op _   -> NOp op
-  P.BName x      -> NRawName x
+  P.BName x      -> NSrcName x
   P.BUnused _    -> N_
   P.BNonExistent -> N_
 
-elabError :: LvlArg => LocalsArg => SrcArg => LazySpanArg => Error -> IO a
+elabError :: Dbg => LvlArg => LocalsArg => SrcArg => LazySpanArg => Error -> IO a
 elabError err = throwIO $ ErrorInCxt ?src ?locals ?lvl ?span err
 
-noStage0 :: LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
+noStage0 :: Dbg => LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
 noStage0 = elabError "Stage 0 is not yet supported"
 
-noOps :: LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
+noOps :: Dbg => LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
 noOps = elabError "Operators are not yet supported"
 
-noInductive :: LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
+noInductive :: Dbg => LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
 noInductive = elabError "Inductive types are not yet supported"
 
 unify :: LvlArg => Val -> Val -> IO ()
@@ -256,11 +256,13 @@ infer t = forcePTm t \case
   P.Inferred _ -> do
     elabError "can't infer placeholder"
 
-  P.Ident x -> lookupIS (NRawName x) >>= \case
+  P.Ident x -> lookupIS (NSrcName x) >>= \case
     Nothing -> elabError $ Generic $ "Name not in scope: " ++ show x
     Just e  -> case e of
-      ISLocal i _ -> pure $! Infer (S.LocalVar (lvlToIx ?lvl (i^.lvl)))
-                                   (i^.ty) (LocalVar (i^.lvl) (i^.ty))
+
+      ISLocal i _ -> do
+        pure $! Infer (S.LocalVar (lvlToIx ?lvl (i^.lvl))) (i^.ty) (LocalVar (i^.lvl) (i^.ty))
+
       ISNil          -> impossible
       ISTopDef i     -> pure $! Infer (S.TopDef i) (i^.vTy) (i^.value)
       ISTopRecTCon i -> pure $! Infer (S.Rec i) (i^.tConTy) (i^.tConValue)
@@ -268,7 +270,7 @@ infer t = forcePTm t \case
       ISTopTCon{}; ISTopDCon{} -> noInductive
       ISTopDef0{}; ISTopRec0{}; ISTopTCon0{} -> noStage0
 
-  P.LocalLvl x l _ -> lookupIS (NRawName x) >>= \case
+  P.LocalLvl x l _ -> lookupIS (NSrcName x) >>= \case
     Nothing -> elabError $ Generic $ "Name not in scope: " ++ show x
     Just e  -> case e of
       ISLocal i e -> do
@@ -304,7 +306,7 @@ infer t = forcePTm t \case
         let go :: FieldInfo -> Ix -> IO Infer
             go FINil _ = elabError $ Generic $ "No such record field: " ++ show x
             go (FISnoc fs x' i a) ix =
-              if NRawName x == x' then do
+              if NSrcName x == x' then do
                 let p   = Proj ix x'
                 let env = recFieldEnv fs p args vt
                 let ~ty = evalIn env a
@@ -331,10 +333,15 @@ infer t = forcePTm t \case
 -- Top
 --------------------------------------------------------------------------------
 
+newtype TopDef = TopDef DefInfo
+
+instance Show TopDef where
+  show (TopDef inf) = show (inf^.name, inf^.ty, inf^.body)
+
 data Top
   = TNil
-  | TDef1 {-# nounpack #-} DefInfo MetaVar Top
-  -- | TRecord1 Top {-# nounpack #-} RecInfo
+  | TDef1 {-# nounpack #-} TopDef MetaVar Top
+  deriving Show
 
 {-# inline forcePTop #-}
 forcePTop :: P.Top -> (LazySpanArg => P.Top -> a) -> a
@@ -357,9 +364,10 @@ defineTop x a va t vt act = do
 
 elab :: Elab (P.Top -> IO Top)
 elab top = reset >> go top where
+
   go :: Elab (P.Top -> IO Top)
   go t = forcePTop t \case
-    P.TNil -> pure TNil
+    P.TNil{} -> pure TNil
     P.TInductive1{} -> noInductive
     P.TDef _ S0 _ _ _; P.TInductive0{};P.TDecl{} -> noStage0
 
@@ -367,7 +375,7 @@ elab top = reset >> go top where
       Check a va <- checkAnnotation a Set
       Check t vt <- check t va
       frz <- freezeMetas
-      defineTop x a va t vt \inf -> TDef1 inf frz ! go top
+      defineTop x a va t vt \inf -> TDef1 (TopDef inf) frz ! go top
 
     P.TRecord _ (bindToName -> x) c d e f -> do
       uf

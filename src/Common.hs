@@ -38,10 +38,12 @@ import Lens.Micro
 import Lens.Micro.TH
 import Text.Show
 import Data.Flat
+import Data.ByteString (ByteString)
 
 import Data.ByteString.Char8 qualified as B
 import Data.ByteString.Internal qualified as B
 import FlatParse.Stateful qualified as FP
+import FlatParse.Basic qualified as FPB
 
 import Data.Hashable
 
@@ -401,8 +403,17 @@ type SrcArg = (?src :: Src)
 -- Names and operators
 --------------------------------------------------------------------------------
 
+-- | String that comes from some source.
+data SrcName = SrcName Pos B.ByteString
+
+instance Eq SrcName where
+  SrcName _ x == SrcName _ y = x == y
+
+instance Ord SrcName where
+  compare (SrcName _ x) (SrcName _ y) = compare x y
+
 newtype RawName = RawName B.ByteString
-  deriving (Eq, Ord, IsString) via B.ByteString
+  deriving (Eq, Ord) via B.ByteString
 
 instance Hashable RawName where
   hashWithSalt h (RawName (B.PS (ForeignPtr p _) (I# start) (I# len))) = go h (plusAddr# p start) len where
@@ -416,11 +427,18 @@ instance Hashable RawName where
       1# -> goBytes h p len
       _  -> go (hashWithSalt h (W64# (indexWord64OffAddr# p 0#))) (plusAddr# p 8#) (len -# 8#)
 
+instance Hashable SrcName where
+  hashWithSalt h (SrcName _ x) = hashWithSalt h (RawName x)
+
+instance Show SrcName where
+  show (SrcName _ s) = FP.utf8ToStr s
+
 instance Show RawName where
   show (RawName s) = FP.utf8ToStr s
 
 data Name
-  = NRawName RawName
+  = NRawName ByteString
+  | NSrcName SrcName
   | NOp Operator
   | N_
   deriving (Eq, Ord)
@@ -428,11 +446,13 @@ data Name
 instance Hashable Name where
   hashWithSalt h = \case
     NRawName x -> (h + 1) `hashWithSalt` x
-    NOp op     -> (h + 2) `hashWithSalt` op
-    N_         -> h + 3
+    NSrcName x -> (h + 2) `hashWithSalt` x
+    NOp op     -> (h + 3) `hashWithSalt` op
+    N_         -> h + 4
 
 instance Show Name where
   showsPrec p (NRawName x) acc = showsPrec p x acc
+  showsPrec p (NSrcName x) acc = showsPrec p x acc
   showsPrec p N_           acc = '_':acc
   showsPrec p (NOp op)     acc = showsPrec p op acc
 
@@ -488,7 +508,7 @@ instance Hashable Fixity where
     FInNon x   -> h + 4 `hashWithSalt` x
     FClosed    -> h + 5
 
-data Operator = Op Fixity (List RawName)
+data Operator = Op Fixity (List SrcName)
   deriving (Eq, Ord, Show)
 
 instance Hashable Operator where
@@ -499,9 +519,9 @@ pick N_ N_ = x_
 pick x  N_ = x
 pick _  y  = y
 
-instance SpanOf RawName where
-  leftPos  (RawName (B.PS _ start _))   = Pos $ FP.Pos start
-  rightPos (RawName (B.PS _ start len)) = Pos $ FP.Pos (start + len)
+instance SpanOf SrcName where
+  leftPos (SrcName x _) = x
+  rightPos (SrcName (Pos (FP.Pos x)) s) = Pos (FP.Pos (x - B.length s))
 
 instance SpanOf FP.Span where
   leftPos  (FP.Span x _) = Pos x
@@ -533,6 +553,11 @@ spanToRawName (Span (Pos i) (Pos j)) =
 
 spanToString :: SrcArg => Span -> String
 spanToString s = case spanToRawName s of RawName s -> FP.utf8ToStr s
+
+byteStringToSpan :: ByteString -> Span
+byteStringToSpan bs = case FPB.runParser (FPB.spanOf FPB.takeRest) bs of
+  FPB.OK sp _ -> toSpan sp
+  _           -> impossible
 
 class SpanOf a where
   spanOf  :: a -> Span

@@ -1,6 +1,8 @@
 {-# options_ghc -Wno-unused-binds #-}
 
-module Parser (parseString) where
+module Parser (parse, parseString) where
+
+import Data.ByteString (ByteString)
 
 import Prelude hiding (pi)
 import Common hiding (some, many, debug, Proj(..), Prim(..), name, Bind(..))
@@ -385,7 +387,7 @@ topEntry _ =
 
 topEof :: Parser Top
 topEof =
-  TNil <$ FP.eof
+  (FP.eof *> (TNil ! getPos))
   `cut` ["end of file", "top-level definition or declaration at column 1"]
 
 top' :: () -> Parser Top
@@ -394,12 +396,14 @@ top' _ = topEntry () <|> topEof
 top :: Parser Top
 top = ws *> top' ()
 
+parse :: ByteString -> IO Top
+parse s = case FP.runParser top 0 0 s of
+  FP.OK top _ _ -> pure top
+  FP.Fail       -> impossible
+  FP.Err e      -> error $ prettyError s e
+
 parseString :: String -> IO Top
-parseString str = do
-  case FP.runParserUtf8 top 0 0 str of
-    FP.OK top _ _ -> pure top
-    FP.Fail       -> impossible
-    FP.Err e      -> error $ prettyError (FP.strToUtf8 str) e
+parseString = parse . FP.strToUtf8
 
 p1 :: String
 p1 =

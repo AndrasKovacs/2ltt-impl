@@ -148,10 +148,11 @@ localDefineDelete x = HT.alter identScope go x where
   go (Just (ISLocal _ e)) = Just e
   go _                    = impossible
 
+-- | Note: we already extended the cxt, top var is (?lvl - 1).
 {-# inline localDefineIS #-}
 localDefineIS :: LvlArg => Name -> VTy -> IO a -> IO a
 localDefineIS x a act = do
-  localDefineInsert (LI ?lvl a) x
+  localDefineInsert (LI (?lvl - 1) a) x
   res <- act
   localDefineDelete x
   pure res

@@ -1,8 +1,6 @@
 
 module MainInteraction where
 
-import FlatParse.Stateful qualified as FP
-
 import Common
 import Elaboration.State
 import Elaboration
@@ -14,23 +12,31 @@ import Pretty
 
 -- | Elaborate a string, render output.
 justElab :: String -> IO ()
-justElab s = do
+justElab (strToUtf8 -> s) = do
   reset
-  top <- parseString s
+  top <- parse s
+  putStrLn "PARSING"
+  putStrLn $ replicate 60 '-'
+  print top
+  let sp = byteStringToSpan s
   let ?lvl    = 0
       ?env    = ENil
       ?locals = S.LNil
-      ?src    = SrcNoFile (FP.strToUtf8 s)
-      ?span   = LazySpan impossible
-  renderElab =<< elab top
+      ?src    = SrcNoFile s
+      ?span   = LazySpan sp
+  top <- elab top
+  renderElab top
 
 renderElab :: Top -> IO ()
 renderElab top = do
-  putStr "\n"
+  putStrLn "\n"
+  putStrLn "ELABORATION"
+  putStrLn $ replicate 60 '-'
+
   let go :: Top -> MetaVar -> IO ()
       go top metaBlock = case top of
         TNil -> pure ()
-        TDef1 info endBlock top -> do
+        TDef1 (TopDef info) endBlock top -> do
 
           let goMetas :: MetaVar -> IO ()
               goMetas m | m == endBlock = pure ()
@@ -49,7 +55,16 @@ renderElab top = do
                 goMetas (m + 1)
 
           goMetas metaBlock
-          putStrLn $ show (info^.name) ++ " : " ++ prettyTop (info^.ty) ++ "\n"
-                     ++ prettyTop (info^.body)
+          putStrLn $ show (info^.name) ++ " : " ++ prettyTop (info^.ty) ++ "\n  = "
+                     ++ prettyTop (info^.body) ++ "\n"
           go top endBlock
+
+  -- print top
   go top 0
+
+p1 :: String
+p1 =
+  """
+  Nat : Set = (N : Set) → (N → N) → N → N
+
+  """

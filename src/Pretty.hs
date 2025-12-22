@@ -84,7 +84,7 @@ prt' :: Pretty a => Int -> NamesArg => a -> Txt
 prt' p a = let ?prec = p in prt a
 
 pretty :: Pretty a => LocalsArg => a -> String
-pretty a = let ?prec = (-2); ?names = localsToNames ?locals in runTxt (prt a)
+pretty a = let ?prec = letPrec; ?names = localsToNames ?locals in runTxt (prt a)
 
 prettyTop :: Pretty a => a -> String
 prettyTop a = let ?locals = LNil in pretty a
@@ -92,6 +92,7 @@ prettyTop a = let ?locals = LNil in pretty a
 instance Pretty Name where
   prt = \case
     NRawName x -> str (show x)
+    NSrcName x -> str (show x)
     NOp op     -> error "TODO: operators"
     N_         -> Txt ('_':)
 
@@ -100,17 +101,24 @@ par :: PrecArg => Int -> Txt -> Txt
 par p s | p < ?prec = char '(' <> s <> char ')'
         | True      = s
 
-proj   x = prt' 201  x
-splice x = prt' 200  x
-app    x = prt' 100  x
-pi     x = prt' (-1) x
-llet   x = prt' (-2) x
+projPrec, splicePrec, appPrec, piPrec, letPrec :: Int
+projPrec   = 201
+splicePrec = 200
+appPrec    = 100
+piPrec     = (-1)
+letPrec    = (-2)
 
-projp   x = par 201  x
-splicep x = par 200  x
-appp    x = par 100  x
-pip     x = par (-1) x
-lletp   x = par (-2) x
+proj   x = prt' projPrec   x
+splice x = prt' splicePrec x
+app    x = prt' appPrec    x
+pi     x = prt' piPrec     x
+llet   x = prt' letPrec    x
+
+projp   x = par projPrec    x
+splicep x = par splicePrec  x
+appp    x = par appPrec     x
+pip     x = par piPrec      x
+lletp   x = par letPrec     x
 
 localVar :: DoPretty (Ix -> Txt)
 localVar i = let

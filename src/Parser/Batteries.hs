@@ -12,7 +12,7 @@ import Language.Haskell.TH.Syntax hiding (Overlap(..))
 import qualified FlatParse.Stateful as FP
 import qualified FlatParse.Common.Switch as FP
 
-import Common (RawName(..), Pos(..), coerce)
+import Common (Pos(..), coerce, SrcName(..))
 
 type Parser = FP.Parser Int Error
 
@@ -298,10 +298,10 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     scanIdent :: Parser ()
     scanIdent = identStartChar >> FP.skipMany inlineIdentRestChar
 
-    identBase :: Parser RawName
-    identBase = FP.withSpan scanIdent \_ span -> do
+    identBase :: Parser SrcName
+    identBase = FP.withSpan scanIdent \_ span@(FP.Span l _) -> do
       FP.fails $ FP.inSpan span anySymbol
-      RawName <$> FP.unsafeSpanToByteString span
+      SrcName (Pos l) <$> FP.unsafeSpanToByteString span
 
     anyWordBase' :: Parser (Word, FP.Span)
     anyWordBase' = do
@@ -313,7 +313,7 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     anyWord' = lvl' *> anyWordBase'
 
     -- | Parse an identifier.
-    ident' :: Parser RawName
+    ident' :: Parser SrcName
     ident' = do
       lvl'
       FP.branch $(FP.char switchChar) (operatorBase <* ws) (identBase <* ws)
@@ -321,7 +321,7 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
 
     -- | Parser an identifier optionally followed by De Bruijn dismabiguation,
     --   e.g. "foo@4".
-    identWithLvl' :: Parser (RawName, Maybe (Word, FP.Span))
+    identWithLvl' :: Parser (SrcName, Maybe (Word, FP.Span))
     identWithLvl' = do
       lvl'
       FP.branch $(FP.char switchChar)
@@ -334,7 +334,7 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     {-# inline identWithLvl' #-}
 
     -- | Parse an identifier.
-    ident :: Parser RawName
+    ident :: Parser SrcName
     ident = do
       lvl
       FP.branch $(FP.char switchChar) (operatorBase <* ws) (identBase <* ws)
@@ -353,21 +353,21 @@ chargeBatteries (Config switchChar wsChars identStart identRest op lineComment
     scanOperator :: Parser ()
     scanOperator = FP.skipSome inlineOpChar
 
-    rawOperator :: Parser RawName
-    rawOperator = RawName <$> FP.byteStringOf scanOperator
+    rawOperator :: Parser SrcName
+    rawOperator = SrcName <$> getPos <*> FP.byteStringOf scanOperator
 
-    operatorBase :: Parser RawName
-    operatorBase = FP.withSpan scanOperator \_ span -> do
+    operatorBase :: Parser SrcName
+    operatorBase = FP.withSpan scanOperator \_ span@(FP.Span l _) -> do
       FP.fails $ FP.inSpan span anySymbol
-      RawName <$> FP.unsafeSpanToByteString span
+      SrcName (Pos l) <$> FP.unsafeSpanToByteString span
 
     -- | Parse an operator.
-    operator' :: Parser RawName
+    operator' :: Parser SrcName
     operator' = lvl' *> operatorBase <* ws
     {-# inline operator' #-}
 
     -- | Parse an operator.
-    operator :: Parser RawName
+    operator :: Parser SrcName
     operator = operator' `cut` [Lit "operator"]
     {-# inline operator #-}
 

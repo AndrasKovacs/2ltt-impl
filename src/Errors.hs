@@ -13,6 +13,7 @@ import Pretty
 import Evaluation
 
 data LazySpan = LazySpan ~Span
+  deriving Show
 
 data Error
   = UnifyError Val Val UnifyEx
@@ -42,24 +43,27 @@ instance Show ErrorInCxt where
           NonFunctionForLambda a ->
             "Type mismatch: expected type\n\n" ++ showVal a ++ "\n for a lambda expression"
           TopLevelShadowing x ->
-            "Top-level name already defined: " ++ show x
+            "Top-level name already defined: " ++ show x in
 
-    in render (srcToBs src) span msg
+    let bs = srcToBs src
+    in render bs span msg
 
 instance Exception ErrorInCxt
 
 -- | Display an error with source position. We only use of the first position in
 --   the span.
 render :: B.ByteString -> Span -> String -> String
-render bs (Span pos _) msg = let
-  ls     = FP.linesUtf8 bs
-  (l, c) = case FP.posLineCols bs [coerce pos] of [x] -> x; _ -> impossible
-  line   = if l < length ls then ls !! l else ""
-  linum  = show (l + 1)
-  lpad   = map (const ' ') linum
-  in linum  ++ ":" ++ show c ++ ":\n" ++
-     lpad   ++ "|\n" ++
-     linum  ++ "| " ++ line ++ "\n" ++
-     lpad   ++ "| " ++ replicate c ' ' ++ "^\n" ++
-     msg
+render bs ~(Span pos posr) msg =
+  let
+    ls     = FP.linesUtf8 bs
+    (l, c) = case FP.posLineCols bs [coerce pos] of [x] -> x; _ -> impossible
+    line   = if l < length ls then ls !! l else ""
+    linum  = show (l + 1)
+    lpad   = map (const ' ') linum
+  in
+    linum  ++ ":" ++ show c ++ ":\n" ++
+    lpad   ++ "|\n" ++
+    linum  ++ "| " ++ line ++ "\n" ++
+    lpad   ++ "| " ++ replicate c ' ' ++ "^\n" ++
+    msg
 {-# noinline render #-}
