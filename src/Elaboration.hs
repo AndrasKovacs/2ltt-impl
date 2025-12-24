@@ -18,8 +18,9 @@ import Unification qualified as U
 --------------------------------------------------------------------------------
 
 {- TODO:
-Define a bunch of "semantic" functions for (Tm,Val) pairs.
-Use this "Epigram" glued type in Check and Infer.
+- Define a bunch of "semantic" functions for (Tm,Val) pairs.
+- Use this "Epigram" glued type in Check and Infer.
+- Proper coercion to Set in type position!
 
 Restructure things around the (Tm,Val) pairs!
 -}
@@ -250,11 +251,15 @@ infer t = forcePTm t \case
     Check t vt <- checkPi binds b
     pure $ Infer t Set vt
 
-  P.Hole _ -> do
-    elabError "hole not yet supported"
+  P.Hole _ ->
+    elabError "Holes not yet supported"
 
   P.Inferred _ -> do
-    elabError "can't infer placeholder"
+    a <- U.freshMeta S.Set
+    let va = eval a
+    t <- U.freshMeta a
+    let vt = eval t
+    pure $ Infer t va vt
 
   P.Ident x -> lookupIS (NSrcName x) >>= \case
     Nothing -> elabError $ Generic $ "Name not in scope: " ++ show x

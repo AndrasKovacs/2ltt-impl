@@ -59,6 +59,7 @@ executable 2lttc
       Parser.Lexer
       Presyntax
       Pretty
+      Test
       Unification
       Utils.State
       Paths_2lttc

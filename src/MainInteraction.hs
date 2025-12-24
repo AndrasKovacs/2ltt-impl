@@ -33,6 +33,11 @@ renderElab top = do
   putStrLn "ELABORATION"
   putStrLn $ replicate 60 '-'
 
+  let goMetaTy :: S.LocalsArg => S.Ty -> String
+      goMetaTy a = case ?locals of
+        S.LNil -> pretty a
+        ls     -> prettyTop ls ++ " → " ++ pretty a
+
   let go :: Top -> MetaVar -> IO ()
       go top metaBlock = case top of
         TNil -> pure ()
@@ -44,12 +49,10 @@ renderElab top = do
                 case lookupMeta m of
                   MEUnsolved e -> do
                     let ?locals = e^.locals
-                    putStrLn $ show m ++ " : " ++ prettyTop (e^.locals)
-                               ++ " → " ++ pretty (e^.ty)
+                    putStrLn $ show m ++ " : " ++ goMetaTy (e^.ty)
                   MESolved e -> do
                     let ?locals = e^.locals
-                    putStrLn $ show m ++ " : " ++ prettyTop (e^.locals)
-                               ++ " → " ++ pretty (e^.ty)
+                    putStrLn $ show m ++ " : " ++ goMetaTy (e^.ty)
                                ++ " = " ++ pretty (e^.solution)
                   MESolved0{} -> impossible
                 goMetas (m + 1)
@@ -65,6 +68,8 @@ renderElab top = do
 p1 :: String
 p1 =
   """
-  Nat : Set = (N : Set) → (N → N) → N → N
+  Nat : Set = (N : _) → (N → N) → N → N
+
+  -- foo : Set = _
 
   """
