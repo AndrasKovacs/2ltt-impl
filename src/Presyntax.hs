@@ -104,10 +104,13 @@ instance SpanOf (Spine b) where
     SProjOp x _ _ -> leftPos x
 
   rightPos = \case
-    SNil          -> impossible
-    STm _ _ x     -> rightPos x
-    SOp _ x       -> rightPos x
-    SProjOp _ _ x -> rightPos x
+    SNil             -> impossible
+    STm x _ SNil     -> rightPos x
+    SOp x SNil       -> rightPos x
+    SProjOp _ x SNil -> rightPos x
+    STm _ _ x        -> rightPos x
+    SOp _ x          -> rightPos x
+    SProjOp _ _ x    -> rightPos x
 
 instance SpanOf Projection where
   leftPos = \case

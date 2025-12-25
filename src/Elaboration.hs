@@ -10,6 +10,7 @@ import Evaluation
 import Elaboration.State
 import Errors
 import Config
+import Pretty
 
 import Presyntax   qualified as P
 import Core.Syntax qualified as S
@@ -21,6 +22,8 @@ import Unification qualified as U
 - Define a bunch of "semantic" functions for (Tm,Val) pairs.
 - Use this "Epigram" glued type in Check and Infer.
 - Proper coercion to Set in type position!
+- Remember user-given icitness for default printing.
+- Toggle explicit/implicit printing.
 
 Restructure things around the (Tm,Val) pairs!
 -}
@@ -32,7 +35,7 @@ type Elab a = LvlArg => EnvArg => LocalsArg => SrcArg => LazySpanArg => a
 forceElab :: Elab a -> Elab a
 forceElab act = seq ?lvl (seq ?env (seq ?locals (seq ?src act)))
 
--- | Add a local definition.
+-- | Add a local definitiíon.
 {-# inline define #-}
 define :: Name -> Ty -> VTy -> Tm -> Val -> Elab (Val -> IO a) -> Elab (IO a)
 define x a va t vt act =
@@ -45,22 +48,22 @@ define x a va t vt act =
 -- | Add a bound variable.
 {-# inline bind #-}
 bind :: Name -> Ty -> VTy -> Elab (Val -> IO a) -> Elab (IO a)
-bind x a va act =
-  let val     = LocalVar ?lvl va in
+bind x a va act = do
+  let val     = LocalVar ?lvl va
   let ?lvl    = ?lvl + 1
       ?env    = EDef ?env val
-      ?locals = LBind ?locals x a in
+      ?locals = LBind ?locals x a
   forceElab $ localDefineIS x va (act val)
 
 -- | Insert a new binder (don't update the identifier scope since
 --   the new binder doesn't exist in presyntax).
 {-# inline insertBind #-}
 insertBind :: Name -> Ty -> VTy -> Elab (Val -> IO a) -> Elab (IO a)
-insertBind x a va act =
-  let val     = LocalVar ?lvl va in
+insertBind x a va act = do
+  let val     = LocalVar ?lvl va
   let ?lvl    = ?lvl + 1
       ?env    = EDef ?env val
-      ?locals = LBind ?locals x a in
+      ?locals = LBind ?locals x a
   forceElab $ act val
 
 {-# inline forcePTm #-}
@@ -88,73 +91,93 @@ noOps = elabError "Operators are not yet supported"
 noInductive :: Dbg => LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
 noInductive = elabError "Inductive types are not yet supported"
 
-unify :: LvlArg => Val -> Val -> IO ()
+unify :: Elab (Val -> Val -> IO ())
 unify l r = do
   let ?unifyState = U.USPrecise conversionSpeculation
-  U.unify (gjoin l) (gjoin r)
+  U.unify (gjoin l) (gjoin r) `catch`
+    \(e :: U.UnifyEx) -> elabError $ UnifyError l r e
 
 --------------------------------------------------------------------------------
 
 data Check = Check Tm ~Val
 data Infer = Infer Tm ~VTy ~Val
 
-checkAnnotation :: Elab (Maybe P.Tm -> VTy -> IO Check)
+checkAnnotation :: Elab (Maybe P.Tm -> GTy -> IO Check)
 checkAnnotation t a = case t of
   Nothing -> elabError MissingAnnotation
   Just t  -> check t a
 
-checkLamMultiBind :: Elab (List P.Bind -> Icit -> Check -> List P.MultiBind -> P.Tm -> VTy -> IO Check)
-checkLamMultiBind xs i (Check a va) binds t b = case xs of
-  Nil -> checkLam binds t b
+checkLamMultiBind :: Elab (List P.Bind -> Icit -> List P.MultiBind -> P.Tm -> GTy -> IO Check)
+checkLamMultiBind topxs i binds t (G b fb) = do
+  case topxs of
+    Nil -> do
+      checkLam binds t (G b fb)
 
-  Cons (bindToName -> x) xs -> case whnf b of
-    -- go under lambda
-    Pi b | b^.icit == i -> bind x a va \v -> do
-      Check t vt <- checkLamMultiBind xs i (Check (S.Wk a) va) binds t (b ∙ v)
-      pure $ Check (S.Lam (BindI x i a t)) (Lam $ ClI x i va \v -> def v \_ -> eval t)
+    Cons (bindToName -> x) xs -> case whnf fb of
+      -- go under lambda
+      Pi b | b^.icit == i -> do
+        let va = b^.ty
+            a  = readbNoUnfold va
+        Check t vt <- bind x a va \v -> do
+          checkLamMultiBind xs i binds t (gjoin (b ∙ v))
+        pure $ Check (S.Lam (BindI x i a t)) (Lam $ ClI x i va \v -> def v \_ -> eval t)
 
-    -- insert implicit lambda
-    Pi b | b^.icit == Impl -> do
-      let x      = b^.name
-          vdomty = b^.ty
-          domty  = readbNoUnfold vdomty
-      insertBind x domty vdomty \v -> do
-        Check t vt <- checkLamMultiBind xs i (Check (S.Wk a) va) binds t (whnf (b ∙ v))
-        pure $ Check (S.Lam (BindI x Impl domty t)) (Lam $ ClI x Impl vdomty \v -> def v \_ -> eval t)
+      -- insert implicit lambda
+      Pi b | b^.icit == Impl -> do
+        let x  = b^.name
+            va = b^.ty
+            a  = readbNoUnfold va
+        Check t vt <- insertBind x a va \v -> do
+          checkLamMultiBind topxs i binds t (gjoin (b ∙ v))
+        pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
 
-    _ -> elabError $ NonFunctionForLambda b
+      _ -> elabError $ NonFunctionForLambda b
 
-checkLam :: Elab (List P.MultiBind -> P.Tm -> VTy -> IO Check)
+checkLam :: Elab (List P.MultiBind -> P.Tm -> GTy -> IO Check)
 checkLam binds t b = case binds of
   Nil -> do
     check t b
-  Cons (P.MultiBind xs i a) binds -> do
-    a <- checkAnnotation a Set
-    checkLamMultiBind xs i a binds t b
+  Cons (P.MultiBind xs i Nothing) binds -> do
+    checkLamMultiBind xs i binds t b
+  Cons (P.MultiBind xs i Just{}) binds ->
+    elabError "Annotated lambdas are not yet supported"
 
-check :: Elab (P.Tm -> VTy -> IO Check)
-check t topA = forcePTm t \case
+check :: Elab (P.Tm -> GTy -> IO Check)
+check t gtopA@(G topA ftopA) = forcePTm t \case
 
   P.Parens{} -> impossible
-
-  P.Let _ S1 (bindToName -> x) a t u -> do
-    Check a va <- checkAnnotation a Set
-    Check t vt <- check t va
-    Check u _  <- define x a va t vt \_ -> check u topA
-    -- We have non-trivial strengthening for the value under the Let,
-    -- because of the local unfolding preservation!
-    -- We get rid of LocaDef-s by re-evaluating the body.
-    pure $ Check (S.Let t (Bind x a u)) (def vt \_ -> eval u)
 
   P.Hole _ -> do
     m <- U.freshMeta (readbNoUnfold topA)
     pure $ Check m (eval m)
 
-  -- TODO: reconsider the whnf-ing of topA here
-  --       ensure that holes get non-whnf-ed types!
-  topt -> case topt of
-    P.Lam _ binds t -> checkLam binds t topA
-    topt            -> do t <- infer topt; coeChk t topA
+  P.Lam _ binds t -> checkLam binds t gtopA
+
+  topt -> case whnf ftopA of
+
+    -- insert implicit lambda
+    Pi b | b^.icit == Impl -> do
+      let x  = b^.name
+          va = b^.ty
+          a  = readbNoUnfold va
+      Check t vt <- insertBind x a va \v -> check topt (gjoin (b ∙ va))
+      pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
+
+    Flex{} -> do
+      elabError "unknown expected type"
+
+    ftopA -> case topt of
+
+      P.Let _ S1 (bindToName -> x) a t u -> do
+        Check a va <- checkAnnotation a gSet
+        Check t vt <- check t (gjoin va)
+        Check u _  <- define x a va t vt \_ -> check u (G topA ftopA)
+        -- We have non-trivial strengthening for the value under the Let,
+        -- because of the local unfolding preservation!
+        -- We get rid of LocaDef-s by re-evaluating the body.
+        pure $ Check (S.Let t (Bind x a u)) (def vt \_ -> eval u)
+
+      topt -> do t <- infer topt; coeChk t topA
 
 insertApp :: Elab (Tm -> ClosureI -> Val -> IO Infer)
 insertApp t a ~vt = do
@@ -189,11 +212,11 @@ inferSp sp hd@(Infer t a vt) = case sp of
   P.SNil          -> pure hd
   P.STm u Expl sp -> do
     (t, a, b, vt)  <- coeToPiExpl hd
-    Check u vu <- check u a
-    pure $! Infer (t ∙ u) (b vu) (vt ∙ vu)
-  P.STm u Impl sp -> case whnf a of
-    Pi a | a^.icit == Impl -> do
-      Check u vu <- check u (a^.ty)
+    Check u vu <- check u (gjoin a)
+    inferSp sp (Infer (t ∙ u) (b vu) (vt ∙ vu))
+  P.STm u Impl sp -> case whnf a of -- TODO: coercion to implicit Pi
+    Pi a | a^.icit == Impl -> do    --   (when we have more coercions)
+      Check u vu <- check u (gjoin (a^.ty))
       inferSp sp (Infer (t ∘ u) (a ∙ vu) (vt ∙ vu))
     _ -> elabError "expected an implicit function type"
 
@@ -212,9 +235,9 @@ checkPiMultiBind xs i (Check a va) binds b = case xs of
 checkPi :: Elab (List P.MultiBind -> P.Tm -> IO Check)
 checkPi binds b = case binds of
   Nil -> do
-    check b Set
+    check b gSet
   Cons (P.MultiBind xs i a) binds -> do
-    a <- checkAnnotation a Set
+    a <- checkAnnotation a gSet
     checkPiMultiBind xs i a binds b
 
 coeToRecord :: Elab (Infer -> IO (Tm, RecInfo, Spine, Val))
@@ -235,15 +258,17 @@ infer t = forcePTm t \case
   P.Parens{} -> impossible
 
   P.Let _ S1 (bindToName -> x) a t u -> do
-    Check a va    <- checkAnnotation a Set
-    Check t vt    <- check t va
+    Check a va    <- checkAnnotation a gSet
+    Check t vt    <- check t (gjoin va)
     Infer u _ uty <- define x a va t vt \_ -> infer u
 
     -- strengthenings!
     uty <- pure (readbNoUnfold uty)
     pure $ Infer (S.Let t (Bind x a u)) (def vt \_ -> eval uty) (def vt \_ -> eval u)
 
-  P.Spine t ts -> inferSp ts =<< infer t
+  P.Spine t ts -> do
+    t <- infer t
+    inferSp ts t
 
   P.Set _ _ -> pure $ Infer S.Set Set Set
 
@@ -363,7 +388,7 @@ defineTop :: Name -> Ty -> VTy -> Tm -> Val -> Elab (DefInfo -> IO a) -> Elab (I
 defineTop x a va t vt act = do
   checkTopShadowing x
   uid <- newUid
-  let info = DI uid x t vt a va
+  let info = DI uid x t (Unfold (UHTopDef info) SId vt) a va -- note the knot!
   topDefineIS info
   act info
 
@@ -377,8 +402,8 @@ elab top = reset >> go top where
     P.TDef _ S0 _ _ _; P.TInductive0{};P.TDecl{} -> noStage0
 
     P.TDef (bindToName -> x) S1 a t top -> do
-      Check a va <- checkAnnotation a Set
-      Check t vt <- check t va
+      Check a va <- checkAnnotation a gSet
+      Check t vt <- check t (gjoin va)
       frz <- freezeMetas
       defineTop x a va t vt \inf -> TDef1 (TopDef inf) frz ! go top
 

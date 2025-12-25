@@ -15,9 +15,9 @@ justElab :: String -> IO ()
 justElab (strToUtf8 -> s) = do
   reset
   top <- parse s
-  putStrLn "PARSING"
-  putStrLn $ replicate 60 '-'
-  print top
+  -- putStrLn "PARSING"
+  -- putStrLn $ replicate 60 '-'
+  -- print top
   let sp = byteStringToSpan s
   let ?lvl    = 0
       ?env    = ENil
@@ -29,8 +29,7 @@ justElab (strToUtf8 -> s) = do
 
 renderElab :: Top -> IO ()
 renderElab top = do
-  putStrLn "\n"
-  putStrLn "ELABORATION"
+  putStrLn "\nELABORATION"
   putStrLn $ replicate 60 '-'
 
   let goMetaTy :: S.LocalsArg => S.Ty -> String
@@ -68,8 +67,22 @@ renderElab top = do
 p1 :: String
 p1 =
   """
-  Nat : Set = (N : _) → (N → N) → N → N
+  -- Type : Set = Set
 
-  -- foo : Set = _
+  -- id : {A : Type} → A → A
+  --   = λ {A} x. x
+
+  Eq : {A : Set} → A → A → Set
+    = λ {A} x y. (P : A → Set) → P x → P y
+
+  Refl : {A : Set}(a : A) → Eq {A} a a
+    = λ a P pa. pa
+
+  Nat : Set = (N : Set) → (N → N) → N → N
+
+  zero : Nat = λ N s z. z
+
+  test : Eq {Nat} zero zero
+    = λ P pa. pa
 
   """

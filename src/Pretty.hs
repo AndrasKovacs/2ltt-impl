@@ -158,7 +158,7 @@ piBind x Expl a = "(" <> x <> " : " <> a <> ")"
 
 goPis :: DoPretty (Tm -> Txt)
 goPis = \case
-  Pi (BindI x i a b) | x /= N_ -> let pa = app a in bind x \x -> piBind x i pa <> goPis b
+  Pi (BindI x i a b) | x /= N_ -> let pa = llet a in bind x \x -> piBind x i pa <> goPis b
   t                            -> " → " <> pi t
 
 goLams' :: DoPretty (Tm -> Txt)
@@ -168,8 +168,8 @@ goLams' = \case
 
 goLams :: DoPretty (Tm -> Name -> Icit -> Tm -> Txt)
 goLams a x i t = case i of
-  Expl -> bind x \x -> "(" <> x <> " : " <> llet a <> ")" <> goLams' t
-  Impl -> bind x \x -> "{" <> x <> " : " <> llet a <> "}" <> goLams' t
+  Expl -> let pa = llet a in bind x \x -> "(" <> x <> " : " <> pa <> ")" <> goLams' t
+  Impl -> let pa = llet a in bind x \x -> "{" <> x <> " : " <> pa <> "}" <> goLams' t
 
 goLams0' :: DoPretty (Tm0 -> Txt)
 goLams0' = \case
@@ -252,12 +252,12 @@ instance Pretty Tm where
     Let t (Bind x a u)   -> let pa = llet a; pt = llet t in bind x \x ->
                             lletp ("let " <> x <> " : " <> pa <> " = " <> pt <> "; " <> llet u)
     Pi (BindI N_ i a b)  -> let pa = app a in bind N_ \_ -> pip (pa <> " → " <> pi b)
-    Pi (BindI x i a b)   -> let pa = app a in bind x  \x -> pip (piBind x i pa <> goPis b)
+    Pi (BindI x i a b)   -> let pa = llet a in bind x  \x -> pip (piBind x i pa <> goPis b)
     Prim p               -> prt p
 
     Prim C.Fun0 `AppE` a `AppE` b -> pip (app a <> " → " <> pi b)
 
-    App t u Impl         -> appp (app t <> " {" <> splice u <> "}")
+    App t u Impl         -> appp (app t <> " {" <> llet u <> "}")
     App t u Expl         -> appp (app t <> " " <> splice u)
     Lam (BindI x i a t)  -> lletp ("λ " <> goLams a x i t)
     Project t p          -> projp (proj t <> "." <> prt p)

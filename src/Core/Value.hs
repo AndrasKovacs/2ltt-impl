@@ -62,7 +62,8 @@ pattern ClI x i a f <- ClI# x i a f where ClI x i ~a f = ClI# x i a (oneShot f)
 {-# complete ClI #-}
 {-# inline ClI #-}
 
-instance Show ClosureI where showsPrec _ _ acc = "<closure>" ++ acc
+instance Show ClosureI where
+  show (ClI x i a _) = show (x, i, a, "<body>"::String)
 
 instance Apply ClosureI Val Val where
   {-# inline (∙∘) #-}
