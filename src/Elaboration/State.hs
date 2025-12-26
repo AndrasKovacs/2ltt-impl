@@ -84,6 +84,7 @@ newSolution m ls a sol = do
 newMeta :: LocalsArg => Ty -> IO MetaVar
 newMeta a = do
   s <- ADL.size metaCxt
+  debug ["NEWMETA", show s]
   ADL.push metaCxt (MEUnsolved (Unsolved ?locals a mempty))
   pure (coerce s)
 

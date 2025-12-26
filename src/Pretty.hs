@@ -244,7 +244,7 @@ instance Pretty Tm where
 
     Meta m MSId          -> prt m
     Meta m (MSSub TENil) -> prt m
-    Meta m s             -> appp (prt m <> prt s)
+    Meta m s             -> prt m <> prt s
 
     Let t (Bind x a u)   -> let pa = llet a; pt = llet t in bind x \x ->
                             lletp ("let " <> x <> " : " <> pa <> " = " <> pt <> "; " <> llet u)
@@ -264,8 +264,8 @@ instance Pretty Tm where
 instance Pretty Locals where
   prt = \case
     LNil          -> mempty
-    LDef ls x t a -> prt ls <> "(" <> prt x <> ":" <> llet a <> " = " <> llet t <> ")"
-    LBind ls x a  -> prt ls <> "(" <> prt x <> ":" <> llet a <> ")"
+    LDef ls x t a -> prt ls <> "(" <> prt x <> " : " <> llet a <> " = " <> llet t <> ")"
+    LBind ls x a  -> prt ls <> "(" <> prt x <> " : " <> llet a <> ")"
     LBind0{}      -> impossible
 
 --------------------------------------------------------------------------------

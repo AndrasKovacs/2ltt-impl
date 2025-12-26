@@ -4,6 +4,7 @@ module Unification where
 import Data.IntMap (IntMap)
 import Data.IntMap qualified as IM
 import Data.IntSet qualified as IS
+import Data.Ref.F  qualified as RF
 
 import Common
 import Core.Info
@@ -91,7 +92,9 @@ data PartialSub = PSub {
   , partialSubSub          :: IntMap PSubEntry -- ^ Map from codomain vars to partial values.
                                                --   Missing entries are Bot.
   }
+
 makeFields ''PartialSub
+deriving instance Show PartialSub
 
 inversionError :: Dbg => PartialSub -> IO a
 inversionError psub = maybe impossible (throwIO . InversionEx) (psub^.occurs)
@@ -223,20 +226,6 @@ applyPVal pv sp args = case (pv, sp) of
   (pv            , RSId          ) -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb pv args
   _                                -> unifyError
 
--- approxOccursInMeta :: MetaVar -> MetaVar -> IO ()
--- approxOccursInMeta occ m = ES.isFrozen m >>= \case
---   True -> pure ()
---   _    -> ES.readMeta m >>= \case
---     ES.MEUnsolved{} -> do
---       when (occ == m) $ do
---         throwIO ApproxOccurs
-
---     ES.MESolved s -> do
---       cached <- RF.read (s^.ES.occursCache)
---       when (cached /= occ) do
---         approxOccurs occ (s^.ES.solution)
---         RF.write (s^.ES.occursCache) occ
-
 unsolvedMetaOccurs :: PSubArg => MetaVar -> IO ()
 unsolvedMetaOccurs m = case ?psub^.occurs of
   Just m' | m == m' -> unifyError
@@ -245,11 +234,21 @@ unsolvedMetaOccurs m = case ?psub^.occurs of
 solvedMetaOccurs :: PSubArg => MetaVar -> IO ()
 solvedMetaOccurs m = case ?psub^.occurs of
   Just m' -> do
+
     let goMeta :: MetaVar -> IO ()
         goMeta m = case ES.lookupMeta m of
-          ES.MESolved e   -> goTm (e^.solution)
-          ES.MESolved0 e  -> goTm0 (e^.solution)
-          ES.MEUnsolved e -> if m == m' then unifyError else pure ()
+          ES.MESolved e -> do
+            cached <- RF.read (e^.ES.occursCache)
+            when (cached /= m') do
+              goTm (e^.solution)
+              RF.write (e^.ES.occursCache) m'
+          ES.MESolved0 e -> do
+            cached <- RF.read (e^.ES.occursCache)
+            when (cached /= m') do
+              goTm0 (e^.solution)
+              RF.write (e^.ES.occursCache) m'
+          ES.MEUnsolved e ->
+            if m == m' then unifyError else pure ()
 
         goTm :: Tm -> IO ()
         goTm = \case
@@ -295,15 +294,17 @@ solvedMetaOccurs m = case ?psub^.occurs of
 
   _ -> pure ()
 
-psubstLvl :: PSubArg => Lvl -> PartialVal
-psubstLvl x = case (?psub^.sub) IM.! fromIntegral x of
-  PSEVal v -> v
-  _        -> impossible
+psubstLvl :: PSubArg => Lvl -> IO PartialVal
+psubstLvl x = case IM.lookup (fromIntegral x) (?psub^.sub) of
+  Nothing         -> unifyError
+  Just (PSEVal v) -> pure v
+  _               -> impossible
 
-psubstLvl0 :: PSubArg => Lvl -> PartialVal0
-psubstLvl0 x = case (?psub^.sub) IM.! fromIntegral x of
-  PSEVal0 v -> v
-  _         -> impossible
+psubstLvl0 :: PSubArg => Lvl -> IO PartialVal0
+psubstLvl0 x = case IM.lookup (fromIntegral x) (?psub^.sub) of
+  Nothing          -> unifyError
+  Just (PSEVal0 v) -> pure v
+  _                -> impossible
 
 instance PSubst ClosureI (IO (BindI Tm)) where
   psubst (ClI x i a t) = do
@@ -314,7 +315,7 @@ instance PSubst ClosureI (IO (BindI Tm)) where
 instance PSubst Val (IO Tm) where
   psubst v = case force v of
     Rigid h sp -> case h of
-      RHLocalVar x a -> applyPVal (psubstLvl x) (reverseSpine sp) []
+      RHLocalVar x a -> do v <- psubstLvl x;  applyPVal v (reverseSpine sp) []
       RHPrim i       -> psubst sp (S.Prim i)
       RHDCon i       -> psubst sp (S.DCon i)
       RHTCon i       -> psubst sp (S.TCon i)
@@ -331,7 +332,7 @@ instance PSubst Val (IO Tm) where
       let goHead = case h of
             UHMeta (MetaHead m e) -> solvedMetaOccurs m *> (S.Meta m ! psubst e)
             UHTopDef i            -> pure $ S.TopDef i
-            UHLocalDef x _        -> applyPVal (psubstLvl x) (reverseSpine sp) []
+            UHLocalDef x _        -> do v <- psubstLvl x; applyPVal v (reverseSpine sp) []
       (psubst sp =<< goHead) `catchUnify` psubst v
 
     Pi b    -> S.Pi ! psubst b
@@ -362,7 +363,7 @@ instance PSubst Val0 (IO Tm0) where
     Unfold0 m sp v -> (psubst sp =<< psubstMetaHead0 m) `catchUnify` psubst v
     Rigid0 v sp    -> psubst sp =<< psubst v
     Flex0 m sp     -> psubst sp =<< psubstMetaHead0 m
-    LocalVar0 x    -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb $ psubstLvl0 x
+    LocalVar0 x    -> do v <- psubstLvl0 x; setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb v
     Splice v sp    -> psubst sp =<< (S.splice ! psubst v)
     TopDef0 i      -> pure $ S.TopDef0 i
     DCon0 i        -> pure $ S.DCon0 i
@@ -536,6 +537,7 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
                    pure (m, vty, inf^.locals)
       _      -> impossible
 
+    debug ["SOLVETOPSPINE", show psub]
     solveTopSpine psub (reverseSpine'' lhsTy (MetaHead m lhsEnv) SId locals sp) rhs
 
   -- checks: 1) arg is invertible 2) if psubst is nonlinear, problem-scope *def* is psubst-able
@@ -708,6 +710,8 @@ recordEta i sp v = go (i^.fields) sp 0 where
 solve :: DoUnify (MetaHead -> Spine -> Val -> IO ())
 solve (MetaHead m e) sp rhs = do
 
+  debug ["SOLVE", dbgPretty (Flex (MetaHead m e) sp), dbgPretty rhs]
+
   frozen <- ES.isFrozen m
   when (frozen || ?unifyState == USSpeculating) unifyError
 
@@ -725,7 +729,8 @@ solve (MetaHead m e) sp rhs = do
 --   fails, we retry with eta expansion. We don't have to backtrack metastate updates because
 --   everything should be stable under eta.
 solveEtaShort :: DoUnify (MetaHead -> Spine -> Val -> IO ())
-solveEtaShort m sp rhs =
+solveEtaShort m sp rhs = do
+  debug ["SOLVEETASHORT", show m, dbgPretty rhs]
   -- TODO: should only backtrack from occurs checks of "m", otherwise the eta expansion doesn't
   -- help and we're better off postponing
   solve m sp rhs `catchUnify` solveEtaLong m sp rhs
@@ -780,6 +785,7 @@ lopsidedUnfold g g' = case ?unifyState of
 instance Unify G where
   unify (G topt ftopt) (G topt' ftopt') = do
     debug ["GOUNIFY", dbgPretty topt, dbgPretty topt']
+    -- debug ["GOUNIFY", show topt, show topt']
 
     case forceUS ftopt // forceUS ftopt' of
       -- matching sides

@@ -158,60 +158,61 @@ retryAllProblems :: IO ()
 retryAllProblems = uf
 
 check :: Elab (P.Tm -> GTy -> IO Check)
-check t gtopA@(G topA ftopA) = forcePTm t \case
+check t gtopA@(G topA ftopA) = forcePTm t \t -> do
+  debug ["CHECK", show t, dbgPretty topA]
+  case t of
+    P.Parens{} -> impossible
 
-  P.Parens{} -> impossible
+    P.Hole _ -> do
+      elabError "holes are not yet supported"
 
-  P.Hole _ -> do
-    elabError "holes are not yet supported"
+    P.Inferred _ -> do
+      m <- U.freshMeta (readbNoUnfold topA)
+      pure $ Check m (eval m)
 
-  P.Inferred _ -> do
-    m <- U.freshMeta (readbNoUnfold topA)
-    pure $ Check m (eval m)
+    P.Lam _ binds t -> checkLam binds t gtopA
 
-  P.Lam _ binds t -> checkLam binds t gtopA
+    topt -> case whnf ftopA of
 
-  topt -> case whnf ftopA of
+      -- insert implicit lambda
+      Pi b | b^.icit == Impl -> do
+        let x  = b^.name
+            va = b^.ty
+            a  = readbNoUnfold va
+        Check t vt <- insertBind x a va \v -> check topt (gjoin (b ∙ va))
+        pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
 
-    -- insert implicit lambda
-    Pi b | b^.icit == Impl -> do
-      let x  = b^.name
-          va = b^.ty
-          a  = readbNoUnfold va
-      Check t vt <- insertBind x a va \v -> check topt (gjoin (b ∙ va))
-      pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
+      -- postpone checking
+      ftopA@(Flex (MetaHead blocker _) _) -> do
+        -- create placeholder meta
+        let a = readbNoUnfold topA
+        m <- newMeta a
 
-    -- postpone checking
-    ftopA@(Flex (MetaHead blocker _) _) -> do
-      -- create placeholder meta
-      let a = readbNoUnfold topA
-      m <- newMeta a
+        -- create problem
+        id <- newProblem $ PCheckTm t (G topA ftopA) m
 
-      -- create problem
-      id <- newProblem $ PCheckTm t (G topA ftopA) m
+        -- register blocker
+        newlyBlocked blocker id
 
-      -- register blocker
-      newlyBlocked blocker id
+        -- return placeholder
+        pure $ Check (S.Meta m S.MSId) (Flex (MetaHead m ?env) SId)
 
-      -- return placeholder
-      pure $ Check (S.Meta m S.MSId) (Flex (MetaHead m ?env) SId)
+      ftopA -> case topt of
 
-    ftopA -> case topt of
+        P.Let _ S1 (bindToName -> x) a t u -> do
+          Check a va <- checkAnnotation a gSet
+          Check t vt <- check t (gjoin va)
+          Check u _  <- define x a va t vt \_ -> do
+            check u (G topA ftopA)
+          -- We have non-trivial strengthening for the value under the Let,
+          -- because of the local unfolding preservation!
+          -- We get rid of LocaDef-s by re-evaluating the body.
+          pure $ Check (S.Let t (Bind x a u)) (def vt \_ -> eval u)
 
-      P.Let _ S1 (bindToName -> x) a t u -> do
-        Check a va <- checkAnnotation a gSet
-        Check t vt <- check t (gjoin va)
-        Check u _  <- define x a va t vt \_ -> do
-          check u (G topA ftopA)
-        -- We have non-trivial strengthening for the value under the Let,
-        -- because of the local unfolding preservation!
-        -- We get rid of LocaDef-s by re-evaluating the body.
-        pure $ Check (S.Let t (Bind x a u)) (def vt \_ -> eval u)
-
-      topt -> do
-        t@(Infer _ a _) <- infer topt
-        -- debug ["INFERRED", pretty (readbNoUnfold a)]
-        coeChk t (G topA ftopA)
+        topt -> do
+          t@(Infer _ a _) <- infer topt
+          -- debug ["INFERRED", pretty (readbNoUnfold a)]
+          coeChk t (G topA ftopA)
 
 insertApp :: Elab (Tm -> ClosureI -> Val -> IO Infer)
 insertApp t a ~vt = do
