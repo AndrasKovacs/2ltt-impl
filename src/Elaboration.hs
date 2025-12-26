@@ -1,6 +1,6 @@
 {-# options_ghc -Wno-unused-imports #-}
 
-module Elaboration (elab, Top(..), TopDef(..)) where
+module Elaboration (elab, Top(..), TopDef(..), retryProblem, retryAllProblems) where
 
 import Common hiding (Set)
 import Core.Syntax (Tm, Ty, Tm0, LocalsArg, Locals(..))
@@ -28,7 +28,6 @@ import Unification qualified as U
 Restructure things around the (Tm,Val) pairs!
 -}
 
-type LazySpanArg = (?span :: LazySpan)
 type Elab a = LvlArg => EnvArg => LocalsArg => SrcArg => LazySpanArg => a
 
 {-# inline forceElab #-}
@@ -38,11 +37,11 @@ forceElab act = seq ?lvl (seq ?env (seq ?locals (seq ?src act)))
 -- | Add a local definitiíon.
 {-# inline define #-}
 define :: Name -> Ty -> VTy -> Tm -> Val -> Elab (Val -> IO a) -> Elab (IO a)
-define x a va t vt act =
-  let val     = LocalDef ?lvl va vt in
+define x a va t vt act = do
+  let val     = LocalDef ?lvl va vt
   let ?lvl    = ?lvl + 1
       ?env    = EDef ?env val
-      ?locals = LDef ?locals x t a in
+      ?locals = LDef ?locals x t a
   forceElab $ localDefineIS x va (act val)
 
 -- | Add a bound variable.
@@ -91,11 +90,12 @@ noOps = elabError "Operators are not yet supported"
 noInductive :: Dbg => LvlArg => LocalsArg => SrcArg => LazySpanArg => IO a
 noInductive = elabError "Inductive types are not yet supported"
 
-unify :: Elab (Val -> Val -> IO ())
+unify :: Elab (GVal -> GVal -> IO ())
 unify l r = do
   let ?unifyState = U.USPrecise conversionSpeculation
-  U.unify (gjoin l) (gjoin r) `catch`
-    \(e :: U.UnifyEx) -> elabError $ UnifyError l r e
+  debug ["UNIFY", pretty (readbNoUnfold (g1 l)), pretty (readbNoUnfold (g1 r))]
+  U.unify l r `catch`
+    \(e :: U.UnifyEx) -> elabError $ UnifyError (g1 l) (g1 r) e
 
 --------------------------------------------------------------------------------
 
@@ -142,12 +142,30 @@ checkLam binds t b = case binds of
   Cons (P.MultiBind xs i Just{}) binds ->
     elabError "Annotated lambdas are not yet supported"
 
+retryProblem :: Int -> IO ()
+retryProblem i = lookupProblem i >>= \case
+  PCheckTm t a placeholder -> do
+    debug ["RETRY CHECK", show t, dbgPretty (g1 a)]
+    problemSolved i
+    Check t vt <- check t a
+    case lookupMeta placeholder of
+      MESolved e   -> unify (gjoin vt) (gjoin (eval (e^.solution)))
+      MEUnsolved e -> newSolution placeholder ?locals (readbNoUnfold (g1 a)) t
+      MESolved0{}  -> impossible
+  PSolved -> pure ()
+
+retryAllProblems :: IO ()
+retryAllProblems = uf
+
 check :: Elab (P.Tm -> GTy -> IO Check)
 check t gtopA@(G topA ftopA) = forcePTm t \case
 
   P.Parens{} -> impossible
 
   P.Hole _ -> do
+    elabError "holes are not yet supported"
+
+  P.Inferred _ -> do
     m <- U.freshMeta (readbNoUnfold topA)
     pure $ Check m (eval m)
 
@@ -163,21 +181,37 @@ check t gtopA@(G topA ftopA) = forcePTm t \case
       Check t vt <- insertBind x a va \v -> check topt (gjoin (b ∙ va))
       pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
 
-    Flex{} -> do
-      elabError "unknown expected type"
+    -- postpone checking
+    ftopA@(Flex (MetaHead blocker _) _) -> do
+      -- create placeholder meta
+      let a = readbNoUnfold topA
+      m <- newMeta a
+
+      -- create problem
+      id <- newProblem $ PCheckTm t (G topA ftopA) m
+
+      -- register blocker
+      newlyBlocked blocker id
+
+      -- return placeholder
+      pure $ Check (S.Meta m S.MSId) (Flex (MetaHead m ?env) SId)
 
     ftopA -> case topt of
 
       P.Let _ S1 (bindToName -> x) a t u -> do
         Check a va <- checkAnnotation a gSet
         Check t vt <- check t (gjoin va)
-        Check u _  <- define x a va t vt \_ -> check u (G topA ftopA)
+        Check u _  <- define x a va t vt \_ -> do
+          check u (G topA ftopA)
         -- We have non-trivial strengthening for the value under the Let,
         -- because of the local unfolding preservation!
         -- We get rid of LocaDef-s by re-evaluating the body.
         pure $ Check (S.Let t (Bind x a u)) (def vt \_ -> eval u)
 
-      topt -> do t <- infer topt; coeChk t topA
+      topt -> do
+        t@(Infer _ a _) <- infer topt
+        -- debug ["INFERRED", pretty (readbNoUnfold a)]
+        coeChk t (G topA ftopA)
 
 insertApp :: Elab (Tm -> ClosureI -> Val -> IO Infer)
 insertApp t a ~vt = do
@@ -189,13 +223,13 @@ insertApp t a ~vt = do
 -- we already know that the target type cannot be an implicit function
 -- so we only need to insert args until the source type is not an implicit fun type anymore,
 -- and then unify types
-coeChk :: Elab (Infer -> VTy -> IO Check)
+coeChk :: Elab (Infer -> GTy -> IO Check)
 coeChk (Infer t a vt) a' = case whnf a of
   Pi b | b^.icit == Impl -> do
     inf <- insertApp t b vt
     coeChk inf a'
-  a -> do
-    unify a a'
+  fa -> do
+    unify (G a fa) a'
     pure $ Check t vt
 
 -- coerce to explicit function type
@@ -208,19 +242,21 @@ coeToPiExpl (Infer t a vt) = case whnf a of
     elabError "expected a function type"
 
 inferSp :: Elab (P.Spine b -> Infer -> IO Infer)
-inferSp sp hd@(Infer t a vt) = case sp of
-  P.SNil          -> pure hd
-  P.STm u Expl sp -> do
-    (t, a, b, vt)  <- coeToPiExpl hd
-    Check u vu <- check u (gjoin a)
-    inferSp sp (Infer (t ∙ u) (b vu) (vt ∙ vu))
-  P.STm u Impl sp -> case whnf a of -- TODO: coercion to implicit Pi
-    Pi a | a^.icit == Impl -> do    --   (when we have more coercions)
-      Check u vu <- check u (gjoin (a^.ty))
-      inferSp sp (Infer (t ∘ u) (a ∙ vu) (vt ∙ vu))
-    _ -> elabError "expected an implicit function type"
+inferSp sp hd@(Infer t a vt) = do
+  -- debug ["INFERSP", show sp, show (readbNoUnfold a)]
+  case sp of
+    P.SNil          -> pure hd
+    P.STm u Expl sp -> do
+      (t, a, b, vt)  <- coeToPiExpl hd
+      Check u vu <- check u (gjoin a)
+      inferSp sp (Infer (t ∙ u) (b vu) (vt ∙ vu))
+    P.STm u Impl sp -> case whnf a of -- TODO: coercion to implicit Pi
+      Pi a | a^.icit == Impl -> do    --   (when we have more coercions)
+        Check u vu <- check u (gjoin (a^.ty))
+        inferSp sp (Infer (t ∘ u) (a ∙ vu) (vt ∙ vu))
+      _ -> elabError "expected an implicit function type"
 
-  P.SOp{}; P.SProjOp{} -> noOps
+    P.SOp{}; P.SProjOp{} -> noOps
 
 -- TODO: let-bind the multi-binder type to avoid term duplication.
 --       In that case, we can get probably drop the Wk from syntax.
@@ -286,19 +322,22 @@ infer t = forcePTm t \case
     let vt = eval t
     pure $ Infer t va vt
 
-  P.Ident x -> lookupIS (NSrcName x) >>= \case
-    Nothing -> elabError $ Generic $ "Name not in scope: " ++ show x
-    Just e  -> case e of
+  P.Ident x -> do
+    -- debug ["INFER IDENT", show x]
+    lookupIS (NSrcName x) >>= \case
+      Nothing -> elabError $ Generic $ "Name not in scope: " ++ show x
+      Just e  -> case e of
 
-      ISLocal i _ -> do
-        pure $! Infer (S.LocalVar (lvlToIx ?lvl (i^.lvl))) (i^.ty) (LocalVar (i^.lvl) (i^.ty))
+        ISLocal i _ -> do
+          let var = S.LocalVar (lvlToIx ?lvl (i^.lvl))
+          pure $! Infer var (i^.ty) (eval var)
 
-      ISNil          -> impossible
-      ISTopDef i     -> pure $! Infer (S.TopDef i) (i^.vTy) (i^.value)
-      ISTopRecTCon i -> pure $! Infer (S.Rec i) (i^.tConTy) (i^.tConValue)
-      ISTopRecDCon i -> pure $! Infer (S.Rec i) (i^.dConTy) (i^.dConValue)
-      ISTopTCon{}; ISTopDCon{} -> noInductive
-      ISTopDef0{}; ISTopRec0{}; ISTopTCon0{} -> noStage0
+        ISNil          -> impossible
+        ISTopDef i     -> pure $! Infer (S.TopDef i) (i^.vTy) (i^.value)
+        ISTopRecTCon i -> pure $! Infer (S.Rec i) (i^.tConTy) (i^.tConValue)
+        ISTopRecDCon i -> pure $! Infer (S.Rec i) (i^.dConTy) (i^.dConValue)
+        ISTopTCon{}; ISTopDCon{} -> noInductive
+        ISTopDef0{}; ISTopRec0{}; ISTopTCon0{} -> noStage0
 
   P.LocalLvl x l _ -> lookupIS (NSrcName x) >>= \case
     Nothing -> elabError $ Generic $ "Name not in scope: " ++ show x
@@ -309,8 +348,8 @@ infer t = forcePTm t \case
             go (ISLocal i e) = do
               (l', res) <- go e
               if l == l' then do
-                let res = Infer (S.LocalVar (lvlToIx ?lvl (i^.lvl)))
-                                 (i^.ty) (LocalVar (i^.lvl) (i^.ty))
+                let var = S.LocalVar (lvlToIx ?lvl (i^.lvl))
+                let res = Infer var (i^.ty) (eval var)
                 pure $! (l' + 1 // Just res)
               else
                 pure $! (l' + 1 // res)

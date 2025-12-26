@@ -3,7 +3,7 @@ module Unification where
 
 import Data.IntMap (IntMap)
 import Data.IntMap qualified as IM
-import Data.Ref.F qualified as RF
+import Data.IntSet qualified as IS
 
 import Common
 import Core.Info
@@ -11,9 +11,12 @@ import Core.Syntax (Ty, Tm, LocalsArg, Tm0)
 import Core.Syntax qualified as S
 import Core.Value
 import Elaboration.State qualified as ES
+import {-# source #-} Elaboration
 
 import Evaluation
 import Utils.State
+
+import Pretty
 
 ----------------------------------------------------------------------------------------------------
 
@@ -220,14 +223,77 @@ applyPVal pv sp args = case (pv, sp) of
   (pv            , RSId          ) -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb pv args
   _                                -> unifyError
 
--- TODO
-approxOccursInMeta :: MetaVar -> MetaVar -> IO ()
-approxOccursInMeta occ m = uf
+-- approxOccursInMeta :: MetaVar -> MetaVar -> IO ()
+-- approxOccursInMeta occ m = ES.isFrozen m >>= \case
+--   True -> pure ()
+--   _    -> ES.readMeta m >>= \case
+--     ES.MEUnsolved{} -> do
+--       when (occ == m) $ do
+--         throwIO ApproxOccurs
 
-checkMetaOccurs :: PSubArg => MetaVar -> IO ()
-checkMetaOccurs m = case ?psub^.occurs of
-  Just m' -> when (m == m') unifyError
-  _       -> pure ()
+--     ES.MESolved s -> do
+--       cached <- RF.read (s^.ES.occursCache)
+--       when (cached /= occ) do
+--         approxOccurs occ (s^.ES.solution)
+--         RF.write (s^.ES.occursCache) occ
+
+unsolvedMetaOccurs :: PSubArg => MetaVar -> IO ()
+unsolvedMetaOccurs m = case ?psub^.occurs of
+  Just m' | m == m' -> unifyError
+  _ -> pure ()
+
+solvedMetaOccurs :: PSubArg => MetaVar -> IO ()
+solvedMetaOccurs m = case ?psub^.occurs of
+  Just m' -> do
+    let goMeta :: MetaVar -> IO ()
+        goMeta m = case ES.lookupMeta m of
+          ES.MESolved e   -> goTm (e^.solution)
+          ES.MESolved0 e  -> goTm0 (e^.solution)
+          ES.MEUnsolved e -> if m == m' then unifyError else pure ()
+
+        goTm :: Tm -> IO ()
+        goTm = \case
+          S.LocalVar{};S.TCon{};S.DCon{};S.Rec{};S.RecTy{};S.TopDef{};S.Prim{}
+            -> pure ()
+          S.Meta m s    -> goMeta m >> goMetaSub s
+          S.Let t u     -> goTm t >> goTm (u^.ty) >> goTm (u^.body)
+          S.Pi b        -> goTm (b^.ty) >> goTm (b^.body)
+          S.App t u _   -> goTm t >> goTm u
+          S.Lam t       -> goTm (t^.ty) >> goTm (t^.body)
+          S.Project t _ -> goTm t
+          S.Quote t     -> goTm0 t
+          S.Wk t        -> goTm t
+
+        goTm0 :: Tm0 -> IO ()
+        goTm0 = \case
+          S.LocalVar0{};S.DCon0{};S.TopDef0{};S.Rec0{} -> pure ()
+          S.Meta0 m e    -> goMeta m >> goMetaSub e
+          S.Project0 t _ -> goTm0 t
+          S.CProject t _ -> goTm0 t
+          S.App0 t u     -> goTm0 t >> goTm0 u
+          S.Lam0 t       -> goTm (t^.ty) >> goTm0 (t^.body)
+          S.Let0 t u     -> goTm0 t >> goTm (u^.ty) >> goTm0 (u^.body)
+          S.Decl0 t      -> goTm (t^.ty) >> goTm0 (t^.body)
+          S.Splice t     -> goTm t
+
+        goMetaSub :: S.MetaSub -> IO ()
+        goMetaSub = \case
+          S.MSId    -> pure ()
+          S.MSSub s -> goTmEnv s
+
+        goTmEnv :: S.TmEnv -> IO ()
+        goTmEnv = \case
+          S.TENil       -> pure ()
+          S.TEDef e t   -> goTmEnv e >> goTm t
+          S.TEBind e t  -> goTmEnv e >> goTm t
+          S.TEBind0 e t -> goTmEnv e >> goTm0 t
+
+    case ES.lookupMeta m of
+      ES.MESolved e   -> goTm (e^.solution)
+      ES.MESolved0 e  -> goTm0 (e^.solution)
+      ES.MEUnsolved e -> impossible
+
+  _ -> pure ()
 
 psubstLvl :: PSubArg => Lvl -> PartialVal
 psubstLvl x = case (?psub^.sub) IM.! fromIntegral x of
@@ -257,13 +323,13 @@ instance PSubst Val (IO Tm) where
 
     -- TODO: pruning
     Flex (MetaHead m e) sp -> do
-      checkMetaOccurs m
+      unsolvedMetaOccurs m
       hd <- S.Meta m ! psubst e
       psubst sp hd
 
     Unfold h sp v -> do
       let goHead = case h of
-            UHMeta (MetaHead m e) -> checkMetaOccurs m *> S.Meta m ! psubst e
+            UHMeta (MetaHead m e) -> solvedMetaOccurs m *> (S.Meta m ! psubst e)
             UHTopDef i            -> pure $ S.TopDef i
             UHLocalDef x _        -> applyPVal (psubstLvl x) (reverseSpine sp) []
       (psubst sp =<< goHead) `catchUnify` psubst v
@@ -278,7 +344,7 @@ instance PSubst Closure0 (IO (Bind Tm0)) where
 
 psubstMetaHead0 :: PSubArg => MetaHead -> IO S.Tm0
 psubstMetaHead0 (MetaHead m e) = do
-  checkMetaOccurs m
+  unsolvedMetaOccurs m
   S.Meta0 m ! psubst e
 
 instance PSubst Spine0 (Tm0 -> IO Tm0) where
@@ -293,20 +359,20 @@ instance PSubst (SnocList Val0) (Tm0 -> IO Tm0) where
 
 instance PSubst Val0 (IO Tm0) where
   psubst t = case force0 t of
-    Unfold0 m sp v               -> (psubst sp =<< psubstMetaHead0 m) `catchUnify` psubst v
-    Rigid0 v sp                  -> psubst sp =<< psubst v
-    Flex0 m sp                   -> psubst sp =<< psubstMetaHead0 m
-    LocalVar0 x                  -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb $ psubstLvl0 x
-    Splice v sp                  -> psubst sp =<< (S.splice ! psubst v)
-    TopDef0 i                    -> pure $ S.TopDef0 i
-    DCon0 i                      -> pure $ S.DCon0 i
-    App0 t u                     -> S.App0 ! psubst t ∙ psubst u
-    Lam0 t                       -> S.Lam0 ! psubst t
-    Decl0 t                      -> S.Decl0 ! psubst t
-    Project0 t p                 -> S.Project0 ! psubst t ∙ pure p
-    Let0 t u                     -> S.Let0 ! psubst t ∙ psubst u
-    CRec i vs                    -> psubst vs (S.Rec0 i)
-    Rec0 i                       -> pure $ S.Rec0 i
+    Unfold0 m sp v -> (psubst sp =<< psubstMetaHead0 m) `catchUnify` psubst v
+    Rigid0 v sp    -> psubst sp =<< psubst v
+    Flex0 m sp     -> psubst sp =<< psubstMetaHead0 m
+    LocalVar0 x    -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb $ psubstLvl0 x
+    Splice v sp    -> psubst sp =<< (S.splice ! psubst v)
+    TopDef0 i      -> pure $ S.TopDef0 i
+    DCon0 i        -> pure $ S.DCon0 i
+    App0 t u       -> S.App0 ! psubst t ∙ psubst u
+    Lam0 t         -> S.Lam0 ! psubst t
+    Decl0 t        -> S.Decl0 ! psubst t
+    Project0 t p   -> S.Project0 ! psubst t ∙ pure p
+    Let0 t u       -> S.Let0 ! psubst t ∙ psubst u
+    CRec i vs      -> psubst vs (S.Rec0 i)
+    Rec0 i         -> pure $ S.Rec0 i
 
 
 -- Nested solving
@@ -572,8 +638,10 @@ forceUS v = case ?unifyState of
 unifyEq :: Eq a => a -> a -> IO ()
 unifyEq a a' = if a == a' then pure () else unifyError
 
+type DoUnify a = LvlArg => UnifyStateArg => LocalsArg => a
+
 class Unify a where
-  unify :: LvlArg => UnifyStateArg => a -> a -> IO ()
+  unify :: DoUnify (a -> a -> IO ())
 
 instance Unify RigidHead where
   unify = unifyEq
@@ -592,7 +660,11 @@ instance Unify Spine where
     _                                -> unifyError
 
 instance Unify ClosureI where
-  unify t t' = fresh (t^.ty) \x -> unify (t ∙ x) (t' ∙ x)
+  unify t t' = do
+    unify (t^.ty) (t'^.ty)
+    fresh (t^.ty) \x ->
+      let ?locals = S.LBind ?locals (t^.name) (readbNoUnfold (t^.ty))
+      in unify (t ∙ x) (t' ∙ x)
 
 instance Unify Val0 where
   unify = impossible
@@ -623,7 +695,7 @@ instance (Unify a, Unify b) => Unify (a, b) where
 
 -- TODO: this changes unification orientation, have 2 copies or pass a direction argument
 -- TODO: disallow unit eta case
-recordEta :: LvlArg => UnifyStateArg => RecInfo -> Spine -> G -> IO ()
+recordEta :: DoUnify (RecInfo -> Spine -> G -> IO ())
 recordEta i sp v = go (i^.fields) sp 0 where
   go :: FieldInfo -> Spine -> Ix -> IO ()
   go fs sp ix = case (fs, sp) of
@@ -633,30 +705,26 @@ recordEta i sp v = go (i^.fields) sp 0 where
       go fs sp (ix - 1)
     _ -> impossible
 
-registerSolution :: MetaVar -> Tm -> IO ()
-registerSolution m t = do
-  ES.Unsolved ls a <- ES.lookupUnsolved m
-  occCache <- RF.new (-1)
-    -- TODO: decide solution inlining
-  ES.writeMeta m $ ES.MESolved $ ES.Solved ls a t False occCache
-
-solve :: LvlArg => UnifyStateArg => MetaHead -> Spine -> Val -> IO ()
+solve :: DoUnify (MetaHead -> Spine -> Val -> IO ())
 solve (MetaHead m e) sp rhs = do
 
   frozen <- ES.isFrozen m
   when (frozen || ?unifyState == USSpeculating) unifyError
 
   let psub = PSub (Just m) False True ENil 0 ?lvl mempty
-  ES.Unsolved ls _ <- ES.lookupUnsolved m
+  ES.Unsolved ls a blocking <- ES.lookupUnsolved m
   sol <- solveTopMetaSub psub e (reverseEnv ls e) sp rhs
-  registerSolution m sol
-  -- TODO: when we have constraints, we need to wake them up here
+  ES.newSolution m ls a sol
 
+  debug ["SOLVED", dbgPretty (Flex (MetaHead m e) sp), show blocking, pretty sol]
+
+  -- wake up blocked
+  IS.foldr (\i act -> retryProblem i >> act) (pure ()) blocking
 
 -- | Try to solve a meta without eta expansions. This can fail by spurious occurs checking. If it
 --   fails, we retry with eta expansion. We don't have to backtrack metastate updates because
 --   everything should be stable under eta.
-solveEtaShort :: LvlArg => UnifyStateArg => MetaHead -> Spine -> Val -> IO ()
+solveEtaShort :: DoUnify (MetaHead -> Spine -> Val -> IO ())
 solveEtaShort m sp rhs =
   -- TODO: should only backtrack from occurs checks of "m", otherwise the eta expansion doesn't
   -- help and we're better off postponing
@@ -675,7 +743,7 @@ solveEtaLongRec m sp inf args = go (inf^.fields) 0 args where
     _ -> impossible
 
 
-solveEtaLong :: LvlArg => UnifyStateArg => MetaHead -> Spine -> Val -> IO ()
+solveEtaLong :: DoUnify (MetaHead -> Spine -> Val -> IO ())
 solveEtaLong m sp rhs = case whnf rhs of
   Lam t    -> fresh (t^.ty) \x -> solveEtaLong m (SApp sp x (t^.icit)) (t ∙ x)
   Rec i ts -> solveEtaLongRec m sp i ts
@@ -692,7 +760,7 @@ solveEtaLong m sp rhs = case whnf rhs of
 --   this requires that pruning is at least as smart as inversion, so it can handle all invertible
 --   values, which is not going to be the case for a while.
 
-flexFlex :: LvlArg => UnifyStateArg => MetaHead -> Spine -> Val -> MetaHead -> Spine -> Val -> IO ()
+flexFlex :: DoUnify (MetaHead -> Spine -> Val -> MetaHead -> Spine -> Val -> IO ())
 flexFlex mh@(MetaHead m e) sp topt mh'@(MetaHead m' e') sp' topt' = case compare m m' of
   LT -> solve mh sp topt' `catch` \case
           InversionEx m'' | m'' == m -> solve mh' sp' topt
@@ -704,45 +772,47 @@ flexFlex mh@(MetaHead m e) sp topt mh'@(MetaHead m' e') sp' topt' = case compare
   --       spine unification should not be a hard fail
   EQ -> unify (e, sp) (e', sp')
 
-lopsidedUnfold :: LvlArg => UnifyStateArg => G -> G -> IO ()
+lopsidedUnfold :: DoUnify (G -> G -> IO ())
 lopsidedUnfold g g' = case ?unifyState of
   USPrecise{}   -> unify g g'
   USSpeculating -> unifyError
 
 instance Unify G where
-  unify (G topt ftopt) (G topt' ftopt') = case forceUS ftopt // forceUS ftopt' of
+  unify (G topt ftopt) (G topt' ftopt') = do
+    debug ["GOUNIFY", dbgPretty topt, dbgPretty topt']
 
-    -- matching sides
-    (Rigid h sp, Rigid h' sp') -> unify (h, sp) (h', sp')
-    (Pi b      , Pi b'       ) -> unify b b'
-    (Lam t     , Lam t'      ) -> unify t t'
-    (Quote t   , Quote t'    ) -> unify t t'
+    case forceUS ftopt // forceUS ftopt' of
+      -- matching sides
+      (Rigid h sp, Rigid h' sp') -> unify (h, sp) (h', sp')
+      (Pi b      , Pi b'       ) -> unify b b'
+      (Lam t     , Lam t'      ) -> unify t t'
+      (Quote t   , Quote t'    ) -> unify t t'
 
-    -- unfoldings
-    (Unfold h sp v, Unfold h' sp' v') -> case ?unifyState of
-      USPrecise n   -> setUnifyState USSpeculating (unify h h' >> unify sp sp')
-                       `catchUnify`
-                       setUnifyState (USPrecise (n - 1)) (unify (G topt v) (G topt' v'))
-      USSpeculating -> unify (h, sp) (h', sp')
+      -- unfoldings
+      (Unfold h sp v, Unfold h' sp' v') -> case ?unifyState of
+        USPrecise n   -> setUnifyState USSpeculating (unify h h' >> unify sp sp')
+                         `catchUnify`
+                         setUnifyState (USPrecise (n - 1)) (unify (G topt v) (G topt' v'))
+        USSpeculating -> unify (h, sp) (h', sp')
 
-    -- eta-short meta solutions
-    (Flex m sp, Flex m' sp') -> flexFlex m sp topt m' sp' topt'
-    (Flex m sp, t'         ) -> solveEtaShort m sp topt'
-    (t        , Flex m' sp') -> solveEtaShort m' sp' topt
+      -- eta-short meta solutions
+      (Flex m sp, Flex m' sp') -> flexFlex m sp topt m' sp' topt'
+      (Flex m sp, t'         ) -> solveEtaShort m sp topt'
+      (t        , Flex m' sp') -> solveEtaShort m' sp' topt
 
-    -- lopsided unfolding
-    (Unfold _ _ t, t') -> lopsidedUnfold (G topt t) (G topt' t')
-    (t, Unfold _ _ t') -> lopsidedUnfold (G topt t) (G topt' t')
+      -- lopsided unfolding
+      (Unfold _ _ t, t') -> lopsidedUnfold (G topt t) (G topt' t')
+      (t, Unfold _ _ t') -> lopsidedUnfold (G topt t) (G topt' t')
 
-    -- syntax-directed eta
-    (Lam t, t') -> fresh (t^.ty) \x -> let arg = (x, t^.icit) in
-                   unify (G (topt ∙∘ arg) (t ∙ x)) (G (topt' ∙∘ arg) (t' ∙∘ arg))
-    (t, Lam t') -> fresh (t'^.ty) \x -> let arg = (x, t'^.icit) in
-                   unify (G (topt ∙∘ arg) (t ∙∘ arg)) (G (topt' ∙∘ arg) (t' ∙ x))
+      -- syntax-directed eta
+      (Lam t, t') -> fresh (t^.ty) \x -> let arg = (x, t^.icit) in
+                     unify (G (topt ∙∘ arg) (t ∙ x)) (G (topt' ∙∘ arg) (t' ∙∘ arg))
+      (t, Lam t') -> fresh (t'^.ty) \x -> let arg = (x, t'^.icit) in
+                     unify (G (topt ∙∘ arg) (t ∙∘ arg)) (G (topt' ∙∘ arg) (t' ∙ x))
 
-    (Rec i sp, t')  -> recordEta i sp (G topt' t')
-    (t, Rec i' sp') -> recordEta i' sp' (G topt t)
+      (Rec i sp, t')  -> recordEta i sp (G topt' t')
+      (t, Rec i' sp') -> recordEta i' sp' (G topt t)
 
-    _ -> unifyError
+      _ -> unifyError
 
 ----------------------------------------------------------------------------------------------------

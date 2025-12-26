@@ -12,9 +12,6 @@ import Unification
 import Pretty
 import Evaluation
 
-data LazySpan = LazySpan ~Span
-  deriving Show
-
 data Error
   = UnifyError Val Val UnifyEx
   | MissingAnnotation

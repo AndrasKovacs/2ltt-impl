@@ -1,10 +1,11 @@
 
-module Pretty (Names, NamesArg, Txt, runTxt, Pretty(..), pretty, prettyTop) where
+module Pretty (Names, NamesArg, Txt, runTxt, Pretty(..), pretty, prettyTop, dbgPretty) where
 
 import Prelude hiding (pi)
 import Common hiding (Prim(..))
 import Common qualified as C
 import Core.Syntax hiding (splice)
+import Evaluation (ReadBack(..), readbNoUnfold)
 
 --------------------------------------------------------------------------------
 
@@ -29,16 +30,6 @@ import Core.Syntax hiding (splice)
 -}
 
 --------------------------------------------------------------------------------
-
-type Names = List Name
-type NamesArg = (?names :: Names)
-
-localsToNames :: Locals -> Names
-localsToNames = \case
-  LNil          -> Nil
-  LDef ls x _ _ -> Cons x (localsToNames ls)
-  LBind0 ls x _ -> Cons x (localsToNames ls)
-  LBind ls x _  -> Cons x (localsToNames ls)
 
 newtype Txt = Txt (String -> String)
 
@@ -88,6 +79,9 @@ pretty a = let ?prec = letPrec; ?names = localsToNames ?locals in runTxt (prt a)
 
 prettyTop :: Pretty a => a -> String
 prettyTop a = let ?locals = LNil in pretty a
+
+dbgPretty :: ReadBack a b => Pretty b => LocalsArg => LvlArg => a -> String
+dbgPretty a = pretty (readbNoUnfold a)
 
 instance Pretty Name where
   prt = \case
@@ -219,8 +213,8 @@ instance Pretty TmEnv where
 
 instance Pretty MetaSub where
   prt = \case
-    MSId    -> mempty
-    MSSub s -> prt s
+    MSId        -> mempty
+    MSSub s     -> prt s
 
 instance Pretty Tm0 where
   prt = \case
@@ -241,13 +235,16 @@ instance Pretty Tm0 where
 
 instance Pretty Tm where
   prt = \case
-    LocalVar x -> localVar x
-    TCon i     -> topName (i^.name)
-    DCon i     -> topName (i^.name)
-    Rec  i     -> topName (i^.name)
-    RecTy i    -> topName (i^.name)
-    TopDef i   -> topName (i^.name)
-    Meta m s   -> appp (prt m <> prt s)
+    LocalVar x  -> localVar x
+    TCon i      -> topName (i^.name)
+    DCon i      -> topName (i^.name)
+    Rec  i      -> topName (i^.name)
+    RecTy i     -> topName (i^.name)
+    TopDef i    -> topName (i^.name)
+
+    Meta m MSId          -> prt m
+    Meta m (MSSub TENil) -> prt m
+    Meta m s             -> appp (prt m <> prt s)
 
     Let t (Bind x a u)   -> let pa = llet a; pt = llet t in bind x \x ->
                             lletp ("let " <> x <> " : " <> pa <> " = " <> pt <> "; " <> llet u)

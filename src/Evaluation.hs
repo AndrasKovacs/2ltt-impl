@@ -294,6 +294,9 @@ class ReadBack a b | a -> b where
 readbNoUnfold :: ReadBack a b => LvlArg => a -> b
 readbNoUnfold = readBackNoUnfold ?lvl
 
+normalize :: ReadBack a b => LvlArg => a -> b
+normalize a = readBack ?lvl UnfoldAll a
+
 {-# inline readBack #-}
 readBack :: ReadBack a b => Lvl -> Unfold -> a -> b
 readBack l unf = let ?lvl = l; ?unfold = unf in readb

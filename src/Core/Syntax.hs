@@ -89,3 +89,10 @@ localsLength = go 0 where
   go acc (LDef ls _ _ _) = go (acc + 1) ls
   go acc (LBind ls _ _)  = go (acc + 1) ls
   go acc (LBind0 ls _ _) = go (acc + 1) ls
+
+localsToNames :: Locals -> Names
+localsToNames = \case
+  LNil          -> Nil
+  LDef ls x _ _ -> Cons x (localsToNames ls)
+  LBind0 ls x _ -> Cons x (localsToNames ls)
+  LBind ls x _  -> Cons x (localsToNames ls)

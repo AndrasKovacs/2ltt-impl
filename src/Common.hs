@@ -538,6 +538,11 @@ newtype Pos = Pos FP.Pos
 data Span = Span Pos Pos
   deriving Show via DontShow Span
 
+data LazySpan = LazySpan ~Span
+  deriving Show
+
+type LazySpanArg = (?span :: LazySpan)
+
 {-# inline toSpan #-}
 toSpan :: FP.Span -> Span
 toSpan (FP.Span x y) = Span (coerce x) (coerce y)
@@ -577,6 +582,8 @@ instance SpanOf Pos where
   leftPos  x = x
   rightPos x = x
 
+type Names = List Name
+type NamesArg = (?names :: Names)
 
 -- Singletons
 --------------------------------------------------------------------------------
@@ -639,6 +646,10 @@ class HasClosure s a | s -> a where
 class HasLocals s a | s -> a where
   locals :: Lens' s a
   {-# minimal locals #-}
+
+class HasSolution s a | s -> a where
+  solution :: Lens' s a
+  {-# minimal solution #-}
 
 -- Projections
 --------------------------------------------------------------------------------

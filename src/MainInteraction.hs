@@ -4,7 +4,7 @@ module MainInteraction where
 import Common
 import Elaboration.State
 import Elaboration
-import Errors
+-- import Errors
 import Parser
 import Core.Syntax qualified as S
 import Core.Value
@@ -72,17 +72,21 @@ p1 =
   -- id : {A : Type} → A → A
   --   = λ {A} x. x
 
-  Eq : {A : Set} → A → A → Set
-    = λ {A} x y. (P : A → Set) → P x → P y
+  Eq : (A : Set) → A → A → Set
+    = λ A x y. (P : A → Set) → P x → P y
 
-  Refl : {A : Set}(a : A) → Eq {A} a a
+  Refl : {A : Set}(a : A) → Eq A a a
     = λ a P pa. pa
 
-  Nat : Set = (N : Set) → (N → N) → N → N
+  -- Nat : Set = (N : Set) → (N → N) → N → N
+  -- zero : Nat = λ N s z. z
 
-  zero : Nat = λ N s z. z
+  -- test : Eq Nat zero zero
+  --   = Refl zero
 
-  test : Eq {Nat} zero zero
-    = λ P pa. pa
+  occurs : Set
+    = let x : Set = _;
+      let p : Eq Set x Set = Refl {_} Set;
+      x
 
   """
