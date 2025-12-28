@@ -32,7 +32,7 @@ type Elab a = LvlArg => EnvArg => LocalsArg => SrcArg => LazySpanArg => a
 
 {-# inline forceElab #-}
 forceElab :: Elab a -> Elab a
-forceElab act = seq ?lvl (seq ?env (seq ?locals (seq ?src act)))
+forceElab act = seq ?lvl (seq ?env (seq ?locals (seq ?src (seq ?span act))))
 
 -- | Add a local definitiíon.
 {-# inline define #-}
@@ -329,11 +329,14 @@ infer t = forcePTm t \case
       Nothing -> elabError $ Generic $ "Name not in scope: " ++ show x
       Just e  -> case e of
 
-        ISLocal i _ -> do
+        ISLocal i -> do
           let var = S.LocalVar (lvlToIx ?lvl (i^.lvl))
           pure $! Infer var (i^.ty) (eval var)
 
-        ISNil          -> impossible
+        ISShadowedLocal i _ -> do
+          let var = S.LocalVar (lvlToIx ?lvl (i^.lvl))
+          pure $! Infer var (i^.ty) (eval var)
+
         ISTopDef i     -> pure $! Infer (S.TopDef i) (i^.vTy) (i^.value)
         ISTopRecTCon i -> pure $! Infer (S.Rec i) (i^.tConTy) (i^.tConValue)
         ISTopRecDCon i -> pure $! Infer (S.Rec i) (i^.dConTy) (i^.dConValue)
@@ -342,29 +345,31 @@ infer t = forcePTm t \case
 
   P.LocalLvl x l _ -> lookupIS (NSrcName x) >>= \case
     Nothing -> elabError $ Generic $ "Name not in scope: " ++ show x
-    Just e  -> case e of
-      ISLocal i e -> do
+    Just e -> elabError $ "De Bruijn local variables not yet supported"
+    -- Just e  -> case e of
+    --   ISShadowedLocal i e -> do
 
-        let go :: ISEntry -> IO (Lvl, Maybe Infer)
-            go (ISLocal i e) = do
-              (l', res) <- go e
-              if l == l' then do
-                let var = S.LocalVar (lvlToIx ?lvl (i^.lvl))
-                let res = Infer var (i^.ty) (eval var)
-                pure $! (l' + 1 // Just res)
-              else
-                pure $! (l' + 1 // res)
-            go _ =
-              pure (0, Nothing)
+    --     let go :: ISEntry -> IO (Lvl, Maybe Infer)
+    --         go (ISShadowedLocal i e) = do
+    --           (l', res) <- go e
+    --           if l == l' then do
+    --             let var = S.LocalVar (lvlToIx ?lvl (i^.lvl))
+    --             let res = Infer var (i^.ty) (eval var)
+    --             pure $! (l' + 1 // Just res)
+    --           else
+    --             pure $! (l' + 1 // res)
+    --         go _ =
+    --           pure (0, Nothing)
 
-        (snd ! go e) >>= \case
-          Nothing  -> elabError $ Generic $
-                         "Local name " ++ show x ++
-                         " not in scope with level " ++ show l
-          Just res -> pure res
+    --     (snd ! go e) >>= \case
+    --       Nothing  -> elabError $ Generic $
+    --                      "Local name " ++ show x ++
+    --                      " not in scope with level " ++ show l
+    --       Just res -> pure res
 
-      ISNil -> impossible
-      _     -> elabError $ Generic $ "Local name not in scope: " ++ show x
+    --   ISLocal i ->
+
+    --   _     -> elabError $ Generic $ "Local name not in scope: " ++ show x
 
   P.Dot t p -> do
     t <- infer t

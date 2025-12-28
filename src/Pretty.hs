@@ -206,10 +206,12 @@ instance Pretty TmEnv where
   prt e = "(" <> go e <> ")" where
     go :: DoPretty (TmEnv -> Txt)
     go = \case
-      TENil      -> mempty
-      TEDef e t  -> go e <> splice t
-      TEBind e t -> go e <> splice t
-      TEBind0{}  -> impossible
+      TENil          -> mempty
+      TEDef TENil t  -> splice t
+      TEBind TENil t -> splice t
+      TEDef e t      -> go e <> " " <> splice t
+      TEBind e t     -> go e <> " " <> splice t
+      TEBind0{}      -> impossible
 
 instance Pretty MetaSub where
   prt = \case
@@ -262,10 +264,14 @@ instance Pretty Tm where
     Wk t                 -> weaken $ prt t
 
 instance Pretty Locals where
-  prt = \case
-    LNil          -> mempty
-    LDef ls x t a -> prt ls <> "(" <> prt x <> " : " <> llet a <> " = " <> llet t <> ")"
-    LBind ls x a  -> prt ls <> "(" <> prt x <> " : " <> llet a <> ")"
-    LBind0{}      -> impossible
+  prt = go . reverseLocals where
+    go :: DoPretty (RevLocals -> Txt)
+    go = \case
+      RLNil          -> mempty
+      RLDef x t a ls -> "(" <> prt x <> " : " <> llet a <> " = " <> llet t <> ")"
+                        <> bind x \_ -> go ls
+      RLBind x a ls  -> "(" <> prt x <> " : " <> llet a <> ")"
+                        <> bind x \_ -> go ls
+      RLBind0{}      -> impossible
 
 --------------------------------------------------------------------------------

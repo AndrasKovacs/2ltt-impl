@@ -34,8 +34,8 @@ renderElab top = do
 
   let goMetaTy :: S.LocalsArg => S.Ty -> String
       goMetaTy a = case ?locals of
-        S.LNil -> pretty a
-        ls     -> prettyTop ls ++ " → " ++ pretty a
+        S.LNil -> ": " ++ pretty a
+        _      -> prettyTop ?locals ++ " : " ++ pretty a
 
   let go :: Top -> MetaVar -> IO ()
       go top metaBlock = case top of
@@ -48,10 +48,10 @@ renderElab top = do
                 case lookupMeta m of
                   MEUnsolved e -> do
                     let ?locals = e^.locals
-                    putStrLn $ show m ++ " : " ++ goMetaTy (e^.ty)
+                    putStrLn $ show m ++ " " ++ goMetaTy (e^.ty)
                   MESolved e -> do
                     let ?locals = e^.locals
-                    putStrLn $ show m ++ " : " ++ goMetaTy (e^.ty)
+                    putStrLn $ show m ++ " " ++ goMetaTy (e^.ty)
                                ++ " = " ++ pretty (e^.solution)
                   MESolved0{} -> impossible
                 goMetas (m + 1)
@@ -84,9 +84,11 @@ p1 =
   -- test : Eq Nat zero zero
   --   = Refl zero
 
-  occurs : Set
-    = let x : Set = _;
-      let p : Eq Set x Set = Refl {_} Set;
-      x
+  localTest1 : Set
+    =
+      let m   : Set = _;
+      let foo : Set = x;
+      let p   : Eq Set m foo = Refl foo;
+      Set
 
   """

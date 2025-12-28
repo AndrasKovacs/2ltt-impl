@@ -160,8 +160,7 @@ data LocalInfo = LI {
 makeFields ''LocalInfo
 
 data ISEntry
-  = ISNil
-  | ISTopDef     {-# nounpack #-} DefInfo
+  = ISTopDef     {-# nounpack #-} DefInfo
   | ISTopRecTCon {-# nounpack #-} RecInfo
   | ISTopRecDCon {-# nounpack #-} RecInfo
   | ISTopTCon    {-# nounpack #-} TConInfo
@@ -169,7 +168,9 @@ data ISEntry
   | ISTopRec0    {-# nounpack #-} Rec0Info
   | ISTopTCon0   {-# nounpack #-} TCon0Info
   | ISTopDCon (List DConInfo)
-  | ISLocal LocalInfo ISEntry
+  | ISLocal LocalInfo
+  | ISShadowedLocal LocalInfo ISEntry
+
 
 type IdentScope =
   HT.Dictionary (HT.PrimState IO) VM.MVector Name VM.MVector ISEntry
@@ -184,13 +185,14 @@ lookupIS = HT.lookup identScope
 {-# noinline localDefineInsert #-}
 localDefineInsert :: LocalInfo -> Name -> IO ()
 localDefineInsert i x =
-  HT.upsert identScope (maybe (ISLocal i ISNil) (ISLocal i)) x
+  HT.upsert identScope (maybe (ISLocal i) (ISShadowedLocal i)) x
 
 {-# noinline localDefineDelete #-}
 localDefineDelete :: Name -> IO ()
 localDefineDelete x = HT.alter identScope go x where
-  go (Just (ISLocal _ e)) = Just e
-  go _                    = impossible
+  go (Just (ISShadowedLocal _ e)) = Just e
+  go (Just ISLocal{})             = Nothing
+  go _                            = impossible
 
 -- | Note: we already extended the cxt, top var is (?lvl - 1).
 {-# inline localDefineIS #-}

@@ -96,3 +96,18 @@ localsToNames = \case
   LDef ls x _ _ -> Cons x (localsToNames ls)
   LBind0 ls x _ -> Cons x (localsToNames ls)
   LBind ls x _  -> Cons x (localsToNames ls)
+
+data RevLocals
+  = RLNil
+  | RLDef   Name Tm Ty RevLocals
+  | RLBind  Name ~Ty RevLocals
+  | RLBind0 Name ~Ty RevLocals
+  deriving Show
+
+reverseLocals :: Locals -> RevLocals
+reverseLocals = go RLNil where
+  go acc = \case
+    LNil          -> acc
+    LDef ls x t a -> go (RLDef x t a acc) ls
+    LBind0 ls x a -> go (RLBind0 x a acc) ls
+    LBind ls x a  -> go (RLBind x a acc) ls
