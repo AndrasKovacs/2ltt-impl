@@ -540,16 +540,16 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
     debug ["SOLVETOPSPINE", show psub]
     solveTopSpine psub (reverseSpine'' lhsTy (MetaHead m lhsEnv) SId locals sp) rhs
 
-  -- checks: 1) arg is invertible 2) if psubst is nonlinear, problem-scope *def* is psubst-able
-  --         if either fails, we proceed without extending the psub
+    -- It only makes sense to map local defs to local defs. We don't need to worry about beta-eta
+    -- stability, because local def inversion is purely an optimization and it's transparent to
+    -- conversion. If we don't have the localdef->localdef renaming, we just continue and unfold
+    -- the codomain definition subsequently in the output.
   REDef x t codvt a _ renv -> do
+    debug ["EDEF", show x, show codvt]
     let domVar = LocalDef (psub^.dom) (evalIn (psub^.domEnv) a) (evalIn (psub^.domEnv) t)
     psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
 
-    -- It only makes sense to map local defs to local defs. We don't need to worry about beta-eta
-    -- stability, because local def inversion is purely an optimization and it's transparent to
-    -- conversion.
-    case whnf codvt of
+    case force codvt of
       LocalDef x _ _ -> do
         entry <- handle @UnifyEx (\_ -> pure PVTop) do
           unless (psub^.isLinear) (() <$ psubstIn psub codvt)
@@ -580,7 +580,7 @@ solveTopSpine psub rsp rhs = case rsp^.rhsSpine of
     psubstIn psub rhs
 
   RSApp argv i rhsSp -> do
-    let (x , _, codva, appty) = appTy (rsp^.lhsTy) argv
+    let ((`pickName` x_) -> x , _, codva, appty) = appTy (rsp^.lhsTy) argv
     a <- psubstIn psub codva
     let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
     psub <- invertVal 0 (psub & domEnv %~ (`EBind` domVar) & dom +~ 1) (psub^.cod) argv SId
@@ -710,7 +710,7 @@ recordEta i sp v = go (i^.fields) sp 0 where
 solve :: DoUnify (MetaHead -> Spine -> Val -> IO ())
 solve (MetaHead m e) sp rhs = do
 
-  debug ["SOLVE", dbgPretty (Flex (MetaHead m e) sp), dbgPretty rhs]
+  debug ["SOLVE", prettyReadb (Flex (MetaHead m e) sp), prettyReadb rhs]
 
   frozen <- ES.isFrozen m
   when (frozen || ?unifyState == USSpeculating) unifyError
@@ -720,7 +720,7 @@ solve (MetaHead m e) sp rhs = do
   sol <- solveTopMetaSub psub e (reverseEnv ls e) sp rhs
   ES.newSolution m ls a sol
 
-  debug ["SOLVED", dbgPretty (Flex (MetaHead m e) sp), show blocking, pretty sol]
+  debug ["SOLVED", prettyReadb (Flex (MetaHead m e) sp), show blocking, show sol]
 
   -- wake up blocked
   IS.foldr (\i act -> retryProblem i >> act) (pure ()) blocking
@@ -730,7 +730,7 @@ solve (MetaHead m e) sp rhs = do
 --   everything should be stable under eta.
 solveEtaShort :: DoUnify (MetaHead -> Spine -> Val -> IO ())
 solveEtaShort m sp rhs = do
-  debug ["SOLVEETASHORT", show m, dbgPretty rhs]
+  debug ["SOLVEETASHORT", show m, prettyReadb rhs]
   -- TODO: should only backtrack from occurs checks of "m", otherwise the eta expansion doesn't
   -- help and we're better off postponing
   solve m sp rhs `catchUnify` solveEtaLong m sp rhs
@@ -784,7 +784,7 @@ lopsidedUnfold g g' = case ?unifyState of
 
 instance Unify G where
   unify (G topt ftopt) (G topt' ftopt') = do
-    debug ["GOUNIFY", dbgPretty topt, dbgPretty topt']
+    debug ["GOUNIFY", prettyReadb topt, prettyReadb topt']
     -- debug ["GOUNIFY", show topt, show topt']
 
     case forceUS ftopt // forceUS ftopt' of

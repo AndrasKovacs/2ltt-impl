@@ -145,7 +145,7 @@ checkLam binds t b = case binds of
 retryProblem :: Int -> IO ()
 retryProblem i = lookupProblem i >>= \case
   PCheckTm t a placeholder -> do
-    debug ["RETRY CHECK", show t, dbgPretty (g1 a)]
+    debug ["RETRY CHECK", show t, prettyReadb (g1 a)]
     problemSolved i
     Check t vt <- check t a
     case lookupMeta placeholder of
@@ -159,7 +159,7 @@ retryAllProblems = uf
 
 check :: Elab (P.Tm -> GTy -> IO Check)
 check t gtopA@(G topA ftopA) = forcePTm t \t -> do
-  debug ["CHECK", show t, dbgPretty topA]
+  debug ["CHECK", show t, prettyReadb topA]
   case t of
     P.Parens{} -> impossible
 

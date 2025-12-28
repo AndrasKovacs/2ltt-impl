@@ -514,10 +514,9 @@ data Operator = Op Fixity (List SrcName)
 instance Hashable Operator where
   hashWithSalt h (Op fix ops) = h `hashWithSalt` fix `hashWithSalt` ops
 
-pick :: Name -> Name -> Name
-pick N_ N_ = x_
-pick x  N_ = x
-pick _  y  = y
+pickName :: Name -> Name -> Name
+pickName N_ y = y
+pickName x  y = x
 
 instance SpanOf SrcName where
   leftPos (SrcName x _) = x

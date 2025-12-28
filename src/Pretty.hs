@@ -1,5 +1,7 @@
 
-module Pretty (Names, NamesArg, Txt, runTxt, Pretty(..), pretty, prettyTop, dbgPretty) where
+module Pretty (
+     Names, NamesArg, Txt, runTxt, Pretty(..)
+   , pretty, prettyTop, prtTop, prt', prt'', prettyReadb, indent,newl, str) where
 
 import Prelude hiding (pi)
 import Common hiding (Prim(..))
@@ -31,39 +33,48 @@ import Evaluation (ReadBack(..), readbNoUnfold)
 
 --------------------------------------------------------------------------------
 
-newtype Txt = Txt (String -> String)
+newtype Txt = Txt (Int -> String -> String)
 
 runTxt :: Txt -> String
-runTxt (Txt f) = f mempty
+runTxt (Txt f) = f 0 []
+
+-- | Increase indentation level by amount.
+indent :: Int -> Txt -> Txt
+indent n (Txt f) = Txt \l s -> (f $! n + l) s
+
+newl :: Txt
+newl = Txt \l s -> '\n': go l s where
+  go 0 s = s
+  go n s = let s' = go (n - 1) s in ' ':s'
 
 instance Semigroup Txt where
   {-# inline (<>) #-}
-  Txt x <> Txt y = Txt (oneShot (\s -> x $! y s))
+  Txt x <> Txt y = Txt (oneShot (\n s -> (x $! n) $! ((y $! n) $!s)))
 
 instance Monoid Txt where
   {-# inline mempty #-}
-  mempty = Txt id
+  mempty = Txt \_ s -> s
 
 instance IsString Txt where
   {-# inline fromString #-}
   fromString = \case
-    []                    -> Txt \acc -> acc
-    (a:[])                -> Txt \acc -> a:acc
-    (a:b:[])              -> Txt \acc -> a:b:acc
-    (a:b:c:[])            -> Txt \acc -> a:b:c:acc
-    (a:b:c:d:[])          -> Txt \acc -> a:b:c:d:acc
-    (a:b:c:d:e:[])        -> Txt \acc -> a:b:c:d:e:acc
-    (a:b:c:d:e:f:[])      -> Txt \acc -> a:b:c:d:e:f:acc
-    (a:b:c:d:e:f:g:[])    -> Txt \acc -> a:b:c:d:e:f:g:acc
-    (a:b:c:d:e:f:g:h:[])  -> Txt \acc -> a:b:c:d:e:f:g:h:acc
-    (a:b:c:d:e:f:g:h:i:s) -> Txt \acc -> let s' = foldr' (:) s acc in
-                                         a:b:c:d:e:f:g:h:i:s'
+    []                    -> Txt \_ acc -> acc
+    (a:[])                -> Txt \_ acc -> a:acc
+    (a:b:[])              -> Txt \_ acc -> a:b:acc
+    (a:b:c:[])            -> Txt \_ acc -> a:b:c:acc
+    (a:b:c:d:[])          -> Txt \_ acc -> a:b:c:d:acc
+    (a:b:c:d:e:[])        -> Txt \_ acc -> a:b:c:d:e:acc
+    (a:b:c:d:e:f:[])      -> Txt \_ acc -> a:b:c:d:e:f:acc
+    (a:b:c:d:e:f:g:[])    -> Txt \_ acc -> a:b:c:d:e:f:g:acc
+    (a:b:c:d:e:f:g:h:[])  -> Txt \_ acc -> a:b:c:d:e:f:g:h:acc
+    (a:b:c:d:e:f:g:h:i:s) -> Txt \_ acc -> let s' = foldr' (:) acc s in
+                                           a:b:c:d:e:f:g:h:i:s'
 
 instance Show Txt where
-  show (Txt s) = s []
+  show (Txt s) = s 0 []
 
 str    = fromString :: String -> Txt; {-# inline str #-}
-char c = Txt (c:); {-# inline char #-}
+char c = Txt (\n s -> c:s); {-# inline char #-}
 
 type PrecArg = (?prec :: Int)
 type DoPretty a = PrecArg => NamesArg => a
@@ -74,21 +85,27 @@ class Pretty a where
 prt' :: Pretty a => Int -> NamesArg => a -> Txt
 prt' p a = let ?prec = p in prt a
 
+prt'' :: Pretty a => a -> Txt
+prt'' a = let ?names = Nil in prt' letPrec a
+
 pretty :: Pretty a => LocalsArg => a -> String
 pretty a = let ?prec = letPrec; ?names = localsToNames ?locals in runTxt (prt a)
 
 prettyTop :: Pretty a => a -> String
 prettyTop a = let ?locals = LNil in pretty a
 
-dbgPretty :: ReadBack a b => Pretty b => LocalsArg => LvlArg => a -> String
-dbgPretty a = pretty (readbNoUnfold a)
+prtTop :: Pretty a => a -> Txt
+prtTop a = let ?names = Nil; ?prec = letPrec in prt a
+
+prettyReadb :: ReadBack a b => Pretty b => LocalsArg => LvlArg => a -> String
+prettyReadb a = pretty (readbNoUnfold a)
 
 instance Pretty Name where
   prt = \case
-    NRawName x -> str (show x)
+    NRawName x -> str (utf8ToStr x)
     NSrcName x -> str (show x)
     NOp op     -> error "TODO: operators"
-    N_         -> Txt ('_':)
+    N_         -> char '_'
 
 {-# inline par #-}
 par :: PrecArg => Int -> Txt -> Txt
@@ -209,8 +226,8 @@ instance Pretty TmEnv where
       TENil          -> mempty
       TEDef TENil t  -> splice t
       TEBind TENil t -> splice t
-      TEDef e t      -> go e <> " " <> splice t
-      TEBind e t     -> go e <> " " <> splice t
+      TEDef e t      -> go e <> ", " <> llet t
+      TEBind e t     -> go e <> ", " <> llet t
       TEBind0{}      -> impossible
 
 instance Pretty MetaSub where
@@ -244,12 +261,13 @@ instance Pretty Tm where
     RecTy i     -> topName (i^.name)
     TopDef i    -> topName (i^.name)
 
-    Meta m MSId          -> prt m
+    Meta m MSId          -> prt m <> "(..)"
     Meta m (MSSub TENil) -> prt m
     Meta m s             -> prt m <> prt s
 
     Let t (Bind x a u)   -> let pa = llet a; pt = llet t in bind x \x ->
-                            lletp ("let " <> x <> " : " <> pa <> " = " <> pt <> "; " <> llet u)
+                            lletp ("let " <> x <> " : " <> pa <>
+                                " =" <> indent 2 (newl <> pt <> ";") <> newl <> llet u)
     Pi (BindI N_ i a b)  -> let pa = app a in bind N_ \_ -> pip (pa <> " → " <> pi b)
     Pi (BindI x i a b)   -> let pa = llet a in bind x  \x -> pip (piBind x i pa <> goPis b)
     Prim p               -> prt p

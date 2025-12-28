@@ -25,44 +25,52 @@ justElab (strToUtf8 -> s) = do
       ?src    = SrcNoFile s
       ?span   = LazySpan sp
   top <- elab top
-  renderElab top
+  putStrLn $ runTxt (renderElab top)
 
-renderElab :: Top -> IO ()
-renderElab top = do
-  putStrLn "\nELABORATION"
-  putStrLn $ replicate 60 '-'
+renderElab :: Top -> Txt
+renderElab top =
 
-  let goMetaTy :: S.LocalsArg => S.Ty -> String
+  let goMetaTy :: S.LocalsArg => S.Ty -> Txt
       goMetaTy a = case ?locals of
-        S.LNil -> ": " ++ pretty a
-        _      -> prettyTop ?locals ++ " : " ++ pretty a
+        S.LNil -> ": " <> prt'' a
+        _      -> prtTop ?locals <> " : " <> prt'' a in
 
-  let go :: Top -> MetaVar -> IO ()
+  let go :: Top -> MetaVar -> Txt
       go top metaBlock = case top of
-        TNil -> pure ()
-        TDef1 (TopDef info) endBlock top -> do
+        TNil -> mempty
+        TDef1 (TopDef info) endBlock top ->
 
-          let goMetas :: MetaVar -> IO ()
-              goMetas m | m == endBlock = pure ()
-              goMetas m = do
-                case lookupMeta m of
-                  MEUnsolved e -> do
-                    let ?locals = e^.locals
-                    putStrLn $ show m ++ " " ++ goMetaTy (e^.ty)
-                  MESolved e -> do
-                    let ?locals = e^.locals
-                    putStrLn $ show m ++ " " ++ goMetaTy (e^.ty)
-                               ++ " = " ++ pretty (e^.solution)
-                  MESolved0{} -> impossible
-                goMetas (m + 1)
+          let goMetas :: MetaVar -> Txt
+              goMetas m | m == endBlock = mempty
+              goMetas m =
+                (case lookupMeta m of
+                  MEUnsolved e ->
+                    let ?locals = e^.locals in
+                    str (show m) <> " " <> goMetaTy (e^.ty) <> newl
+                  MESolved e ->
+                    let ?locals = e^.locals in
+                    str (show m) <> " " <> goMetaTy (e^.ty)
+                               <> " = " <> prt'' (e^.solution) <> newl
+                  MESolved0{} -> impossible)
+                <> goMetas (m + 1) in
 
-          goMetas metaBlock
-          putStrLn $ show (info^.name) ++ " : " ++ prettyTop (info^.ty) ++ "\n  = "
-                     ++ prettyTop (info^.body) ++ "\n"
-          go top endBlock
+          goMetas metaBlock <>
 
-  -- print top
+          str (show (info^.name)) <> " : " <> prtTop (info^.ty) <>
+              " =" <> indent 2 (newl <> prtTop (info^.body)) <> newl <> newl <>
+
+          go top endBlock in
+
+
+  newl <>
+  "ELABORATION" <> newl <>
+  str (replicate 60 '-') <> newl <> newl <>
   go top 0
+
+
+
+  -- -- print top
+  -- go top 0
 
 p1 :: String
 p1 =
@@ -84,11 +92,22 @@ p1 =
   -- test : Eq Nat zero zero
   --   = Refl zero
 
-  localTest1 : Set
-    =
-      let m   : Set = _;
-      let foo : Set = x;
-      let p   : Eq Set m foo = Refl foo;
+  -- localTest1 : Set
+  --   =
+  --     let foo : Set = Set;
+  --     let m   : Set = _;
+  --     let p   : Eq Set m foo = Refl {Set} foo;
+  --     Set
+
+  unifyTest1 : Set
+    = let m : Set → Set = _;
+      let p : (A : Set) → Eq Set (m A) A = λ A. Refl {Set} A;
       Set
+
+  -- unifyTest2 : Set
+  --   = let m : Set → Set = _;
+  --     let p : (A : Set) → Eq Set (m A) A = λ A. Refl {Set} A;
+  --     Set
+
 
   """
