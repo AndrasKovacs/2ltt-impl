@@ -50,7 +50,7 @@ bind :: Name -> Ty -> VTy -> Elab (Val -> IO a) -> Elab (IO a)
 bind x a va act = do
   let val     = LocalVar ?lvl va
   let ?lvl    = ?lvl + 1
-      ?env    = EDef ?env val
+      ?env    = EBind ?env val
       ?locals = LBind ?locals x a
   forceElab $ localDefineIS x va (act val)
 
@@ -61,7 +61,7 @@ insertBind :: Name -> Ty -> VTy -> Elab (Val -> IO a) -> Elab (IO a)
 insertBind x a va act = do
   let val     = LocalVar ?lvl va
   let ?lvl    = ?lvl + 1
-      ?env    = EDef ?env val
+      ?env    = EBind ?env val
       ?locals = LBind ?locals x a
   forceElab $ act val
 

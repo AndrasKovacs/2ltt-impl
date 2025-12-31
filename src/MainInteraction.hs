@@ -30,10 +30,16 @@ justElab (strToUtf8 -> s) = do
 renderElab :: Top -> Txt
 renderElab top =
 
+  let prtLocals :: S.LocalsArg => Pretty a => a -> Txt
+      prtLocals a =
+        let ?names = S.localsToNames ?locals
+            ?prec = letPrec in
+        prt a in
+
   let goMetaTy :: S.LocalsArg => S.Ty -> Txt
       goMetaTy a = case ?locals of
-        S.LNil -> ": " <> prt'' a
-        _      -> prtTop ?locals <> " : " <> prt'' a in
+        S.LNil -> ": " <> prtLocals a
+        _      -> prtTop ?locals <> " : " <> prtLocals a in
 
   let go :: Top -> MetaVar -> Txt
       go top metaBlock = case top of
@@ -50,7 +56,7 @@ renderElab top =
                   MESolved e ->
                     let ?locals = e^.locals in
                     str (show m) <> " " <> goMetaTy (e^.ty)
-                               <> " = " <> prt'' (e^.solution) <> newl
+                               <> " = " <> prtLocals (e^.solution) <> newl
                   MESolved0{} -> impossible)
                 <> goMetas (m + 1) in
 
@@ -60,7 +66,6 @@ renderElab top =
               " =" <> indent 2 (newl <> prtTop (info^.body)) <> newl <> newl <>
 
           go top endBlock in
-
 
   newl <>
   "ELABORATION" <> newl <>
@@ -99,15 +104,15 @@ p1 =
   --     let p   : Eq Set m foo = Refl {Set} foo;
   --     Set
 
-  unifyTest1 : Set
-    = let m : Set → Set = _;
-      let p : (A : Set) → Eq Set (m A) A = λ A. Refl {Set} A;
-      Set
-
-  -- unifyTest2 : Set
+  -- unifyTest1 : Set
   --   = let m : Set → Set = _;
   --     let p : (A : Set) → Eq Set (m A) A = λ A. Refl {Set} A;
   --     Set
+
+  unifyTest2 : Set
+    = let m : Set → Set = λ x. x;
+      let p : (A : Set) → Eq Set (m A) A = λ A. Refl {_} A;
+      Set
 
 
   """

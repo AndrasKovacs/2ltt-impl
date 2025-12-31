@@ -432,72 +432,74 @@ makeFields ''RevSpine''
 --   _  -> unifyError
 
 invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Spine -> IO PartialSub
-invertVal solvable psub param t rhsSp = case setLvl (psub^.cod) $ whnf t of
+invertVal solvable psub param t rhsSp = do
+  debug ["INVERTVAL", show t, show rhsSp]
+  case setLvl (psub^.cod) (whnf t) of
+    Lam t -> do
+      let var = LocalVar param (t^.ty)
+      invertVal solvable psub (param + 1) (t ∙ var)
+                (SApp rhsSp var (t^.icit))
 
-  Lam t -> do
-    let var = LocalVar param (t^.ty)
-    invertVal solvable psub (param + 1) (t ∙ var)
-              (SApp rhsSp var (t^.icit))
+    Quote t -> do
+      impossible
 
-  Quote t -> do
-    impossible
+    Rigid (RHRec i) sp -> do
 
-  Rigid (RHRec i) sp -> do
+      let go :: PartialSub -> FieldInfo -> Spine -> Ix -> IO PartialSub
+          go psub fs sp ix = case (fs, sp) of
+            (FINil, SId                  ) -> pure psub
+            (FISnoc fs x i a, SApp sp t _) -> do
+              psub <- go psub fs sp (ix + 1)
+              invertVal solvable psub param t (SProject rhsSp (Proj ix x))
+            _ -> impossible
 
-    let go :: PartialSub -> FieldInfo -> Spine -> Ix -> IO PartialSub
-        go psub fs sp ix = case (fs, sp) of
-          (FINil, SId                  ) -> pure psub
-          (FISnoc fs x i a, SApp sp t _) -> do
-            psub <- go psub fs sp (ix + 1)
-            invertVal solvable psub param t (SProject rhsSp (Proj ix x))
-          _ -> impossible
+      go psub (i^.fields) sp 0
 
-    go psub (i^.fields) sp 0
+    Rigid rh@(RHLocalVar x a) sp -> do
+      unless (solvable <= x && x < psub^.cod) (inversionError psub)
+      let rsp = reverseSpine' (Rigid rh) a sp
+      updatePSub psub x ! solveNestedSp (psub^.domEnv) (psub^.cod) psub rsp rhsSp
 
-  Rigid rh@(RHLocalVar x a) sp -> do
-    unless (solvable <= x && x < psub^.cod) (inversionError psub)
-    let rsp = reverseSpine' (Rigid rh) a sp
-    updatePSub psub x ! solveNestedSp (psub^.domEnv) (psub^.cod) psub rsp rhsSp
-
-  _ -> inversionError psub
+    _ -> inversionError psub
 
 makeMCl :: Env -> Tm -> MultiClosure Val
 makeMCl rootEnv t = MCl \args -> evalIn (foldl' EDef rootEnv args) t
 
 solveNestedSp :: Env -> Lvl -> PartialSub -> RevSpine' -> Spine -> IO PartialVal
-solveNestedSp rootEnv solvable psub rsp rhsSp = case rsp of
+solveNestedSp rootEnv solvable psub rsp rhsSp = do
+  debug ["SOLVE NESTED", show rootEnv, show solvable, show rsp, show rhsSp]
+  case rsp of
+    RSId' -> do
+      let hd = case rootEnv of
+            EBind _ (LocalVar x a) -> S.LocalVar (lvlToIx (psub^.dom) x)
+            _                      -> impossible
+      body <- psubstIn psub rhsSp hd
+      pure $! PVTotal (makeMCl rootEnv body)
 
-  RSId' -> do
-    let hd = case rootEnv of
-          EBind _ (LocalVar x a) -> S.LocalVar (lvlToIx (psub^.dom) x)
-          _                      -> impossible
-    body <- psubstIn psub rhsSp hd
-    pure $! PVTotal (makeMCl rootEnv body)
+    RSApp' u (x, i, a) rsp -> do
+      a <- psubstIn psub a
+      let ~va = evalIn (psub^.domEnv) a
+      let d = psub^.dom
+      let var = LocalVar d va
+      psub <- invertVal solvable (psub & domEnv %~ (`EBind` var) & dom +~ 1) (psub^.cod) u SId
+      pv <- solveNestedSp rootEnv solvable psub rsp rhsSp
+      pure $! PVLam x i (makeMCl rootEnv a) pv
 
-  RSApp' u (x, i, a) rsp -> do
-    a <- psubstIn psub a
-    let ~va = evalIn (psub^.domEnv) a
-    let d = psub^.dom
-    let var = LocalVar d va
-    psub <- invertVal solvable (psub & domEnv %~ (`EBind` var) & dom +~ 1) (psub^.cod) u SId
-    pv <- solveNestedSp rootEnv solvable psub rsp rhsSp
-    pure $! PVLam x i (makeMCl rootEnv a) pv
+    RSProject' p (inf, params) rsp -> do
+      pv <- solveNestedSp rootEnv solvable psub rsp rhsSp
 
-  RSProject' p (inf, params) rsp -> do
-    pv <- solveNestedSp rootEnv solvable psub rsp rhsSp
+      let mkFields :: FieldInfo -> Ix -> PartialRecFields
+          mkFields fs ix = case (fs, ix) of
+            (FISnoc fs _ i _, 0 ) -> PRFSnoc (bottoms fs) pv i
+            (FISnoc fs _ i _, ix) -> PRFSnoc (mkFields fs (ix - 1)) PVBot i
+            _                     -> impossible
 
-    let mkFields :: FieldInfo -> Ix -> PartialRecFields
-        mkFields fs ix = case (fs, ix) of
-          (FISnoc fs _ i _, 0 ) -> PRFSnoc (bottoms fs) pv i
-          (FISnoc fs _ i _, ix) -> PRFSnoc (mkFields fs (ix - 1)) PVBot i
-          _                     -> impossible
+          bottoms :: FieldInfo -> PartialRecFields
+          bottoms = \case
+            FINil           -> PRFNil
+            FISnoc fs _ i _ -> PRFSnoc (bottoms fs) PVBot i
 
-        bottoms :: FieldInfo -> PartialRecFields
-        bottoms = \case
-          FINil           -> PRFNil
-          FISnoc fs _ i _ -> PRFSnoc (bottoms fs) PVBot i
-
-    pure $! PVRec inf (mkFields (inf^.fields) (p^.index))
+      pure $! PVRec inf (mkFields (inf^.fields) (p^.index))
 
 
 -- Top solving
@@ -537,7 +539,6 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
                    pure (m, vty, inf^.locals)
       _      -> impossible
 
-    debug ["SOLVETOPSPINE", show psub]
     solveTopSpine psub (reverseSpine'' lhsTy (MetaHead m lhsEnv) SId locals sp) rhs
 
     -- It only makes sense to map local defs to local defs. We don't need to worry about beta-eta
@@ -545,7 +546,7 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
     -- conversion. If we don't have the localdef->localdef renaming, we just continue and unfold
     -- the codomain definition subsequently in the output.
   REDef x t codvt a _ renv -> do
-    debug ["EDEF", show x, show codvt]
+
     let domVar = LocalDef (psub^.dom) (evalIn (psub^.domEnv) a) (evalIn (psub^.domEnv) t)
     psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
 
@@ -562,7 +563,7 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
   --         we block/fail if either fails
   REBind x codv a codva renv -> do
     let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
-    psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
+    psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EBind` domVar)
     psub <- invertVal 0 psub (psub^.cod) codv SId
     unless (psub^.isLinear) (() <$ psubstIn psub codva)
     solveTopMetaSub psub lhsEnv renv sp rhs
@@ -730,7 +731,7 @@ solve (MetaHead m e) sp rhs = do
 --   everything should be stable under eta.
 solveEtaShort :: DoUnify (MetaHead -> Spine -> Val -> IO ())
 solveEtaShort m sp rhs = do
-  debug ["SOLVEETASHORT", show m, prettyReadb rhs]
+  -- debug ["SOLVEETASHORT", show m, prettyReadb rhs]
   -- TODO: should only backtrack from occurs checks of "m", otherwise the eta expansion doesn't
   -- help and we're better off postponing
   solve m sp rhs `catchUnify` solveEtaLong m sp rhs

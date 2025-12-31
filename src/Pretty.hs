@@ -1,13 +1,15 @@
 
 module Pretty (
-     Names, NamesArg, Txt, runTxt, Pretty(..)
-   , pretty, prettyTop, prtTop, prt', prt'', prettyReadb, indent,newl, str) where
+     Names, NamesArg, Txt, runTxt, Pretty(..), letPrec
+   , pretty, prettyTop, prtTop, prtPrec, prettyReadb, indent,newl, str) where
 
 import Prelude hiding (pi)
 import Common hiding (Prim(..))
 import Common qualified as C
 import Core.Syntax hiding (splice)
 import Evaluation (ReadBack(..), readbNoUnfold)
+
+-- import Data.ByteString.Char8 qualified as B
 
 --------------------------------------------------------------------------------
 
@@ -82,11 +84,8 @@ type DoPretty a = PrecArg => NamesArg => a
 class Pretty a where
   prt :: DoPretty (a -> Txt)
 
-prt' :: Pretty a => Int -> NamesArg => a -> Txt
-prt' p a = let ?prec = p in prt a
-
-prt'' :: Pretty a => a -> Txt
-prt'' a = let ?names = Nil in prt' letPrec a
+prtPrec :: Pretty a => Int -> NamesArg => a -> Txt
+prtPrec p a = let ?prec = p in prt a
 
 pretty :: Pretty a => LocalsArg => a -> String
 pretty a = let ?prec = letPrec; ?names = localsToNames ?locals in runTxt (prt a)
@@ -119,11 +118,11 @@ appPrec    = 100
 piPrec     = (-1)
 letPrec    = (-2)
 
-proj   x = prt' projPrec   x
-splice x = prt' splicePrec x
-app    x = prt' appPrec    x
-pi     x = prt' piPrec     x
-llet   x = prt' letPrec    x
+proj   x = prtPrec projPrec   x
+splice x = prtPrec splicePrec x
+app    x = prtPrec appPrec    x
+pi     x = prtPrec piPrec     x
+llet   x = prtPrec letPrec    x
 
 projp   x = par projPrec    x
 splicep x = par splicePrec  x
@@ -135,11 +134,13 @@ localVar :: DoPretty (Ix -> Txt)
 localVar i = let
 
   go :: Names -> Ix -> (Name, (Int, Int))
-  go (Cons x xs) 0 = (x // go' xs x 0 // 0)
-  go (Cons x xs) i = let (x', (pre, post)) = go xs (i - 1)
-                         post' = if x == x' then post + 1 else post
-                     in (x', (pre, post'))
-  go _           _ = error "out of scope variable"
+  go ns topx = go'' ns topx where
+    go'' (Cons x xs) 0 = (x // go' xs x 0 // 0)
+    go'' (Cons x xs) i = let (x', (pre, post)) = go'' xs (i - 1)
+                             post' = if x == x' then post + 1 else post
+                       in (x', (pre, post'))
+    go'' _           _ = impossible
+      -- (NRawName ("ERRIX" <> B.pack (show topx)), (0, 0))
 
   go' :: Names -> Name -> Int -> Int
   go' Nil          _ acc = acc
