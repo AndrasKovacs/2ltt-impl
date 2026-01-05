@@ -391,7 +391,7 @@ reverseSpine' hd ~a sp = snd (go sp) where
   go SId           = (a, RSId')
   go (SApp sp t i) = case go sp of
     (a, rsp) -> case appTy a t of
-      (x, i, tty, a) -> (tty, RSApp' t (x, i, tty) rsp)
+      (x, i, tty, a) -> (a, RSApp' t (x, i, tty) rsp)
   go (SProject sp p) = case go sp of
     (a, rsp) -> case hd sp of
       v -> case projTy v a p of
@@ -434,7 +434,7 @@ makeFields ''RevSpine''
 invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Spine -> IO PartialSub
 invertVal solvable psub param t rhsSp = do
   debug ["INVERTVAL", show t, show rhsSp]
-  case setLvl (psub^.cod) (whnf t) of
+  case setLvl param (whnf t) of
     Lam t -> do
       let var = LocalVar param (t^.ty)
       invertVal solvable psub (param + 1) (t ∙ var)
@@ -456,18 +456,29 @@ invertVal solvable psub param t rhsSp = do
       go psub (i^.fields) sp 0
 
     Rigid rh@(RHLocalVar x a) sp -> do
+      debug ["INVERTVAR", show solvable, show x, show (psub^.cod), show sp, setLvl param (show $ readbNoUnfold a)]
       unless (solvable <= x && x < psub^.cod) (inversionError psub)
       let rsp = reverseSpine' (Rigid rh) a sp
-      updatePSub psub x ! solveNestedSp (psub^.domEnv) (psub^.cod) psub rsp rhsSp
+      debug ["KEK"]
+      let psub' = psub & cod .~ param
+      res <- updatePSub psub x ! solveNestedSp (psub^.domEnv) (psub^.cod) psub' rsp rhsSp
+      -- debug ["INVERTED VAR"]
+      pure res
+
 
     _ -> inversionError psub
+
+-- | Invert value and catch inversion exceptions.
+topInvertVal :: PartialSub -> Lvl -> Val -> Spine -> IO PartialSub
+topInvertVal psub param t rhsSp =
+  invertVal 0 psub param t rhsSp `catch` \(_ :: InversionEx) -> unifyError
 
 makeMCl :: Env -> Tm -> MultiClosure Val
 makeMCl rootEnv t = MCl \args -> evalIn (foldl' EDef rootEnv args) t
 
 solveNestedSp :: Env -> Lvl -> PartialSub -> RevSpine' -> Spine -> IO PartialVal
 solveNestedSp rootEnv solvable psub rsp rhsSp = do
-  debug ["SOLVE NESTED", show rootEnv, show solvable, show rsp, show rhsSp]
+  debug ["SOLVE NESTED", show solvable, show rsp, show rhsSp]
   case rsp of
     RSId' -> do
       let hd = case rootEnv of
@@ -564,7 +575,7 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
   REBind x codv a codva renv -> do
     let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
     psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EBind` domVar)
-    psub <- invertVal 0 psub (psub^.cod) codv SId
+    psub <- topInvertVal psub (psub^.cod) codv SId
     unless (psub^.isLinear) (() <$ psubstIn psub codva)
     solveTopMetaSub psub lhsEnv renv sp rhs
 
@@ -584,7 +595,7 @@ solveTopSpine psub rsp rhs = case rsp^.rhsSpine of
     let ((`pickName` x_) -> x , _, codva, appty) = appTy (rsp^.lhsTy) argv
     a <- psubstIn psub codva
     let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
-    psub <- invertVal 0 (psub & domEnv %~ (`EBind` domVar) & dom +~ 1) (psub^.cod) argv SId
+    psub <- topInvertVal (psub & domEnv %~ (`EBind` domVar) & dom +~ 1) (psub^.cod) argv SId
     let rsp' = RevSpine'' appty (rsp^.lhsMetaHead)
                                 (SApp (rsp^.lhsSpine) argv i)
                                 (S.LBind (rsp^.domLocals) x a)
@@ -722,6 +733,7 @@ solve (MetaHead m e) sp rhs = do
   ES.newSolution m ls a sol
 
   debug ["SOLVED", prettyReadb (Flex (MetaHead m e) sp), show blocking, show sol]
+  debug ["PRETTY SOL", pretty sol]
 
   -- wake up blocked
   IS.foldr (\i act -> retryProblem i >> act) (pure ()) blocking

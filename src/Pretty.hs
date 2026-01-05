@@ -138,21 +138,23 @@ localVar i = let
     go'' (Cons x xs) 0 = (x // go' xs x 0 // 0)
     go'' (Cons x xs) i = let (x', (pre, post)) = go'' xs (i - 1)
                              post' = if x == x' then post + 1 else post
-                       in (x', (pre, post'))
+                         in (x', (pre, post'))
     go'' _           _ = impossible
       -- (NRawName ("ERRIX" <> B.pack (show topx)), (0, 0))
 
   go' :: Names -> Name -> Int -> Int
   go' Nil          _ acc = acc
-  go' (Cons x' xs) x acc = let acc' = if x == x' then acc' + 1 else acc
+  go' (Cons x' xs) x acc = let acc' = if x == x' then acc + 1 else acc
                            in go' xs x acc'
 
   -- variable name, name occurrences before i, occurrences after i
   (x, (before, after)) = go ?names i
 
-  in case after of
-    0 -> prt x
-    _ -> prt x <> "@" <> prt before
+  in case x of
+    N_ -> "@" <> prt (length ?names - fromIntegral i - 1)
+    x  -> case before + after of
+      0 -> prt x
+      _ -> prt x <> "@" <> prt before
 
 
 topName :: DoPretty (Name -> Txt)
@@ -176,7 +178,7 @@ goPis = \case
 goLams' :: DoPretty (Tm -> Txt)
 goLams' = \case
   Lam (BindI x i a t) -> goLams a x i t
-  t                   -> ". " <> prt t
+  t                   -> ". " <> llet t
 
 goLams :: DoPretty (Tm -> Name -> Icit -> Tm -> Txt)
 goLams a x i t = case i of
@@ -186,7 +188,7 @@ goLams a x i t = case i of
 goLams0' :: DoPretty (Tm0 -> Txt)
 goLams0' = \case
   Lam0 (Bind x a t) -> goLams0 a x t
-  t                 -> ". " <> prt t
+  t                 -> ". " <> llet t
 
 goLams0 :: DoPretty (Tm -> Name -> Tm0 -> Txt)
 goLams0 a x t =

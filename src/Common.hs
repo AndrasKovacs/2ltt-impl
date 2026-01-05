@@ -688,7 +688,10 @@ data BindI a = BindI {
   , bindIIcit :: Icit
   , bindITy   :: S.Ty
   , bindIBody :: a
-  } deriving (Show, Functor, Foldable, Traversable)
+  } deriving (Functor, Foldable, Traversable)
+
+instance Show a => Show (BindI a) where
+  show (BindI x i a b) = show (x, i, a, b)
 
 makeFields ''Bind
 makeFields ''BindI

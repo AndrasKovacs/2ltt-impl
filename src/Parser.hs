@@ -136,10 +136,10 @@ splice = FP.withOption tilde'
   (\s -> Splice (leftPos s) <$> projection')
   projection
 
-implicit :: Parser Tm -> Parser (Tm, Icit)
-implicit p = FP.withOption bracel'
-  (\(Span l r) -> do {a <- p; bracer; pure (Parens l a r, Impl)})
-  (do {a <- p; pure (a, Expl)})
+-- implicit :: Parser Tm -> Parser (Tm, Icit)
+-- implicit p = FP.withOption bracel'
+--   (\(Span l r) -> do {a <- p; bracer; pure (Parens l a r, Impl)})
+--   (do {a <- p; pure (a, Expl)})
 
 data SomeSpine where
   SomeSpine :: Sing b -> Spine b -> SomeSpine
@@ -152,14 +152,27 @@ spTail =
         SomeSpine b sp <- spTail
         pure $ SomeSpine SFalse $ SOp op sp
     )
-    (FP.withOption (implicit splice')
-      (\(t, i) -> do
-          SomeSpine b sp <- spTail
-          case (t, i) of
-            (Dot t (POp x), Expl) -> pure $ SomeSpine SFalse (SProjOp t x sp)
-            (t, i) -> pure $ SomeSpine b (STm t i sp)
+
+    -- implicit arg
+    (FP.branch bracel'
+      (do
+        t <- tm <* bracer
+        SomeSpine b sp <- spTail
+        pure $ SomeSpine b (STm t Impl sp)
       )
-      (pure $ SomeSpine STrue SNil)
+
+      -- explicit arg
+      (FP.withOption splice'
+        (\t -> do
+          SomeSpine b sp <- spTail
+          case t of
+            Dot t (POp x) -> pure $ SomeSpine SFalse (SProjOp t x sp)
+            t             -> pure $ SomeSpine b (STm t Expl sp)
+        )
+
+        -- end spine
+        (pure $ SomeSpine STrue SNil)
+      )
     )
 
 -- TODO: better errors
