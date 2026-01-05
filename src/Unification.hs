@@ -39,9 +39,9 @@ catchUnify act otherwise = catch @UnifyEx act \_ -> otherwise
 -- Partial substitutions
 ----------------------------------------------------------------------------------------------------
 
-newtype MultiClosure a = MCl ([Val] -> a)
+newtype MultiClosure a = MCl (LvlArg => [Val] -> a)
 instance Show (MultiClosure a) where show _ = "<closure>"
-instance Apply (MultiClosure Val) [Val] Val where
+instance Apply LvlArg (MultiClosure Val) [Val] Val where
   MCl f ∙∘ (e,_) = f e; {-# inline (∙∘) #-}
 
 data PartialRecFields
@@ -95,6 +95,15 @@ data PartialSub = PSub {
 
 makeFields ''PartialSub
 deriving instance Show PartialSub
+
+evalInDom :: Eval a b => PSubArg => a -> b
+evalInDom a = let ?lvl = ?psub^.dom; ?env = ?psub^.domEnv in eval a
+
+forceInCod :: PSubArg => Val -> Val
+forceInCod v = let ?lvl = ?psub^.cod in force v
+
+force0InCod :: PSubArg => Val0 -> Val0
+force0InCod v = let ?lvl = ?psub^.cod in force0 v
 
 inversionError :: Dbg => PartialSub -> IO a
 inversionError psub = maybe impossible (throwIO . InversionEx) (psub^.occurs)
@@ -220,9 +229,9 @@ instance ReadBack PartialVal0 (IO Tm0) where
 applyPVal :: PSubArg => PartialVal -> RevSpine -> [Val] -> IO Tm
 applyPVal pv sp args = case (pv, sp) of
   (PVLam a _ _ pv, RSApp t i sp  ) -> do t <- psubst t
-                                         applyPVal pv sp (evalIn (?psub^.domEnv) t : args)
+                                         applyPVal pv sp (evalInDom t : args)
   (PVRec i pvs   , RSProject p sp) -> applyPVal (elemAt pvs (p^.index)) sp args
-  (PVTotal v     , sp            ) -> psubst sp (readBackNoUnfold (?psub^.dom) (v ∙ args))
+  (PVTotal v     , sp            ) -> psubst sp (readBackNoUnfold (?psub^.dom) (setLvl (?psub^.dom) (v ∙ args)))
   (pv            , RSId          ) -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb pv args
   _                                -> unifyError
 
@@ -309,13 +318,13 @@ psubstLvl0 x = case IM.lookup (fromIntegral x) (?psub^.sub) of
 instance PSubst ClosureI (IO (BindI Tm)) where
   psubst (ClI x i a t) = do
     a' <- psubst a
-    BindI x i a' ! psubstIn (lift (evalIn (?psub^.domEnv) a') ?psub)
-                            (t (LocalVar (?psub^.cod) a))
+    BindI x i a' ! psubstIn (lift (evalInDom a') ?psub)
+                            (setLvl (?psub^.cod + 1) (t (LocalVar (?psub^.cod) a)))
 
 instance PSubst Val (IO Tm) where
-  psubst v = case force v of
+  psubst v = case forceInCod v of
     Rigid h sp -> case h of
-      RHLocalVar x a -> do v <- psubstLvl x;  applyPVal v (reverseSpine sp) []
+      RHLocalVar x a -> do v <- psubstLvl x; applyPVal v (reverseSpine sp) []
       RHPrim i       -> psubst sp (S.Prim i)
       RHDCon i       -> psubst sp (S.DCon i)
       RHTCon i       -> psubst sp (S.TCon i)
@@ -341,7 +350,8 @@ instance PSubst Val (IO Tm) where
 
 instance PSubst Closure0 (IO (Bind Tm0)) where
   psubst (Cl0 x a f) =
-    Bind x ! psubst a ∙ setPSub (lift0 ?psub) (psubst (f (LocalVar0 (?psub^.cod))))
+    Bind x ! psubst a ∙ setPSub (lift0 ?psub)
+            (setLvl (?psub^.cod + 1) (psubst (f (LocalVar0 (?psub^.cod)))))
 
 psubstMetaHead0 :: PSubArg => MetaHead -> IO S.Tm0
 psubstMetaHead0 (MetaHead m e) = do
@@ -359,7 +369,7 @@ instance PSubst (SnocList Val0) (Tm0 -> IO Tm0) where
     Snoc sp v -> S.App0 ! psubst sp hd ∙ psubst v
 
 instance PSubst Val0 (IO Tm0) where
-  psubst t = case force0 t of
+  psubst t = case force0InCod t of
     Unfold0 m sp v -> (psubst sp =<< psubstMetaHead0 m) `catchUnify` psubst v
     Rigid0 v sp    -> psubst sp =<< psubst v
     Flex0 m sp     -> psubst sp =<< psubstMetaHead0 m
@@ -385,7 +395,7 @@ data RevSpine'
   | RSProject' Proj (RecInfo, Spine) RevSpine' -- proj, Rec type info
   deriving Show
 
-reverseSpine' :: (Spine -> Val) -> VTy -> Spine -> RevSpine'
+reverseSpine' :: LvlArg => (Spine -> Val) -> VTy -> Spine -> RevSpine'
 reverseSpine' hd ~a sp = snd (go sp) where
   go :: Spine -> (VTy, RevSpine')
   go SId           = (a, RSId')
@@ -437,7 +447,7 @@ invertVal solvable psub param t rhsSp = do
   case setLvl param (whnf t) of
     Lam t -> do
       let var = LocalVar param (t^.ty)
-      invertVal solvable psub (param + 1) (t ∙ var)
+      invertVal solvable psub (param + 1) (setLvl param (t ∙ var))
                 (SApp rhsSp var (t^.icit))
 
     Quote t -> do
@@ -458,7 +468,7 @@ invertVal solvable psub param t rhsSp = do
     Rigid rh@(RHLocalVar x a) sp -> do
       debug ["INVERTVAR", show solvable, show x, show (psub^.cod), show sp, setLvl param (show $ readbNoUnfold a)]
       unless (solvable <= x && x < psub^.cod) (inversionError psub)
-      let rsp = reverseSpine' (Rigid rh) a sp
+      let rsp = setLvl param $ reverseSpine' (Rigid rh) a sp
       debug ["KEK"]
       let psub' = psub & cod .~ param
       res <- updatePSub psub x ! solveNestedSp (psub^.domEnv) (psub^.cod) psub' rsp rhsSp
@@ -474,7 +484,7 @@ topInvertVal psub param t rhsSp =
   invertVal 0 psub param t rhsSp `catch` \(_ :: InversionEx) -> unifyError
 
 makeMCl :: Env -> Tm -> MultiClosure Val
-makeMCl rootEnv t = MCl \args -> evalIn (foldl' EDef rootEnv args) t
+makeMCl rootEnv t = MCl \args -> evalE (foldl' EDef rootEnv args) t
 
 solveNestedSp :: Env -> Lvl -> PartialSub -> RevSpine' -> Spine -> IO PartialVal
 solveNestedSp rootEnv solvable psub rsp rhsSp = do
@@ -489,7 +499,7 @@ solveNestedSp rootEnv solvable psub rsp rhsSp = do
 
     RSApp' u (x, i, a) rsp -> do
       a <- psubstIn psub a
-      let ~va = evalIn (psub^.domEnv) a
+      let ~va = setPSub psub $ evalInDom a
       let d = psub^.dom
       let var = LocalVar d va
       psub <- invertVal solvable (psub & domEnv %~ (`EBind` var) & dom +~ 1) (psub^.cod) u SId
@@ -524,14 +534,14 @@ data RevEnv
   | REBind  Name     ~Val  Ty ~VTy RevEnv --         cod Val,  dom Ty, cod VTy
   | REBind0 Name     ~Val0 Ty ~VTy RevEnv --         cod Val0, dom Ty, cod VTy
 
-reverseEnv :: S.Locals -> Env -> RevEnv
+reverseEnv :: LvlArg => S.Locals -> Env -> RevEnv
 reverseEnv ls e = go ls e RENil where
-  go :: S.Locals -> Env -> RevEnv -> RevEnv
+  go :: LvlArg => S.Locals -> Env -> RevEnv -> RevEnv
   go ls e acc = case (ls, e) of
     (S.LNil         , ENil      ) -> acc
-    (S.LDef ls x t a, EDef e v  ) -> go ls e (REDef   x t v a (evalIn e a) acc)
-    (S.LBind ls x a , EBind e v ) -> go ls e (REBind  x v a   (evalIn e a) acc)
-    (S.LBind0 ls x a, EBind0 e v) -> go ls e (REBind0 x v a   (evalIn e a) acc)
+    (S.LDef ls x t a, EDef e v  ) -> go ls e (REDef   x t v a (evalE e a) acc)
+    (S.LBind ls x a , EBind e v ) -> go ls e (REBind  x v a   (evalE e a) acc)
+    (S.LBind0 ls x a, EBind0 e v) -> go ls e (REBind0 x v a   (evalE e a) acc)
     _                             -> impossible
 
 solveTopMetaSub ::
@@ -546,7 +556,7 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
 
     (m, lhsTy, locals) <- case psub^.occurs of
       Just m -> do inf <- ES.lookupUnsolved m
-                   let ~vty = evalIn lhsEnv (inf^.ty)
+                   let ~vty = evalLE (psub^.cod) lhsEnv (inf^.ty)
                    pure (m, vty, inf^.locals)
       _      -> impossible
 
@@ -558,10 +568,10 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
     -- the codomain definition subsequently in the output.
   REDef x t codvt a _ renv -> do
 
-    let domVar = LocalDef (psub^.dom) (evalIn (psub^.domEnv) a) (evalIn (psub^.domEnv) t)
+    let domVar = setPSub psub $ LocalDef (psub^.dom) (evalInDom a) (evalInDom t)
     psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EDef` domVar)
 
-    case force codvt of
+    case setPSub psub $ forceInCod codvt of
       LocalDef x _ _ -> do
         entry <- handle @UnifyEx (\_ -> pure PVTop) do
           unless (psub^.isLinear) (() <$ psubstIn psub codvt)
@@ -573,7 +583,7 @@ solveTopMetaSub psub lhsEnv renv sp rhs = case renv of
   -- checks: 1) arg is invertible 2) if psubst is nonlinear, problem-scope binder *type* is psubst-able
   --         we block/fail if either fails
   REBind x codv a codva renv -> do
-    let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
+    let domVar = setPSub psub $ LocalVar (psub^.dom) (evalInDom a)
     psub <- pure $ psub & dom +~ 1 & domEnv %~ (`EBind` domVar)
     psub <- topInvertVal psub (psub^.cod) codv SId
     unless (psub^.isLinear) (() <$ psubstIn psub codva)
@@ -592,9 +602,9 @@ solveTopSpine psub rsp rhs = case rsp^.rhsSpine of
     psubstIn psub rhs
 
   RSApp argv i rhsSp -> do
-    let ((`pickName` x_) -> x , _, codva, appty) = appTy (rsp^.lhsTy) argv
+    let ((`pickName` x_) -> x , _, codva, appty) = setLvl (psub^.cod) $ appTy (rsp^.lhsTy) argv
     a <- psubstIn psub codva
-    let domVar = LocalVar (psub^.dom) (evalIn (psub^.domEnv) a)
+    let domVar = setPSub psub $ LocalVar (psub^.dom) (evalInDom a)
     psub <- topInvertVal (psub & domEnv %~ (`EBind` domVar) & dom +~ 1) (psub^.cod) argv SId
     let rsp' = RevSpine'' appty (rsp^.lhsMetaHead)
                                 (SApp (rsp^.lhsSpine) argv i)
@@ -604,7 +614,7 @@ solveTopSpine psub rsp rhs = case rsp^.rhsSpine of
 
   RSProject p rhsSp -> do
 
-    (info, params) <- case whnf (rsp^.lhsTy) of
+    (info, params) <- case setLvl (psub^.cod) (whnf (rsp^.lhsTy)) of
       RecTy info params -> pure (info,params)
       _                 -> impossible
 
@@ -614,7 +624,7 @@ solveTopSpine psub rsp rhs = case rsp^.rhsSpine of
             pure $! recParamEnv params // S.Rec info
           FISnoc fields x i a -> do
             (codenv, t) <- go (ix - 1) fields
-            let codva = evalIn codenv a
+            let codva = evalLE (psub^.cod) codenv a
             a <- psubstIn psub codva
             let lhsSp    = SProject (rsp^.lhsSpine) (Proj ix x)
             let codprojv = Flex (rsp^.lhsMetaHead) lhsSp
@@ -644,7 +654,7 @@ type UnifyStateArg = (?unifyState :: UnifyState)
 setUnifyState :: UnifyState -> (UnifyStateArg => a) -> a
 setUnifyState s act = let ?unifyState = s in act
 
-forceUS :: UnifyStateArg => Val -> Val
+forceUS :: UnifyStateArg => LvlArg => Val -> Val
 forceUS v = case ?unifyState of
   USPrecise 0 -> whnf v
   _           -> force v

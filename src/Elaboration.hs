@@ -234,7 +234,7 @@ coeChk (Infer t a vt) a' = case whnf a of
     pure $ Check t vt
 
 -- coerce to explicit function type
-coeToPiExpl :: Elab (Infer -> IO (Tm, VTy, Val -> Val, Val))
+coeToPiExpl :: Elab (Infer -> IO (Tm, VTy, WithLvl (Val -> Val), Val))
 coeToPiExpl (Infer t a vt) = case whnf a of
   Pi a  -> case a^.icit of
     Impl -> insertApp t a vt >>= coeToPiExpl

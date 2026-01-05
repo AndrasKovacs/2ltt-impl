@@ -47,7 +47,7 @@ data Tm
   | Quote Tm0
   | Wk Tm -- ^ Explicit weakening over a stage 1 bound var.
 
-instance Apply Tm Tm Tm where
+instance Apply () Tm Tm Tm where
   {-# inline (∙∘) #-}
   (∙∘) t (u,i) = App t u i
 

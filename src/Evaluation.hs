@@ -33,10 +33,13 @@ defLazy :: Val -> (EnvArg => a) -> EnvArg => a
 defLazy ~v k = let ?env = EDef ?env v in k
 
 class Eval a b | a -> b where
-  eval :: EnvArg => a -> b
+  eval :: LvlArg => EnvArg => a -> b
 
-evalIn :: Eval a b => Env -> a -> b
-evalIn e a = let ?env = e in eval a
+evalE :: Eval a b => LvlArg => Env -> a -> b
+evalE e a = let ?env = e in eval a
+
+evalLE :: Eval a b => Lvl -> Env -> a -> b
+evalLE l e a = let ?lvl = l; ?env = e in eval a
 
 lookupIx :: EnvArg => Ix -> Val
 lookupIx x = go ?env x where
@@ -56,7 +59,7 @@ lookupIx0 x = go ?env x where
   go _            _ = impossible
 
 {-# inline geval #-}
-geval :: Eval a Val => EnvArg => a -> G
+geval :: Eval a Val => LvlArg => EnvArg => a -> G
 geval a = gjoin (eval a)
 
 instance Eval (Bind S.Tm0) Closure0 where
@@ -96,7 +99,7 @@ instance Eval C.Prim Val where
                    ΛE p_ (Eq a x x) \p ->
                    bigP ∙ p
 
-spine :: Val -> Spine -> Val
+spine :: LvlArg => Val -> Spine -> Val
 spine v = \case
   SId           -> v
   SApp t u i    -> spine v t ∙∘ (u, i)
@@ -134,14 +137,14 @@ splice = \case
   Quote t -> t
   t       -> Splice t S0Id
 
-meta :: MetaVar -> Env -> Val
+meta :: LvlArg => MetaVar -> Env -> Val
 meta m e =
   let h = MetaHead m e in
   unblock h (Flex h SId) \ ~v -> \case
     True  -> v
     False -> Unfold (UHMeta h) SId v
 
-meta0 :: MetaVar -> Env -> Val0
+meta0 :: LvlArg => MetaVar -> Env -> Val0
 meta0 m e =
   let h = MetaHead m e in
   unblock0 h (Flex0 h S0Id) \ ~v -> \case
@@ -215,7 +218,7 @@ instance Eval S.Tm Val where
 --------------------------------------------------------------------------------
 
 {-# inline unblock #-}
-unblock :: MetaHead -> a -> (Val -> Bool -> a) -> a
+unblock :: LvlArg => MetaHead -> a -> (Val -> Bool -> a) -> a
 unblock (MetaHead m env) deflt k = case lookupMeta m of
   MEUnsolved x -> deflt
   MESolved x   -> let ~v = (let ?env = env in eval (x^.solution)) in
@@ -223,7 +226,7 @@ unblock (MetaHead m env) deflt k = case lookupMeta m of
   _            -> impossible
 
 {-# inline unblock0 #-}
-unblock0 :: MetaHead -> a -> (Val0 -> Bool -> a) -> a
+unblock0 :: LvlArg => MetaHead -> a -> (Val0 -> Bool -> a) -> a
 unblock0 (MetaHead m env) deflt k = case lookupMeta m of
   MEUnsolved x -> deflt
   MESolved0 x  -> let ~v = (let ?env = env in eval (x^.solution)) in
@@ -231,13 +234,13 @@ unblock0 (MetaHead m env) deflt k = case lookupMeta m of
   _            -> impossible
 
 -- Discard all unfoldings
-whnf :: Val -> Val
+whnf :: LvlArg => Val -> Val
 whnf = \case
   top@(Flex m sp) -> unblock m top \v _ -> whnf $ spine v sp
   Unfold _ _ v    -> whnf v
   v               -> v
 
-whnf0 :: Val0 -> Val0
+whnf0 :: LvlArg => Val0 -> Val0
 whnf0 = \case
   Unfold0 _ _ v                -> whnf0 v
   top@(Flex0 m sp)             -> unblock0 m top \v _ -> whnf0 $ spine0 v sp
@@ -250,12 +253,12 @@ whnf0 = \case
   v -> v
 
 -- Update head, unfold metas ("weak head meta normal")
-whmnf :: Val -> Val
+whmnf :: LvlArg => Val -> Val
 whmnf = \case
   top@(Flex m sp) -> unblock m top \v _ -> whmnf $ spine v sp
   v               -> v
 
-whmnf0 :: Val0 -> Val0
+whmnf0 :: LvlArg => Val0 -> Val0
 whmnf0 = \case
   Unfold0 _ _ v                -> whmnf0 v
   top@(Flex0 m sp)             -> unblock0 m top \v _ -> whmnf0 $ spine0 v sp
@@ -265,14 +268,14 @@ whmnf0 = \case
   v -> v
 
 -- Update head, preserve all unfoldings
-force ::  Val -> Val
+force ::  LvlArg => Val -> Val
 force = \case
   top@(Flex m sp) -> unblock m top \ ~v -> \case
     True -> force $ spine v sp
     _    -> Unfold (UHMeta m) sp (spine v sp)
   v -> v
 
-force0 :: Val0 -> Val0
+force0 :: LvlArg => Val0 -> Val0
 force0 = \case
   top@(Flex0 m sp) -> unblock0 m top \ ~v -> \case
     True -> force0 $ spine0 v sp
@@ -349,13 +352,13 @@ instance ReadBack ClosureI (BindI S.Tm) where
 instance ReadBack Closure0 (Bind S.Tm0) where
   readb (Cl0 x a t) = Bind x (readb a) $ fresh0 \v -> readb (t v)
 
-forceUnfold :: UnfoldArg => Val -> Val
+forceUnfold :: LvlArg => UnfoldArg => Val -> Val
 forceUnfold t = case ?unfold of
   UnfoldAll   -> whnf t
   UnfoldNone  -> force t
   UnfoldMetas -> whmnf t
 
-forceUnfold0 :: UnfoldArg => Val0 -> Val0
+forceUnfold0 :: LvlArg => UnfoldArg => Val0 -> Val0
 forceUnfold0 t = case ?unfold of
   UnfoldAll   -> whnf0 t
   UnfoldNone  -> force0 t
@@ -402,7 +405,7 @@ instance ReadBack Val S.Tm where
 
 -- | Input: type of function, arg value.
 --   Output: Domain name, icitness, type, type of result
-appTy :: VTy -> Val -> (Name, Icit, VTy, VTy)
+appTy :: LvlArg => VTy -> Val -> (Name, Icit, VTy, VTy)
 appTy funty ~arg = case whnf funty of
   Pi b -> (b^.name, b^.icit, b^.ty, b ∙ arg)
   _    -> impossible
@@ -421,12 +424,12 @@ recFieldEnv fs (Proj ix x) params vt = case fs of
 
 -- | Input: value, its type, projection.
 --   Output: RecInfo, record parameters, type of result
-projTy :: Val -> VTy -> Proj -> (RecInfo, Spine, VTy)
+projTy :: LvlArg => Val -> VTy -> Proj -> (RecInfo, Spine, VTy)
 projTy t a (Proj ix x) = case whnf t of
   RecTy i params ->
     let go :: FieldInfo -> Ix -> Ix -> VTy
         go fs ix here = case (fs, ix) of
-          (FISnoc fs x i a, 0 ) -> evalIn (recFieldEnv fs (Proj here x) params t) a
+          (FISnoc fs x i a, 0 ) -> evalE (recFieldEnv fs (Proj here x) params t) a
           (FISnoc fs _ _ _, ix) -> go fs (ix - 1) (here + 1)
           _                     -> impossible
     in (i, params, go (i^.fields) ix 0)

@@ -105,28 +105,28 @@ infixl 8 ∘
 infixl 8 ∙
 infixl 8 ∘~
 infixl 8 ∙~
-class Apply a b c | a -> b c where
+class Apply con a b c | a -> b c con where
   {-# inline (∙) #-}
-  (∙)  :: a -> b -> c  -- ^ Explicit, strict
+  (∙)  :: con => a -> b -> c  -- ^ Explicit, strict
   (∙) a b = (∙∘) a (b, Expl)
 
   {-# inline (∘) #-}
-  (∘)  :: a -> b -> c  -- ^ Implicit, strict
+  (∘)  :: con => a -> b -> c  -- ^ Implicit, strict
   (∘) a b = (∙∘) a (b, Impl)
 
-  (∙~) :: a -> b -> c  -- ^ Explicit, lazy
-  (∘~) :: a -> b -> c  -- ^ Implicit, lazy
+  (∙~) :: con => a -> b -> c  -- ^ Explicit, lazy
+  (∘~) :: con => a -> b -> c  -- ^ Implicit, lazy
   (∙~) = (∙); {-# inline (∙~) #-}
   (∘~) = (∘); {-# inline (∘~) #-}
 
   {-# inline (∙∘) #-}
-  (∙∘) :: a -> (b, Icit) -> c
+  (∙∘) :: con => a -> (b, Icit) -> c
   (∙∘) a (!b, Expl) = a ∙ b
   (∙∘) a (!b, Impl) = a ∘ b
 
   {-# minimal (∙∘) | (∙), (∘) #-}
 
-instance (Monad m, a ~ a', out ~ m b) => Apply (m (a -> b)) (m a') out where
+instance (Monad m, a ~ a', out ~ m b) => Apply () (m (a -> b)) (m a') out where
   {-# inline (∙∘) #-}
   (∙∘) mf (ma, _) = do
     f <- mf

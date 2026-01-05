@@ -42,7 +42,7 @@ data Spine
   | SProject Spine Proj
   deriving Show
 
-instance Apply Spine Val Spine where
+instance Apply () Spine Val Spine where
   {-# inline (∙) #-}
   spn ∙ v = SApp spn v Expl
   {-# inline (∘) #-}
@@ -50,50 +50,56 @@ instance Apply Spine Val Spine where
 
 --------------------------------------------------------------------------------
 
+newtype WithLvl a = WithLvl {unWithLvl :: LvlArg => a}
+
 data ClosureI = ClI# {
     closureIName :: Name
   , closureIIcit :: Icit
   , closureITy   :: ~VTy
-  , closureIBody :: Val -> Val
+  , closureIBody :: Word# -> Val -> Val
   }
 
-pattern ClI :: Name -> Icit -> VTy -> (Val -> Val) -> ClosureI
-pattern ClI x i a f <- ClI# x i a f where ClI x i ~a f = ClI# x i a (oneShot f)
+pattern ClI :: Name -> Icit -> VTy -> (LvlArg => Val -> Val) -> ClosureI
+pattern ClI x i a f <- ClI# x i a ((\f -> WithLvl (\v -> case ?lvl of Lvl (W# l) -> f l v)) -> WithLvl f)
+  where ClI x i ~a f = ClI# x i a (oneShot \l v -> let ?lvl = Lvl (W# l) in f v)
 {-# complete ClI #-}
 {-# inline ClI #-}
 
 instance Show ClosureI where
   show (ClI x i a _) = show (x, i, a, "<body>"::String)
 
-instance Apply ClosureI Val Val where
+instance Apply LvlArg ClosureI Val Val where
   {-# inline (∙∘) #-}
   ClI _ _ _ f ∙∘ (!x,_) = f x
 
-data Closure0 = Cl0# Name VTy (Val0 -> Val0)
+data Closure0 = Cl0# Name VTy (Word# -> Val0 -> Val0)
 instance Show Closure0 where showsPrec _ _ acc = "<closure>" ++ acc
 
-pattern Cl0 x a f <- Cl0# x a f where Cl0 x ~a f = Cl0# x a (oneShot f)
+pattern Cl0 :: Name -> VTy -> (LvlArg => Val0 -> Val0) -> Closure0
+pattern Cl0 x a f <- Cl0# x a ((\f -> WithLvl (\v -> case ?lvl of Lvl (W# l) -> f l v)) -> WithLvl f)
+  where Cl0 x ~a f = Cl0# x a (oneShot \l v -> let ?lvl = Lvl (W# l) in f v)
 {-# inline Cl0 #-}
 {-# complete Cl0 #-}
 
 data Closure = Cl# {
     closureName :: Name
   , closureTy   :: VTy
-  , closureBody :: Val -> Val
+  , closureBody :: Word# -> Val -> Val
   }
 
-pattern Cl :: Name -> VTy -> (Val -> Val) -> Closure
-pattern Cl x a f <- Cl# x a f where Cl x a f = Cl# x a (oneShot f)
+pattern Cl :: Name -> VTy -> (LvlArg => Val -> Val) -> Closure
+pattern Cl x a f <- Cl# x a ((\f -> WithLvl (\v -> case ?lvl of Lvl (W# l) -> f l v)) -> WithLvl f)
+  where Cl x a f = Cl# x a (oneShot \l v -> let ?lvl = Lvl (W# l) in f v)
 {-# complete Cl #-}
 {-# inline Cl #-}
 
 instance Show Closure where showsPrec _ _ acc = "<closure>" ++ acc
 
-instance Apply Closure Val Val where
+instance Apply LvlArg Closure Val Val where
   {-# inline (∙∘) #-}
   Cl _ _ f ∙∘ (!x,_) = f x
 
-instance Apply Val Val Val where
+instance Apply LvlArg Val Val Val where
   {-# inline (∙∘) #-}
   t ∙∘ arg@(u, i) = case t of
     Lam t          -> t ∙ u
