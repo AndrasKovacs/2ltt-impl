@@ -167,3 +167,5 @@ p2 =
 
 
   """
+
+mainEntry = justElab p2

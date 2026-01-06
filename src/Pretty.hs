@@ -283,6 +283,7 @@ instance Pretty Tm where
     Project t p          -> projp (proj t <> "." <> prt p)
     Quote t              -> "<" <> llet t <> ">"
     Wk t                 -> weaken $ prt t
+    Coe a b t            -> appp ("coe " <> splice a <> " " <> splice b <> " " <> splice t)
 
 instance Pretty Locals where
   prt = go . reverseLocals where

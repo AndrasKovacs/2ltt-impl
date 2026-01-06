@@ -213,6 +213,7 @@ instance Eval S.Tm Val where
     S.Quote t     -> quote (eval t)
     S.Meta m sub  -> meta m (eval sub)
     S.Wk t        -> weaken $ eval t
+    S.Coe a b t   -> uf
 
 -- Forcing
 --------------------------------------------------------------------------------
@@ -220,6 +221,14 @@ instance Eval S.Tm Val where
 {-# inline unblock #-}
 unblock :: LvlArg => MetaHead -> a -> (Val -> Bool -> a) -> a
 unblock (MetaHead m env) deflt k = case lookupMeta m of
+  MEUnsolved x -> deflt
+  MESolved x   -> let ~v = (let ?env = env in eval (x^.solution)) in
+                  k v (x^.isInline)
+  _            -> impossible
+
+{-# inline unblockIO #-}
+unblockIO :: LvlArg => MetaHead -> IO a -> (Val -> Bool -> IO a) -> IO a
+unblockIO (MetaHead m env) deflt k = case lookupMeta m of
   MEUnsolved x -> deflt
   MESolved x   -> let ~v = (let ?env = env in eval (x^.solution)) in
                   k v (x^.isInline)
@@ -233,13 +242,20 @@ unblock0 (MetaHead m env) deflt k = case lookupMeta m of
                   k v (x^.isInline)
   _            -> impossible
 
-{-# noinline whnf #-}
 -- Discard all unfoldings
 whnf :: LvlArg => Val -> Val
 whnf = \case
-  top@(Flex m sp) -> unblock m top \v _ -> whnf $ spine v sp
+  top@(Flex m sp) -> runIO do unblockIO m (pure top) \v _ -> whnfIO (spine v sp)
   Unfold _ _ v    -> whnf v
   v               -> v
+
+{-# noinline whnf #-}
+-- Discard all unfoldings
+whnfIO :: LvlArg => Val -> IO Val
+whnfIO = \case
+  top@(Flex m sp) -> unblockIO m (pure top) \v _ -> whnfIO $ spine v sp
+  Unfold _ _ v    -> whnfIO v
+  v               -> pure v
 
 whnf0 :: LvlArg => Val0 -> Val0
 whnf0 = \case

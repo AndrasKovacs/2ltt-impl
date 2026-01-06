@@ -45,7 +45,9 @@ data Tm
   | Lam (BindI Tm)
   | Project Tm Proj
   | Quote Tm0
-  | Wk Tm -- ^ Explicit weakening over a stage 1 bound var.
+  | Wk Tm -- ^ Explicit weakening over a stage 1 bound var (TODO: remove. Currently used in multi-binder elab)
+
+  | Coe Tm Tm Tm
 
 instance Apply () Tm Tm Tm where
   {-# inline (∙∘) #-}

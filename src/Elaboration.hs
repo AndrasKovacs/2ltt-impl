@@ -129,7 +129,8 @@ checkLamMultiBind topxs i binds t (G b fb) = do
     Nil -> do
       checkLam binds t (G b fb)
 
-    Cons (bindToName -> x) xs -> case whnf fb of
+    -- GHCI bug: -O1 compilation works with "case whnf fb of", but GHCI only works with "whnfIO fb"!
+    Cons (bindToName -> x) xs -> whnfIO fb >>= \case
       -- go under lambda
       Pi b | b^.icit == i -> do
         let va = b^.ty
@@ -148,9 +149,9 @@ checkLamMultiBind topxs i binds t (G b fb) = do
         pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
 
       -- postpone checking
-      ffb@(Flex (MetaHead blocker _) _) -> do
-        debug ["POSTPONE CHECKLAM", show blocker, show fb, show (whnf fb)]
-        postponeCheck (checkLamMultiBind topxs i binds t (G b ffb)) b blocker
+      fb@(Flex (MetaHead blocker _) _) -> do
+        debug ["POSTPONE CHECKLAM"]
+        postponeCheck (checkLamMultiBind topxs i binds t (G b fb)) b blocker
 
       _ -> elabError $ NonFunctionForLambda b
 
@@ -193,7 +194,7 @@ check t gtopA@(G topA ftopA) = forcePTm t \t -> do
 
     P.Lam _ binds t -> checkLam binds t gtopA
 
-    topt -> case whnf ftopA of
+    topt -> whnfIO ftopA >>= \case
 
       -- insert implicit lambda
       Pi b | b^.icit == Impl -> do
@@ -235,7 +236,7 @@ insertApp t a ~vt = do
 -- so we only need to insert args until the source type is not an implicit fun type anymore,
 -- and then unify types
 coeChk :: Elab (Infer -> GTy -> IO Check)
-coeChk (Infer t a vt) a' = case whnf a of
+coeChk (Infer t a vt) a' = whnfIO a >>= \case
   Pi b | b^.icit == Impl -> do
     inf <- insertApp t b vt
     coeChk inf a'
@@ -245,7 +246,7 @@ coeChk (Infer t a vt) a' = case whnf a of
 
 -- coerce to explicit function type
 coeToPiExpl :: Elab (Infer -> IO (Tm, VTy, WithLvl (Val -> Val), Val))
-coeToPiExpl (Infer t a vt) = case whnf a of
+coeToPiExpl (Infer t a vt) = whnfIO a >>= \case
   Pi a  -> case a^.icit of
     Impl -> insertApp t a vt >>= coeToPiExpl
     Expl -> pure (t, a^.ty, WithLvl (boxLvlArg (a^.body)), vt)
@@ -261,7 +262,7 @@ inferSp sp hd@(Infer t a vt) = do
       (t, a, WithLvl b, vt)  <- coeToPiExpl hd
       Check u vu <- check u (gjoin a)
       inferSp sp (Infer (t ∙ u) (b vu) (vt ∙ vu))
-    P.STm u Impl sp -> case whnf a of -- TODO: coercion to implicit Pi
+    P.STm u Impl sp -> whnfIO a >>= \case -- TODO: coercion to implicit Pi
       Pi a | a^.icit == Impl -> do    --   (when we have more coercions)
         Check u vu <- check u (gjoin (a^.ty))
         inferSp sp (Infer (t ∘ u) (a ∙ vu) (vt ∙ vu))
@@ -288,7 +289,7 @@ checkPi binds b = case binds of
     checkPiMultiBind xs i a binds b
 
 coeToRecord :: Elab (Infer -> IO (Tm, RecInfo, Spine, Val))
-coeToRecord (Infer t a vt) = case whnf a of
+coeToRecord (Infer t a vt) = whnfIO a >>= \case
   Rec i args             -> pure (t, i, args, vt)
   Pi a | a^.icit == Impl -> insertApp t a vt >>= coeToRecord
   _                      -> elabError "expected a record type for projected expression"

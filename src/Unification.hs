@@ -274,6 +274,7 @@ solvedMetaOccurs m = case ?psub^.occurs of
           S.Project t _ -> goTm t
           S.Quote t     -> goTm0 t
           S.Wk t        -> goTm t
+          S.Coe a b t   -> goTm a >> goTm b >> goTm t
 
         goTm0 :: Tm0 -> IO ()
         goTm0 = \case
@@ -447,7 +448,7 @@ makeFields ''RevSpine''
 invertVal :: Lvl -> PartialSub -> Lvl -> Val -> Spine -> IO PartialSub
 invertVal solvable psub param t rhsSp = do
   debug ["INVERTVAL", show t, show rhsSp]
-  case setLvl param (whnf t) of
+  setLvl param (whnfIO t) >>= \case
     Lam t -> do
       let var = LocalVar param (t^.ty)
       invertVal solvable psub (param + 1) (setLvl param (t ∙ var))
@@ -617,7 +618,7 @@ solveTopSpine psub rsp rhs = case rsp^.rhsSpine of
 
   RSProject p rhsSp -> do
 
-    (info, params) <- case setLvl (psub^.cod) (whnf (rsp^.lhsTy)) of
+    (info, params) <- setLvl (psub^.cod) (whnfIO (rsp^.lhsTy)) >>= \case
       RecTy info params -> pure (info,params)
       _                 -> impossible
 
@@ -748,7 +749,6 @@ solve (MetaHead m e) sp rhs = do
   debug ["SOLVED", prettyReadb (Flex (MetaHead m e) sp), show blocking, show sol]
   debug ["PRETTY SOL", pretty sol]
 
-  -- wake up blocked
   IS.foldr (\i act -> retryProblem i >> act) (pure ()) blocking
 
 -- | Try to solve a meta without eta expansions. This can fail by spurious occurs checking. If it
@@ -775,7 +775,7 @@ solveEtaLongRec m sp inf args = go (inf^.fields) 0 args where
 
 
 solveEtaLong :: DoUnify (MetaHead -> Spine -> Val -> IO ())
-solveEtaLong m sp rhs = case whnf rhs of
+solveEtaLong m sp rhs = whnfIO rhs >>= \case
   Lam t    -> fresh (t^.ty) \x -> solveEtaLong m (SApp sp x (t^.icit)) (t ∙ x)
   Rec i ts -> solveEtaLongRec m sp i ts
   rhs      -> solve m sp rhs
@@ -793,11 +793,11 @@ solveEtaLong m sp rhs = case whnf rhs of
 
 flexFlex :: DoUnify (MetaHead -> Spine -> Val -> MetaHead -> Spine -> Val -> IO ())
 flexFlex mh@(MetaHead m e) sp topt mh'@(MetaHead m' e') sp' topt' = case compare m m' of
-  LT -> solve mh sp topt' `catch` \case
-          InversionEx m'' | m'' == m -> solve mh' sp' topt
-          ex -> throwIO ex
-  GT -> solve mh' sp' topt `catch` \case
+  LT -> solve mh' sp' topt `catch` \case
           InversionEx m'' | m'' == m' -> solve mh sp topt'
+          ex -> throwIO ex
+  GT -> solve mh sp topt' `catch` \case
+          InversionEx m'' | m'' == m -> solve mh' sp' topt
           ex -> throwIO ex
   -- TODO: try to intersect
   --       spine unification should not be a hard fail
