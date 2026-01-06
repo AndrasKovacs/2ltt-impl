@@ -12,6 +12,11 @@ up to conversion.
 Every core term contained in interaction output must be printable in a form which is re-checkable in
 the scope of the interaction.
 
+EDIT: we might want to soften this requirement to *meta-free* terms. Re-checking metas isn't
+too horrible, because we could convert them to let-bindings + fresh metas. But if we want to also
+re-check *postponed defn equalities*, that's rather problematic to support in user-facing syntax.
+The simplest design is to not support any meta stuff in user-facing syntax.
+
 ### 3. Partial output instead of hard failure
 
 Elaboration does not fail, instead it accummulates errors and represents hard failures as

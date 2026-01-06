@@ -14,17 +14,19 @@ data RigidHead
   | RHTCon  {-# nounpack #-} TConInfo
   | RHRecTy {-# nounpack #-} RecInfo
   | RHRec   {-# nounpack #-} RecInfo
+
+  -- Rigidly blocked coe of a *canonical* value.
+  -- This only appears if the source is actually invalid.
+  -- Working with impossible equations is required for multiple error reporting.
+  | RHCoe VTy VTy Val
   deriving Show
 
-instance Eq RigidHead where
-  h == h' = case (h, h') of
-    (RHLocalVar x _, RHLocalVar x' _) -> x == x'
-    (RHPrim p      , RHPrim p'      ) -> p == p'
-    (RHDCon i      , RHDCon i'      ) -> i == i'
-    (RHTCon i      , RHTCon i'      ) -> i == i'
-    (RHRecTy i     , RHRecTy i'     ) -> i == i'
-    (RHRec i       , RHRec i'       ) -> i == i'
-    _                                 -> False
+data FlexHead
+  = FHMeta MetaVar Env
+
+  -- Flexibly blocked coe of a *canonical* value. The MetaVar is the single chosen blocker.
+  | FHCoe VTy VTy Val MetaVar
+
 
 data MetaHead = MetaHead MetaVar Env
   deriving Show
@@ -40,6 +42,7 @@ data Spine
   = SId
   | SApp Spine Val Icit
   | SProject Spine Proj
+  | SCoe Spine VTy VTy   -- can be flex or rigid. It would be an optimization to distinguish the two.
   deriving Show
 
 instance Apply () Spine Val Spine where

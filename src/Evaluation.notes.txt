@@ -1,0 +1,39 @@
+
+
+Coercion computation for indexed inductives
+------------------------------------------------------------
+
+It's a problem!
+
+  data Id (A : Set) (a : A) : A → Set where
+    refl : Id A a a
+
+Now what about
+
+  coe (Id A x x) (Id A' x' x') (refl A x)
+
+Should we reduce to "refl A' x' : Id A' x' x'"?  If we do that, we need a highly annoying and fairly
+complex index matching algorithm for detecting redexes. E.g. in the current Id case we have to
+check that the equation sides are convertible.
+
+In normal OTT, we would just ford instead. Here fording just doesn't make sense; we can't ford object
+types with object-level defn equality.
+
+A forded version would be simply
+
+  Id : (A : Set)(x y : A) → Set
+  refl : (A : Set)(x y : A) → x = y → Id A x y
+
+  coe (Id A x y) (Id A' x' y') (refl A x y p) = refl A' x' y' _
+
+Can we somehow mimic forded coe computation?
+
+  coe (Id A x x) (Id A' x' x') (refl A x) =? refl A' x'
+
+  refl .A .x .coe =? refl .A' .x'
+
+  Don't think so
+
+Option: have builtin object-level Id + everything else forded in object theory
+  Then we only need a single special non-linear coe rule for Id
+  Everything else can do the simple parameterized coe

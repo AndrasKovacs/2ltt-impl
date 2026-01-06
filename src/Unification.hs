@@ -672,7 +672,7 @@ class Unify a where
   unify :: DoUnify (a -> a -> IO ())
 
 instance Unify RigidHead where
-  unify = unifyEq
+  unify = uf
 
 instance Unify Proj where
   unify p p' = unifyEq (p^.index) (p'^.index)
@@ -815,7 +815,7 @@ instance Unify G where
 
     case forceUS ftopt // forceUS ftopt' of
       -- matching sides
-      (Rigid h sp, Rigid h' sp') -> unify (h, sp) (h', sp')
+      (Rigid h sp, Rigid h' sp') -> unify (h, sp) (h', sp')  -- TODO BUG: record eta gets eaten here
       (Pi b      , Pi b'       ) -> unify b b'
       (Lam t     , Lam t'      ) -> unify t t'
       (Quote t   , Quote t'    ) -> unify t t'
@@ -842,6 +842,7 @@ instance Unify G where
       (t, Lam t') -> fresh (t'^.ty) \x -> let arg = (x, t'^.icit) in
                      unify (G (topt ∙∘ arg) (t ∙∘ arg)) (G (topt' ∙∘ arg) (t' ∙ x))
 
+      -- NOTE: record constructors are expanded to full arity by eval, so Rec is fully applied
       (Rec i sp, t')  -> recordEta i sp (G topt' t')
       (t, Rec i' sp') -> recordEta i' sp' (G topt t)
 
