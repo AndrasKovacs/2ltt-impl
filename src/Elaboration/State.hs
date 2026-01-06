@@ -10,9 +10,9 @@ import Data.IntSet                 qualified as IS
 
 import Common
 import Core.Syntax (Tm, Ty, Locals, LocalsArg, Tm0)
-import Core.Value (VTy, EnvArg, GTy)
+import Core.Value (VTy, EnvArg)
 import Core.Info
-import Presyntax qualified as P
+import {-# source #-} Elaboration
 
 -- Metacontext
 --------------------------------------------------------------------------------
@@ -65,8 +65,13 @@ readMeta (MkMetaVar i) = ADL.read metaCxt i
 lookupMeta :: MetaVar -> MetaEntry
 lookupMeta (MkMetaVar i) = runIO (ADL.read metaCxt i)
 
+isSolved :: MetaVar -> Bool
+isSolved m = case lookupMeta m of
+  MESolved{} -> True
+  _          -> False
+
 {-# inline lookupUnsolved #-}
-lookupUnsolved :: MetaVar -> IO Unsolved
+lookupUnsolved :: Dbg => MetaVar -> IO Unsolved
 lookupUnsolved m = ADL.read metaCxt (coerce m) >>= \case
   MEUnsolved e -> pure e
   _            -> impossible
@@ -101,10 +106,7 @@ resetMetaCxt size = do
 type ProblemId = Int
 
 data Problem where
-  PCheckTm ::
-       (LvlArg, EnvArg, LocalsArg, SrcArg, LazySpanArg)
-    => P.Tm -> GTy -> MetaVar -> Problem
-    -- term, type, placeholder meta applied to Env
+  PCheck :: (EnvArg, LazySpanArg, LvlArg, SrcArg, LocalsArg) => IO Check -> MetaVar -> Problem
   PSolved :: Problem
 
 type Problems = ADL.Array Problem
@@ -122,7 +124,7 @@ newProblem p = do
 lookupProblem :: ProblemId -> IO Problem
 lookupProblem = ADL.read problems
 
-newlyBlocked :: MetaVar -> ProblemId -> IO ()
+newlyBlocked :: Dbg => MetaVar -> ProblemId -> IO ()
 newlyBlocked m p = do
   e <- lookupUnsolved m
   ADL.write metaCxt (coerce m) $ MEUnsolved $ e & blocking %~ IS.insert p

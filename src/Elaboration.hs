@@ -1,6 +1,6 @@
 {-# options_ghc -Wno-unused-imports #-}
 
-module Elaboration (elab, Top(..), TopDef(..), retryProblem, retryAllProblems) where
+module Elaboration (elab, Top(..), TopDef(..), retryProblem, retryAllProblems, Check(..)) where
 
 import Common hiding (Set)
 import Core.Syntax (Tm, Ty, Tm0, LocalsArg, Locals(..))
@@ -107,6 +107,22 @@ checkAnnotation t a = case t of
   Nothing -> elabError MissingAnnotation
   Just t  -> check t a
 
+postponeCheck :: Elab (IO Check -> VTy -> MetaVar -> IO Check)
+postponeCheck action a blocker = do
+
+  -- create placeholder meta
+  m <- newMeta (readbNoUnfold a)
+
+  -- create problem
+  id <- newProblem $ PCheck action m
+
+  -- register blocker
+  newlyBlocked blocker id
+
+  -- return placeholder
+  pure $ Check (S.Meta m S.MSId) (Flex (MetaHead m ?env) SId)
+
+
 checkLamMultiBind :: Elab (List P.Bind -> Icit -> List P.MultiBind -> P.Tm -> GTy -> IO Check)
 checkLamMultiBind topxs i binds t (G b fb) = do
   case topxs of
@@ -131,6 +147,11 @@ checkLamMultiBind topxs i binds t (G b fb) = do
           checkLamMultiBind topxs i binds t (gjoin (b ∙ v))
         pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
 
+      -- postpone checking
+      ffb@(Flex (MetaHead blocker _) _) -> do
+        debug ["POSTPONE CHECKLAM", show blocker, show fb, show (whnf fb)]
+        postponeCheck (checkLamMultiBind topxs i binds t (G b ffb)) b blocker
+
       _ -> elabError $ NonFunctionForLambda b
 
 checkLam :: Elab (List P.MultiBind -> P.Tm -> GTy -> IO Check)
@@ -144,13 +165,13 @@ checkLam binds t b = case binds of
 
 retryProblem :: Int -> IO ()
 retryProblem i = lookupProblem i >>= \case
-  PCheckTm t a placeholder -> do
-    debug ["RETRY CHECK", show t, prettyReadb (g1 a)]
+  PCheck action placeholder -> do
+    debug ["RETRY CHECK", show i]
     problemSolved i
-    Check t vt <- check t a
+    Check t vt <- action
     case lookupMeta placeholder of
       MESolved e   -> unify (gjoin vt) (gjoin (eval (e^.solution)))
-      MEUnsolved e -> newSolution placeholder ?locals (readbNoUnfold (g1 a)) t
+      MEUnsolved e -> newSolution placeholder ?locals (e^.ty) t
       MESolved0{}  -> impossible
   PSolved -> pure ()
 
@@ -184,18 +205,7 @@ check t gtopA@(G topA ftopA) = forcePTm t \t -> do
 
       -- postpone checking
       ftopA@(Flex (MetaHead blocker _) _) -> do
-        -- create placeholder meta
-        let a = readbNoUnfold topA
-        m <- newMeta a
-
-        -- create problem
-        id <- newProblem $ PCheckTm t (G topA ftopA) m
-
-        -- register blocker
-        newlyBlocked blocker id
-
-        -- return placeholder
-        pure $ Check (S.Meta m S.MSId) (Flex (MetaHead m ?env) SId)
+        postponeCheck (check topt (G topA ftopA)) topA blocker
 
       ftopA -> case topt of
 
@@ -238,7 +248,7 @@ coeToPiExpl :: Elab (Infer -> IO (Tm, VTy, WithLvl (Val -> Val), Val))
 coeToPiExpl (Infer t a vt) = case whnf a of
   Pi a  -> case a^.icit of
     Impl -> insertApp t a vt >>= coeToPiExpl
-    Expl -> pure (t, a^.ty, a^.body, vt)
+    Expl -> pure (t, a^.ty, WithLvl (boxLvlArg (a^.body)), vt)
   _ ->
     elabError "expected a function type"
 
@@ -248,7 +258,7 @@ inferSp sp hd@(Infer t a vt) = do
   case sp of
     P.SNil          -> pure hd
     P.STm u Expl sp -> do
-      (t, a, b, vt)  <- coeToPiExpl hd
+      (t, a, WithLvl b, vt)  <- coeToPiExpl hd
       Check u vu <- check u (gjoin a)
       inferSp sp (Infer (t ∙ u) (b vu) (vt ∙ vu))
     P.STm u Impl sp -> case whnf a of -- TODO: coercion to implicit Pi
@@ -384,7 +394,7 @@ infer t = forcePTm t \case
               if NSrcName x == x' then do
                 let p   = Proj ix x'
                 let env = recFieldEnv fs p args vt
-                let ~ty = evalIn env a
+                let ~ty = evalE env a
                 pure $ Infer (S.Project t p) ty (proj vt p)
               else
                 go fs (ix - 1)
@@ -397,7 +407,7 @@ infer t = forcePTm t \case
             go (FISnoc fs x _ a) 0  = do
               let p   = Proj topIx x
               let env = recFieldEnv fs p args vt
-              let ~ty = evalIn env a
+              let ~ty = evalE env a
               pure $ Infer (S.Project t p) ty (proj vt p)
             go (FISnoc fs _ _ a) ix = go fs (ix - 1)
         go (i^.fields) topIx

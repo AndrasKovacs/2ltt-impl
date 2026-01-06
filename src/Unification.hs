@@ -105,6 +105,9 @@ forceInCod v = let ?lvl = ?psub^.cod in force v
 force0InCod :: PSubArg => Val0 -> Val0
 force0InCod v = let ?lvl = ?psub^.cod in force0 v
 
+readbInDom :: PSubArg => ReadBack a b => UnfoldArg => a -> b
+readbInDom a = let ?lvl = ?psub^.dom in readb a
+
 inversionError :: Dbg => PartialSub -> IO a
 inversionError psub = maybe impossible (throwIO . InversionEx) (psub^.occurs)
 
@@ -232,7 +235,7 @@ applyPVal pv sp args = case (pv, sp) of
                                          applyPVal pv sp (evalInDom t : args)
   (PVRec i pvs   , RSProject p sp) -> applyPVal (elemAt pvs (p^.index)) sp args
   (PVTotal v     , sp            ) -> psubst sp (readBackNoUnfold (?psub^.dom) (setLvl (?psub^.dom) (v ∙ args)))
-  (pv            , RSId          ) -> setLvl (?psub^.dom) $ setUnfold UnfoldNone $ readb pv args
+  (pv            , RSId          ) -> setUnfold UnfoldNone $ readbInDom pv args
   _                                -> unifyError
 
 unsolvedMetaOccurs :: PSubArg => MetaVar -> IO ()
@@ -350,8 +353,8 @@ instance PSubst Val (IO Tm) where
 
 instance PSubst Closure0 (IO (Bind Tm0)) where
   psubst (Cl0 x a f) =
-    Bind x ! psubst a ∙ setPSub (lift0 ?psub)
-            (setLvl (?psub^.cod + 1) (psubst (f (LocalVar0 (?psub^.cod)))))
+    Bind x ! psubst a
+           ∙ setPSub (lift0 ?psub) (setLvl (?psub^.cod + 1) (psubst (f (LocalVar0 (?psub^.cod)))))
 
 psubstMetaHead0 :: PSubArg => MetaHead -> IO S.Tm0
 psubstMetaHead0 (MetaHead m e) = do

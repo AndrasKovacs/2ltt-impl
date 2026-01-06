@@ -233,6 +233,7 @@ unblock0 (MetaHead m env) deflt k = case lookupMeta m of
                   k v (x^.isInline)
   _            -> impossible
 
+{-# noinline whnf #-}
 -- Discard all unfoldings
 whnf :: LvlArg => Val -> Val
 whnf = \case
@@ -275,6 +276,9 @@ force = \case
     _    -> Unfold (UHMeta m) sp (spine v sp)
   v -> v
 
+forceL :: Lvl -> Val -> Val
+forceL l = let ?lvl = l in force
+
 force0 :: LvlArg => Val0 -> Val0
 force0 = \case
   top@(Flex0 m sp) -> unblock0 m top \ ~v -> \case
@@ -287,6 +291,8 @@ force0 = \case
     _    -> Splice (Unfold (UHMeta m) sp (spine v sp)) sp'
   v -> v
 
+force0L :: Lvl -> Val0 -> Val0
+force0L l = let ?lvl = l in force0
 
 -- Readback
 --------------------------------------------------------------------------------

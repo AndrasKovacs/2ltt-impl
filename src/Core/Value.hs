@@ -52,6 +52,14 @@ instance Apply () Spine Val Spine where
 
 newtype WithLvl a = WithLvl {unWithLvl :: LvlArg => a}
 
+{-# inline unboxLvlArg #-}
+unboxLvlArg :: (LvlArg => a) -> Word# -> a
+unboxLvlArg f l = let ?lvl = Lvl (W# l) in f
+
+{-# inline boxLvlArg #-}
+boxLvlArg :: (Word# -> a) -> LvlArg => a
+boxLvlArg f = case ?lvl of Lvl (W# l) -> f l
+
 data ClosureI = ClI# {
     closureIName :: Name
   , closureIIcit :: Icit
@@ -60,8 +68,7 @@ data ClosureI = ClI# {
   }
 
 pattern ClI :: Name -> Icit -> VTy -> (LvlArg => Val -> Val) -> ClosureI
-pattern ClI x i a f <- ClI# x i a ((\f -> WithLvl (\v -> case ?lvl of Lvl (W# l) -> f l v)) -> WithLvl f)
-  where ClI x i ~a f = ClI# x i a (oneShot \l v -> let ?lvl = Lvl (W# l) in f v)
+pattern ClI x i a f <- ClI# x i a (boxLvlArg -> f) where ClI x i ~a f = ClI# x i a (unboxLvlArg f)
 {-# complete ClI #-}
 {-# inline ClI #-}
 
@@ -76,8 +83,7 @@ data Closure0 = Cl0# Name VTy (Word# -> Val0 -> Val0)
 instance Show Closure0 where showsPrec _ _ acc = "<closure>" ++ acc
 
 pattern Cl0 :: Name -> VTy -> (LvlArg => Val0 -> Val0) -> Closure0
-pattern Cl0 x a f <- Cl0# x a ((\f -> WithLvl (\v -> case ?lvl of Lvl (W# l) -> f l v)) -> WithLvl f)
-  where Cl0 x ~a f = Cl0# x a (oneShot \l v -> let ?lvl = Lvl (W# l) in f v)
+pattern Cl0 x a f <- Cl0# x a (boxLvlArg -> f) where Cl0 x ~a f = Cl0# x a (unboxLvlArg f)
 {-# inline Cl0 #-}
 {-# complete Cl0 #-}
 
@@ -88,8 +94,7 @@ data Closure = Cl# {
   }
 
 pattern Cl :: Name -> VTy -> (LvlArg => Val -> Val) -> Closure
-pattern Cl x a f <- Cl# x a ((\f -> WithLvl (\v -> case ?lvl of Lvl (W# l) -> f l v)) -> WithLvl f)
-  where Cl x a f = Cl# x a (oneShot \l v -> let ?lvl = Lvl (W# l) in f v)
+pattern Cl x a f <- Cl# x a (boxLvlArg -> f) where Cl x a f = Cl# x a (unboxLvlArg f)
 {-# complete Cl #-}
 {-# inline Cl #-}
 
