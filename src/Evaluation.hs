@@ -104,6 +104,7 @@ spine v = \case
   SId           -> v
   SApp t u i    -> spine v t ∙∘ (u, i)
   SProject t p  -> proj (spine v t) p
+  SCoe a b t    -> uf
 
 spine0 :: Val0 -> Spine0 -> Val0
 spine0 v sp = case sp of
@@ -140,7 +141,7 @@ splice = \case
 meta :: LvlArg => MetaVar -> Env -> Val
 meta m e =
   let h = MetaHead m e in
-  unblock h (Flex h SId) \ ~v -> \case
+  unblock h (Flex (FHMeta h) SId) \ ~v -> \case
     True  -> v
     False -> Unfold (UHMeta h) SId v
 
@@ -181,6 +182,14 @@ weaken act = case ?env of
   EBind e _ -> let ?env = e in act
   _         -> impossible
 
+-- | Plan:
+--     - look at the t *without* forcing, check canonical reductions,
+--       by whnf-ing the types
+--     - If that doesn't fire, check coe-refl by conv-checking
+--     - Conv checking should be configured into unification
+coe :: LvlArg => Val -> Val -> Val -> Val
+coe a b t = uf
+
 instance Eval S.Tm0 Val0 where
   eval = \case
     S.LocalVar0 x   -> lookupIx0 x
@@ -213,7 +222,7 @@ instance Eval S.Tm Val where
     S.Quote t     -> quote (eval t)
     S.Meta m sub  -> meta m (eval sub)
     S.Wk t        -> weaken $ eval t
-    S.Coe a b t   -> uf
+    S.Coe a b t   -> coe (eval a) (eval b) (eval t)
 
 -- Forcing
 --------------------------------------------------------------------------------
@@ -242,26 +251,28 @@ unblock0 (MetaHead m env) deflt k = case lookupMeta m of
                   k v (x^.isInline)
   _            -> impossible
 
+-- TODO: force flex coe
+
 -- Discard all unfoldings
 whnf :: LvlArg => Val -> Val
 whnf = \case
-  top@(Flex m sp) -> runIO do unblockIO m (pure top) \v _ -> whnfIO (spine v sp)
-  Unfold _ _ v    -> whnf v
-  v               -> v
+  top@(Flex (FHMeta m) sp) -> runIO do unblockIO m (pure top) \v _ -> whnfIO (spine v sp)
+  Unfold _ _ v             -> whnf v
+  v                        -> v
 
 {-# noinline whnf #-}
 -- Discard all unfoldings
 whnfIO :: LvlArg => Val -> IO Val
 whnfIO = \case
-  top@(Flex m sp) -> unblockIO m (pure top) \v _ -> whnfIO $ spine v sp
-  Unfold _ _ v    -> whnfIO v
-  v               -> pure v
+  top@(Flex (FHMeta m) sp) -> unblockIO m (pure top) \v _ -> whnfIO $ spine v sp
+  Unfold _ _ v             -> whnfIO v
+  v                        -> pure v
 
 whnf0 :: LvlArg => Val0 -> Val0
 whnf0 = \case
-  Unfold0 _ _ v                -> whnf0 v
-  top@(Flex0 m sp)             -> unblock0 m top \v _ -> whnf0 $ spine0 v sp
-  top@(Splice (Flex m sp) sp') -> unblock m top \v _ -> case whnf $ spine v sp of
+  Unfold0 _ _ v                         -> whnf0 v
+  top@(Flex0 m sp)                      -> unblock0 m top \v _ -> whnf0 $ spine0 v sp
+  top@(Splice (Flex (FHMeta m) sp) sp') -> unblock m top \v _ -> case whnf $ spine v sp of
     Quote v -> whnf0 $ spine0 v sp'
     v       -> Splice v sp'
   top@(Splice (Unfold _ _ v) sp') -> case whnf v of
@@ -272,14 +283,14 @@ whnf0 = \case
 -- Update head, unfold metas ("weak head meta normal")
 whmnf :: LvlArg => Val -> Val
 whmnf = \case
-  top@(Flex m sp) -> unblock m top \v _ -> whmnf $ spine v sp
-  v               -> v
+  top@(Flex (FHMeta m) sp) -> unblock m top \v _ -> whmnf $ spine v sp
+  v                        -> v
 
 whmnf0 :: LvlArg => Val0 -> Val0
 whmnf0 = \case
-  Unfold0 _ _ v                -> whmnf0 v
-  top@(Flex0 m sp)             -> unblock0 m top \v _ -> whmnf0 $ spine0 v sp
-  top@(Splice (Flex m sp) sp') -> unblock m top \v _ -> case whmnf $ spine v sp of
+  Unfold0 _ _ v                         -> whmnf0 v
+  top@(Flex0 m sp)                      -> unblock0 m top \v _ -> whmnf0 $ spine0 v sp
+  top@(Splice (Flex (FHMeta m) sp) sp') -> unblock m top \v _ -> case whmnf $ spine v sp of
     Quote v -> whmnf0 $ spine0 v sp'
     v       -> Splice v sp'
   v -> v
@@ -287,7 +298,7 @@ whmnf0 = \case
 -- Update head, preserve all unfoldings
 force ::  LvlArg => Val -> Val
 force = \case
-  top@(Flex m sp) -> unblock m top \ ~v -> \case
+  top@(Flex (FHMeta m) sp) -> unblock m top \ ~v -> \case
     True -> force $ spine v sp
     _    -> Unfold (UHMeta m) sp (spine v sp)
   v -> v
@@ -300,7 +311,7 @@ force0 = \case
   top@(Flex0 m sp) -> unblock0 m top \ ~v -> \case
     True -> force0 $ spine0 v sp
     _    -> Unfold0 m sp (spine0 v sp)
-  top@(Splice (Flex m sp) sp') -> unblock m top \ ~v -> \case
+  top@(Splice (Flex (FHMeta m) sp) sp') -> unblock m top \ ~v -> \case
     True -> case force $ spine v sp of
       Quote v -> force0 $ spine0 v sp'
       v       -> Splice v sp'
@@ -345,7 +356,7 @@ instance ReadBack RigidHead S.Tm where
     RHDCon i       -> S.DCon i
     RHTCon i       -> S.TCon i
     RHRecTy i      -> S.RecTy i
-    RHRec i        -> S.Rec i
+    RHCoe a b t    -> S.Coe (readb a) (readb b) (readb t)
 
 instance ReadBack UnfoldHead S.Tm where
   readb = \case
@@ -367,6 +378,9 @@ instance ReadBack Spine (S.Tm -> S.Tm) where
     SId          -> h
     SApp t u i   -> S.App (readb t h) (readb u) i
     SProject t p -> S.Project (readb t h) p
+
+    -- TODO: coe-refl (or: have spine forcing that does coe-refl?)
+    SCoe t a b   -> S.Coe (readb a) (readb b) (readb t h)
 
 instance ReadBack ClosureI (BindI S.Tm) where
   readb (ClI x i a t) = BindI x i (readb a) $ fresh a \v -> readb (t v)
@@ -415,12 +429,14 @@ instance ReadBack Val0 S.Tm0 where
 
 instance ReadBack Val S.Tm where
   readb t = case forceUnfold t of
-    Rigid h sp             -> readb sp (readb h)
-    Flex (MetaHead m e) sp -> readb sp (S.Meta m (readb e))
-    Unfold h sp _          -> readb sp (readb h)
-    Pi b                   -> S.Pi (readb b)
-    Lam t                  -> S.Lam (readb t)
-    Quote t                -> S.Quote (readb t)
+    Rigid h sp                      -> readb sp (readb h)
+    Flex (FHMeta (MetaHead m e)) sp -> readb sp (S.Meta m (readb e))
+    Flex (FHCoe a b t m) sp         -> readb sp (S.Coe (readb a) (readb b) (readb t))
+    Rec i sp                        -> readb sp (S.Rec i)
+    Unfold h sp _                   -> readb sp (readb h)
+    Pi b                            -> S.Pi (readb b)
+    Lam t                           -> S.Lam (readb t)
+    Quote t                         -> S.Quote (readb t)
 
 -- Type computation
 ----------------------------------------------------------------------------------------------------

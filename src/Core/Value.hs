@@ -13,22 +13,20 @@ data RigidHead
   | RHDCon  {-# nounpack #-} DConInfo
   | RHTCon  {-# nounpack #-} TConInfo
   | RHRecTy {-# nounpack #-} RecInfo
-  | RHRec   {-# nounpack #-} RecInfo
 
   -- Rigidly blocked coe of a *canonical* value.
-  -- This only appears if the source is actually invalid.
-  -- Working with impossible equations is required for multiple error reporting.
+  -- This can only appear if some conversion check fails, but we want
+  -- to continue computing because we want to report multiple errors.
   | RHCoe VTy VTy Val
   deriving Show
 
-data FlexHead
-  = FHMeta MetaVar Env
-
-  -- Flexibly blocked coe of a *canonical* value. The MetaVar is the single chosen blocker.
-  | FHCoe VTy VTy Val MetaVar
-
-
 data MetaHead = MetaHead MetaVar Env
+  deriving Show
+
+data FlexHead
+  = FHMeta MetaHead
+  -- Flexibly blocked coe of a *canonical* value. We store one blocker MetaVar.
+  | FHCoe VTy VTy Val MetaVar
   deriving Show
 
 -- delayed unfoldings
@@ -42,7 +40,8 @@ data Spine
   = SId
   | SApp Spine Val Icit
   | SProject Spine Proj
-  | SCoe Spine VTy VTy   -- can be flex or rigid. It would be an optimization to distinguish the two.
+  | SCoe Spine VTy VTy   -- can be flex or rigid. It would be an optimization to distinguish the two and add
+                         -- a blocker meta to the flex case.
   deriving Show
 
 instance Apply () Spine Val Spine where
@@ -147,8 +146,9 @@ type VTy = Val
 
 data Val
   = Rigid RigidHead Spine
-  | Flex {-# nounpack #-} MetaHead Spine
+  | Flex FlexHead Spine
   | Unfold UnfoldHead Spine ~Val
+  | Rec {-# nounpack #-} RecInfo Spine
   | Pi ClosureI
   | Lam ClosureI
   | Quote Val0
@@ -169,7 +169,6 @@ pattern PiE x a b = Pi  (ClI x Expl a b)
 pattern PiI x a b = Pi  (ClI x Impl a b)
 
 pattern RecTy i sp = Rigid (RHRecTy i) sp
-pattern Rec i sp = Rigid (RHRec i) sp
 pattern SAppE t u = SApp t u Expl
 pattern SAppI t u = SApp t u Impl
 

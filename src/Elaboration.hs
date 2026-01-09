@@ -94,8 +94,10 @@ unify :: Elab (GVal -> GVal -> IO ())
 unify l r = do
   let ?unifyState = U.USPrecise conversionSpeculation
   debug ["UNIFY", pretty (readbNoUnfold (g1 l)), pretty (readbNoUnfold (g1 r))]
-  U.unify l r `catch`
-    \(e :: U.UnifyEx) -> elabError $ UnifyError (g1 l) (g1 r) e
+  uf
+  -- U.unify l r _
+  -- U.unify l r `catch`
+  --   \(e :: U.UnifyEx) -> elabError $ UnifyError (g1 l) (g1 r) e
 
 --------------------------------------------------------------------------------
 
@@ -120,7 +122,7 @@ postponeCheck action a blocker = do
   newlyBlocked blocker id
 
   -- return placeholder
-  pure $ Check (S.Meta m S.MSId) (Flex (MetaHead m ?env) SId)
+  pure $ Check (S.Meta m S.MSId) (Flex (FHMeta (MetaHead m ?env)) SId)
 
 
 checkLamMultiBind :: Elab (List P.Bind -> Icit -> List P.MultiBind -> P.Tm -> GTy -> IO Check)
@@ -149,7 +151,7 @@ checkLamMultiBind topxs i binds t (G b fb) = do
         pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
 
       -- postpone checking
-      fb@(Flex (MetaHead blocker _) _) -> do
+      fb@(Flex (FHMeta (MetaHead blocker _)) _) -> do
         debug ["POSTPONE CHECKLAM"]
         postponeCheck (checkLamMultiBind topxs i binds t (G b fb)) b blocker
 
@@ -205,7 +207,7 @@ check t gtopA@(G topA ftopA) = forcePTm t \t -> do
         pure $ Check (S.Lam (BindI x Impl a t)) (Lam $ ClI x Impl va \v -> def v \_ -> eval t)
 
       -- postpone checking
-      ftopA@(Flex (MetaHead blocker _) _) -> do
+      ftopA@(Flex (FHMeta (MetaHead blocker _)) _) -> do
         postponeCheck (check topt (G topA ftopA)) topA blocker
 
       ftopA -> case topt of
