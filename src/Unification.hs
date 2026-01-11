@@ -16,6 +16,7 @@ import {-# source #-} Elaboration
 
 import Evaluation
 import Utils.State
+import Config
 
 import Pretty
 
@@ -27,7 +28,7 @@ freshMeta a = S.Meta ! ES.newMeta a ∙ pure S.MSId
 data UnifyEx
   = UEUnifTODO            -- placeholder exception in unification mode
   | UEConvMismatch        -- rigid mismatch in conversion mode
-  | UEConvBlockOn MetaVar -- block on metavar in conversion mode
+  | UEConvBlockOn MetaSet -- block on metavar in conversion mode
   deriving Show
 instance Exception UnifyEx
 
@@ -37,8 +38,8 @@ instance Exception InversionEx
 unifyError :: Dbg => IO a
 unifyError = throwIO UEUnifTODO
 
-convBlockOn :: Dbg => MetaVar -> IO a
-convBlockOn m = throwIO $ UEConvBlockOn m
+convBlockOn :: Dbg => MetaSet -> IO a
+convBlockOn ms = throwIO $ UEConvBlockOn ms
 
 catchUnify :: IO a -> IO a -> IO a
 catchUnify act otherwise = catch @UnifyEx act \_ -> otherwise
@@ -719,6 +720,8 @@ forceUS v = case ?unifyState of
 unifyEq :: Eq a => a -> a -> IO ()
 unifyEq a a' = if a == a' then pure () else unifyError
 
+-- NOTE: LocalArgs is for debug printing, but unfortunately we don't have it when we call it from
+-- evaluation to check for coe-refl
 type DoUnify a = LvlArg => UnifyStateArg => LocalsArg => a
 
 class Unify a where
@@ -816,7 +819,7 @@ solveEtaShort m sp lhs rhs = do
   -- debug ["SOLVEETASHORT", show m, prettyReadb rhs]
   -- TODO: should only backtrack from occurs checks of "m", otherwise the eta expansion doesn't
   -- help and we're better off postponing
-
+  when (unifyMode == UMConv) $ convBlockOn (singleMeta (m^.metaVar))
   solve m sp rhs `catchUnify` solveEtaLong m sp lhs rhs
 
 -- TODO: disallow unit eta case
@@ -850,19 +853,27 @@ solveEtaLong m sp lhs rhs = whnfIO rhs >>= \case
 --   values, which is not going to be the case for a while.
 
 flexFlex :: DoUnify (MetaHead -> Spine -> Val -> MetaHead -> Spine -> Val -> IO ())
-flexFlex mh@(MetaHead m e) sp topt mh'@(MetaHead m' e') sp' topt' = do
-  when (unifyMode == UMConv) $ convBlockOn m
+flexFlex mh@(MetaHead m e) sp topt mh'@(MetaHead m' e') sp' topt' =
+
   case compare m m' of
-    LT -> solve mh' sp' topt `catch` \case
+    LT -> do
+      when (unifyMode == UMConv) $ convBlockOn (m `addMeta` singleMeta m')
+      solve mh' sp' topt `catch` \case
             InversionEx m'' | m'' == m' -> solve mh sp topt'
             ex -> throwIO ex
-    GT -> solve mh sp topt' `catch` \case
+    GT -> do
+      when (unifyMode == UMConv) $ convBlockOn (m `addMeta` singleMeta m')
+      solve mh sp topt' `catch` \case
             InversionEx m'' | m'' == m -> solve mh' sp' topt
             ex -> throwIO ex
 
     -- TODO: intersect
-    --       spine unification should not be a hard fail
-    EQ -> unify (e, sp) (e', sp')
+    --       with postponing, spine unification should not be a hard fail
+    EQ ->
+      if (unifyMode == UMConv) then do
+        unify (e, sp) (e', sp') `catchUnify` convBlockOn (singleMeta m)
+      else do
+        unify (e, sp) (e', sp')
 
 lopsidedUnfold :: DoUnify (G -> G -> IO ())
 lopsidedUnfold g g' = case ?unifyState of
@@ -914,3 +925,19 @@ instance Unify G where
       _ -> unifyError
 
 ----------------------------------------------------------------------------------------------------
+
+data Convert
+  = ConvYes
+  | ConvNo
+  | ConvBlocked MetaSet
+  deriving Show
+
+convert :: LvlArg => Val -> Val -> Convert
+convert a b =
+  let ?unifyState = USPrecise conversionSpeculation UMConv in
+  let ?locals = S.LNil in -- TODO: bogus locals here!
+  runIO do
+    (catch (ConvYes <$ unify (gjoin a) (gjoin b))) \case
+      UEConvMismatch   -> pure ConvNo
+      UEConvBlockOn ms -> pure (ConvBlocked ms)
+      UEUnifTODO       -> impossible

@@ -13,20 +13,19 @@ data RigidHead
   | RHDCon  {-# nounpack #-} DConInfo
   | RHTCon  {-# nounpack #-} TConInfo
   | RHRecTy {-# nounpack #-} RecInfo
-
-  -- Rigidly blocked coe of a *canonical* value.
-  -- This can only appear if some conversion check fails, but we want
-  -- to continue computing because we want to report multiple errors.
   | RHCoe VTy VTy Val
+  -- ^ Rigidly blocked coe of a *canonical* value.
+  --   This can only appear if some conversion check fails, but we want
+  --   to continue computing because we want to report multiple errors.
   deriving Show
 
-data MetaHead = MetaHead MetaVar Env
+data MetaHead = MetaHead {metaHeadMetaVar :: MetaVar, metaHeadEnv :: Env}
   deriving Show
 
 data FlexHead
   = FHMeta MetaHead
-  -- Flexibly blocked coe of a *canonical* value. We store one blocker MetaVar.
-  | FHCoe VTy VTy Val MetaVar
+  | FHCoe VTy VTy Val MetaSet
+  -- ^ Flexibly blocked coe of a *canonical* value.
   deriving Show
 
 -- delayed unfoldings
@@ -156,6 +155,11 @@ data Val
 
 --------------------------------------------------------------------------------
 
+flexBlockers :: FlexHead -> MetaSet
+flexBlockers = \case
+  FHMeta (MetaHead m _) -> singleMeta m
+  FHCoe _ _ _ ms        -> ms
+
 pattern LocalVar x a <- Rigid (RHLocalVar x a) SId where
   LocalVar x ~a = Rigid (RHLocalVar x a) SId
 
@@ -244,3 +248,4 @@ instance Sized Env where
     go acc (EBind0 e _) = go (acc + 1) e
 
 makeFields ''ClosureI
+makeFields ''MetaHead

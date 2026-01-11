@@ -25,6 +25,7 @@ import Control.Monad
 import Control.Exception
 import Data.Bits
 import Data.Foldable
+import Data.IntSet qualified as IS
 import Data.IORef
 import Data.List hiding (List)
 import Data.Time.Clock
@@ -338,6 +339,21 @@ newtype MetaVar = MkMetaVar Int
 
 instance Show MetaVar where
   showsPrec _ (MkMetaVar x) acc = '?': showsPrec 0 x acc
+
+newtype MetaSet = MetaSet {unMetaSet :: IS.IntSet}
+  deriving Eq        via IS.IntSet
+  deriving Show      via IS.IntSet
+  deriving Semigroup via IS.IntSet
+  deriving Monoid    via IS.IntSet
+
+singleMeta :: MetaVar -> MetaSet
+singleMeta m = MetaSet (IS.singleton (coerce m))
+
+addMeta :: MetaVar -> MetaSet -> MetaSet
+addMeta m (MetaSet ms) = MetaSet (IS.insert (coerce m) ms)
+
+inMetaSet :: MetaVar -> MetaSet -> Bool
+inMetaSet m (MetaSet ms) = IS.member (coerce m) ms
 
 --------------------------------------------------------------------------------
 

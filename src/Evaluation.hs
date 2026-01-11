@@ -7,6 +7,7 @@ import Core.Syntax qualified as S
 import Core.Info
 import Core.Value
 import Elaboration.State
+import {-# source #-} Unification
 
 {-# inline def #-}
 def :: Val -> (Val -> EnvArg => a) -> EnvArg => a
@@ -182,13 +183,56 @@ weaken act = case ?env of
   EBind e _ -> let ?env = e in act
   _         -> impossible
 
--- | Plan:
---     - look at the t *without* forcing, check canonical reductions,
---       by whnf-ing the types
---     - If that doesn't fire, check coe-refl by conv-checking
---     - Conv checking should be configured into unification
 coe :: LvlArg => Val -> Val -> Val -> Val
-coe a b t = uf
+coe a b = \case
+
+  topt@(Lam t) -> case (whnf a, whnf b) of
+    (fa@(Pi a), fb@(Pi b))
+      | a^.icit == b^.icit ->
+        Lam $ ClI (t^.name) (t^.icit) (t^.ty) \x ->
+          let x' = coe (b^.ty) (a^.ty) x in
+          coe (b ∙ x') (b ∙ x) (t ∙ x')
+      | otherwise ->
+        Rigid (RHCoe fa fb topt) SId
+    (fa@Pi{}, fb@(Flex h _)) ->
+      Flex (FHCoe fa fb topt (flexBlockers h)) SId
+    (fa@(Pi a), fb) ->
+      Rigid (RHCoe fa fb topt) SId
+
+  topt@(Rec i sp) -> case (whnf a, whnf b) of
+    (fa@(RecTy i args), fb@(RecTy i' args'))
+      | i == i' ->
+        _
+      | otherwise ->
+        Rigid (RHCoe fa fb topt) SId
+    (fa@(RecTy i args), fb@(Flex h _)) ->
+      Flex (FHCoe fa fb topt (flexBlockers h)) SId
+    (fa@(RecTy i args), fb) ->
+      Rigid (RHCoe fa fb topt) SId
+
+  topt@(Flex h sp) -> case convert a b of
+    ConvYes        -> topt
+    _              -> Flex h (SCoe sp a b)
+
+  topt@(Rigid h sp) -> case convert a b of
+    ConvYes        -> topt
+    _              -> Rigid h (SCoe sp a b)
+
+  topt@(Unfold h sp v) -> case convert a b of
+    ConvYes        -> topt
+    _              -> Unfold h (SCoe sp a b) (coe a b v)
+
+  topt@(Pi ty) -> case whnf b of
+    Set            -> topt
+    fb@(Flex h sp) -> Flex (FHCoe a fb topt (flexBlockers h)) SId
+    fb             -> Rigid (RHCoe a fb topt) SId
+
+  topt@(Quote t) -> _
+
+
+
+
+
 
 instance Eval S.Tm0 Val0 where
   eval = \case
