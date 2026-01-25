@@ -1,0 +1,774 @@
+%% build: latexmk -pdf -pvc -xelatex prez.tex
+
+\documentclass[dvipsnames,aspectratio=169]{beamer}
+\usetheme{Madrid}
+
+%% kill footline
+\setbeamertemplate{footline}[frame number]{}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{}
+
+%% bibliography
+\bibliographystyle{alpha}
+\setbeamerfont{bibliography item}{size=\footnotesize}
+\setbeamerfont{bibliography entry author}{size=\footnotesize}
+\setbeamerfont{bibliography entry title}{size=\footnotesize}
+\setbeamerfont{bibliography entry location}{size=\footnotesize}
+\setbeamerfont{bibliography entry note}{size=\footnotesize}
+\setbeamertemplate{bibliography item}{}
+
+%% kill ball enumeration
+\setbeamertemplate{enumerate items}[circle]
+\setbeamertemplate{section in toc}[circle]
+
+%% kill block shadows
+\setbeamertemplate{blocks}[rounded][shadow=false]
+\setbeamertemplate{title page}[default][colsep=-4bp,rounded=true]
+
+%% kill ball itemize
+\setbeamertemplate{itemize items}[circle]
+
+%% --------------------------------------------------------------------------------
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{cite}
+\usepackage{amsthm}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{mathpartir}
+\usepackage{scalerel}
+\usepackage{stmaryrd}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{fontspec}
+\usepackage{textcomp}
+\usepackage{fancyvrb}
+\usepackage{tikz-cd}
+\usepackage{minted}
+
+\tikzcdset{scale cd/.style={every label/.append style={scale=#1},
+    cells={nodes={scale=#1}}}}
+
+\setmonofont[Scale=0.8]{DejaVu Sans Mono Bold}
+
+%% --------------------------------------------------------------------------------
+
+%% HoTT style composition
+\makeatletter
+\DeclareRobustCommand{\sqcdot}{\mathbin{\mathpalette\morphic@sqcdot\relax}}
+\newcommand{\morphic@sqcdot}[2]{%
+  \sbox\z@{$\m@th#1\centerdot$}%
+  \ht\z@=.33333\ht\z@
+  \vcenter{\box\z@}%
+}
+\makeatother
+
+\renewcommand{\mit}[1]{{\mathit{#1}}}
+\newcommand{\ttt}[1]{{\texttt{#1}}}
+\newcommand{\msf}[1]{{\mathsf{#1}}}
+\newcommand{\mbf}[1]{{\mathbf{#1}}}
+\newcommand{\mbb}[1]{\mathbb{#1}}
+\newcommand{\U}{\mathsf{U}}
+\newcommand{\code}{\mathsf{code}}
+\newcommand{\bs}[1]{\boldsymbol{#1}}
+\newcommand{\wh}[1]{\widehat{#1}}
+\newcommand{\mdo}{\mbf{do}\,}
+\newcommand{\ind}{\hspace{1em}}
+\newcommand{\bif}{\mbf{if}\,}
+\newcommand{\bthen}{\mbf{then}\,}
+\newcommand{\belse}{\mbf{else}\,}
+\newcommand{\return}{\mbf{return}\,}
+\newcommand{\pure}{\mbf{pure}\,}
+\newcommand{\lam}{\lambda\,}
+\newcommand{\data}{\mbf{data}\,}
+\newcommand{\where}{\mbf{where}}
+\newcommand{\M}{\msf{M}}
+\newcommand{\letrec}{\mbf{letrec}\,}
+\newcommand{\of}{\mbf{of}\,}
+\newcommand{\go}{\mit{go}}
+\newcommand{\add}{\mit{add}}
+\newcommand{\letdef}{\mbf{let\,}}
+\newcommand{\map}{\mit{map}}
+\newcommand{\emptycon}{\scaleobj{.75}\bullet}
+\newcommand{\Tyo}{\msf{Ty}_{\mbbo}}
+\newcommand{\Tmo}{\msf{Tm}_{\mbbo}}
+\newcommand{\whset}{\wh{\Set}}
+\newcommand{\ev}{\mbb{E}}
+\newcommand{\re}{\mbb{R}}
+
+
+\newcommand{\mbbc}{\mbb{C}}
+\newcommand{\mbbo}{\mbb{O}}
+
+\newcommand{\vas}{\mathsf{as}}
+\newcommand{\vbs}{\mathsf{bs}}
+\newcommand{\vcs}{\mathsf{cs}}
+\newcommand{\vxs}{\mathsf{xs}}
+\newcommand{\vys}{\mathsf{ys}}
+\newcommand{\vsp}{\mathsf{sp}}
+\newcommand{\vma}{\mathsf{ma}}
+\newcommand{\vga}{\mathsf{ga}}
+\newcommand{\vm}{\mathsf{m}}
+\newcommand{\vn}{\mathsf{n}}
+\newcommand{\vk}{\mathsf{k}}
+\newcommand{\vA}{\mathsf{A}}
+\newcommand{\vB}{\mathsf{B}}
+\newcommand{\vC}{\mathsf{C}}
+\newcommand{\vS}{\mathsf{S}}
+\newcommand{\vF}{\mathsf{F}}
+\newcommand{\vR}{\mathsf{R}}
+\newcommand{\vM}{\mathsf{M}}
+\newcommand{\vmb}{\mathsf{mb}}
+\newcommand{\mAs}{\mathsf{As}}
+\newcommand{\va}{\mathsf{a}}
+\newcommand{\vb}{\mathsf{b}}
+\newcommand{\vc}{\mathsf{c}}
+\newcommand{\vd}{\mathsf{d}}
+\newcommand{\vx}{\mathsf{x}}
+\newcommand{\vy}{\mathsf{y}}
+\newcommand{\vz}{\mathsf{z}}
+\newcommand{\vf}{\mathsf{f}}
+\newcommand{\vfs}{\mathsf{fs}}
+\newcommand{\vg}{\mathsf{g}}
+\newcommand{\vh}{\mathsf{h}}
+\newcommand{\vt}{\mathsf{t}}
+\newcommand{\vs}{\mathsf{s}}
+\newcommand{\vr}{\mathsf{r}}
+\newcommand{\vu}{\mathsf{u}}
+\newcommand{\vl}{\mathsf{l}}
+\newcommand{\vns}{\mathsf{ns}}
+\newcommand{\vW}{\mathsf{W}}
+\newcommand{\vsup}{\mathsf{sup}}
+\newcommand{\vid}{\mathsf{id}}
+\newcommand{\whW}{\wh{\vW}}
+
+
+\newcommand{\SOP}{\msf{SOP}}
+\newcommand{\El}{\msf{El}}
+\newcommand{\USOP}{\msf{U}_{\msf{SOP}}}
+\newcommand{\Uprod}{\msf{U_P}}
+\newcommand{\Elprod}{\msf{El_{P}}}
+\newcommand{\IsSOP}{\msf{IsSOP}}
+\newcommand{\forEach}{\msf{forEach}}
+\newcommand{\single}{\msf{single}}
+\newcommand{\msplit}{\msf{split}}
+\newcommand{\mapGen}{\msf{mapGen}}
+\newcommand{\genPull}{\msf{gen_{Pull}}}
+\newcommand{\Set}{\msf{Set}}
+\newcommand{\casePull}{\msf{case_{Pull}}}
+\newcommand{\appull}{\ap_{\Pull}}
+
+\newcommand{\Con}{\msf{Con}}
+\newcommand{\Sub}{\msf{Sub}}
+\newcommand{\Tm}{\msf{Tm}}
+\newcommand{\Mor}{\msf{Tm}}
+
+\newcommand{\ext}{\triangleright}
+
+\newcommand{\Int}{\msf{Int}}
+\newcommand{\List}{\msf{List}}
+\newcommand{\Tree}{\msf{Tree}}
+\newcommand{\Node}{\msf{Node}}
+\newcommand{\Leaf}{\msf{Leaf}}
+\newcommand{\Nil}{\msf{Nil}}
+\newcommand{\Cons}{\msf{Cons}}
+\newcommand{\Reader}{\msf{Reader}}
+\newcommand{\ReaderT}{\msf{ReaderT}}
+\newcommand{\Monad}{\msf{Monad}}
+\newcommand{\Applicative}{\msf{Applicative}}
+\newcommand{\class}{\msf{class}}
+\newcommand{\Functor}{\msf{Functor}}
+\newcommand{\Bool}{\msf{Bool}}
+\newcommand{\Statel}{\msf{State}}
+\newcommand{\fro}{\leftarrow}
+\newcommand{\case}{\mbf{case\,}}
+\newcommand{\foldr}{\msf{foldr}}
+\newcommand{\foldl}{\msf{foldl}}
+\newcommand{\rep}{\msf{rep}}
+\newcommand{\concatMap}{\msf{concatMap}}
+
+\newcommand{\Lift}{{\Uparrow}}
+\newcommand{\Up}{{\Uparrow}}
+\newcommand{\spl}{{\bs{\sim}}}
+\newcommand{\ql}{{\bs{\langle}}}
+\newcommand{\qr}{{\bs{\rangle}}}
+\newcommand{\bind}{\mathbin{>\!\!>\mkern-6.7mu=}}
+
+\newcommand{\MTy}{\msf{MetaTy}}
+\newcommand{\MTm}{\msf{MetaTm}}
+\newcommand{\VTy}{\msf{ValTy}}
+\newcommand{\Ty}{\msf{Ty}}
+\newcommand{\CTy}{\msf{CompTy}}
+\newcommand{\True}{\msf{True}}
+\newcommand{\False}{\msf{False}}
+\newcommand{\fst}{\msf{fst}}
+\newcommand{\snd}{\msf{snd}}
+
+\newcommand{\blank}{{\mathord{\hspace{1pt}\text{--}\hspace{1pt}}}}
+
+\newcommand{\Nat}{\msf{Nat}}
+\newcommand{\Zero}{\msf{Zero}}
+\newcommand{\Suc}{\msf{Suc}}
+\newcommand{\Maybe}{\msf{Maybe}}
+\newcommand{\MaybeT}{\msf{MaybeT}}
+\newcommand{\Nothing}{\msf{Nothing}}
+\newcommand{\Just}{\msf{Just}}
+
+\theoremstyle{remark}
+\newtheorem{notation}{Notation}
+\newtheorem*{axiom}{Axiom}
+
+\newcommand{\id}{\mit{id}}
+\newcommand{\mup}{\mbf{up}}
+\newcommand{\mdown}{\mbf{down}}
+\newcommand{\tyclass}{\mbf{class}}
+\newcommand{\instance}{\mbf{instance}\,}
+\newcommand{\Improve}{\msf{Improve}}
+\newcommand{\Gen}{\msf{Gen}}
+\newcommand{\unGen}{\mit{unGen}}
+\renewcommand{\Vec}{\msf{Vec}}
+\newcommand{\gen}{\mit{gen}}
+\newcommand{\genRec}{\mit{genRec}}
+\newcommand{\fmap}{<\!\!\$\!\!>}
+\newcommand{\ap}{{<\!\!*\!\!>}}
+\newcommand{\runGen}{\mit{runGen}}
+\newcommand{\qt}[1]{\ql#1\qr}
+\newcommand{\lift}{\mit{lift}}
+\newcommand{\liftGen}{\mit{liftGen}}
+\newcommand{\MonadGen}{\msf{MonadGen}}
+\newcommand{\MonadState}{\msf{MonadState}}
+\newcommand{\MonadReader}{\msf{MonadReader}}
+\newcommand{\RA}{\Rightarrow}
+\newcommand{\EitherT}{\msf{EitherT}}
+\newcommand{\Either}{\msf{Either}}
+\newcommand{\Left}{\msf{Left}}
+\newcommand{\Right}{\msf{Right}}
+\newcommand{\StateT}{\msf{StateT}}
+\newcommand{\Identity}{\msf{Identity}}
+
+\newcommand{\Stop}{\msf{Stop}}
+\newcommand{\Skip}{\msf{Skip}}
+\newcommand{\Yield}{\msf{Yield}}
+
+\newcommand{\runIdentity}{\mit{runIdentity}}
+\newcommand{\runReaderT}{\mit{runReaderT}}
+\newcommand{\newtype}{\mbf{newtype}\,}
+\newcommand{\runMaybeT}{\mit{runMaybeT}}
+\newcommand{\runStateT}{\mit{runStateT}}
+\newcommand{\runState}{\mit{runState}}
+\newcommand{\dlr}{\,\$\,}
+\newcommand{\ImproveF}{\msf{ImproveF}}
+\newcommand{\ExceptT}{\msf{ExceptT}}
+\newcommand{\State}{\msf{State}}
+\newcommand{\SumVS}{\msf{SumVS}}
+\newcommand{\ProdCS}{\msf{ProdCS}}
+\newcommand{\Here}{\msf{Here}}
+\newcommand{\There}{\msf{There}}
+\newcommand{\IsSumVS}{\msf{IsSumVS}}
+\newcommand{\MonadJoin}{\msf{MonadJoin}}
+\newcommand{\Stream}{\msf{Stream}}
+\newcommand{\join}{\mit{join}}
+\newcommand{\modify}{\mit{modify}}
+\newcommand{\get}{\mit{get}}
+\newcommand{\mput}{\mit{put}}
+\newcommand{\Rep}{\mit{Rep}}
+\newcommand{\encode}{\mit{encode}}
+\newcommand{\decode}{\mit{decode}}
+\newcommand{\mindex}{\mit{index}}
+\newcommand{\mtabulate}{\mit{tabulate}}
+\newcommand{\States}{\mit{States}}
+\newcommand{\seed}{\mit{seed}}
+\newcommand{\step}{\mit{step}}
+\newcommand{\Step}{\msf{Step}}
+\newcommand{\Pull}{\msf{Pull}}
+\newcommand{\MkPull}{\msf{MkPull}}
+
+\newcommand{\RED}[1]{{\color{BrickRed} #1}}
+\newcommand{\GRN}[1]{{\color{OliveGreen} #1}}
+\newcommand{\RBL}[1]{{\color{RoyalBlue} #1}}
+\newcommand{\BLU}[1]{{\color{Blue} #1}}
+\newcommand{\bsl}{\textbackslash}
+\newcommand{\brl}{\textbraceleft}
+\newcommand{\brr}{\textbraceright}
+
+\newcommand{\vso}{\vspace{1em}}
+
+%% --------------------------------------------------------------------------------
+
+\title{Programming With Two-Level Type Theory}
+\author{András Kovács}
+\institute{University of Gothenburg \& Chalmers University of Technology}
+\date{29th Jan 2026, TFP 26, Odense}
+\begin{document}
+
+\frame{\titlepage}
+
+
+\begin{frame}{Goal}
+
+High-level high-performance programming.
+\vso
+
+\begin{itemize}
+\item High-level: FP abstractions, generic programming, strong types.
+\item High-performance: control over code generation, memory layout, allocation.
+\end{itemize}
+\vspace{1em}
+
+Non-goal: ``systems'' programming.
+\vspace{1em}
+
+Substantial RTS with GC \& full memory safety.
+
+\end{frame}
+
+
+
+%% \begin{frame}[fragile]{notes}
+
+%% \begin{minted}{haskell}
+%%   f :: Int -> Reader Bool Int
+%%   f x = do
+%%     b <- ask
+%%     if b then return (x + 10)
+%%          else return (x + 20)
+%% \end{minted}
+
+%% \end{frame}
+
+
+%% \begin{frame}[fragile]{Compiling monads in GHC Haskell}
+
+%% \begin{columns}
+%% \begin{column}{0.3\textwidth}
+%% \textbf{Source:}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+
+%%     \BLU{f} \RBL{::} \GRN{Reader Bool Int}
+%%     \BLU{f} \RBL{=} \RED{do}
+%%       b \RBL{<-} ask
+%%       \RED{if} b \RED{then} return 10
+%%            \RED{else} return 20
+
+
+
+
+
+
+%% \end{Verbatim}
+%% \end{column}
+%% \pause
+%% \begin{column}{0.5\textwidth}
+%% \textbf{\texttt{-O0} Core output:}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+
+%%     \BLU{dict1} :: \GRN{Monad} (\GRN{Reader Int})
+%%     \BLU{dict1} = \GRN{MkMonad} ...
+
+%%     \BLU{dict2} :: \GRN{MonadReader} (\GRN{Reader Int})
+%%     \BLU{dict2} = \GRN{MkMonadReader} ...
+
+%%     \BLU{f} :: \GRN{Reader Bool Int}
+%%     \BLU{f} \RBL{=} (\RBL{>>=}) dict1 (ask dict2) (\RBL{\bsl}b \RBL{->}
+%%       \RED{case} b \RED{of}
+%%         \GRN{True } \RBL{->} return dict1 10
+%%         \GRN{False} \RBL{->} return dict1 20)
+%% \end{Verbatim}
+%% \end{column}
+%% \end{columns}
+
+%% \end{frame}
+
+%% %% f = >>=
+%% %%       $dMonad_rHr
+%% %%       (ask ($fMonadReaderrReaderT $fMonadIdentity))
+%% %%       (\ b_aAg ->
+%% %%          case b_aAg of {
+%% %%            False -> return $dMonad_rHr (I# 20#);
+%% %%            True -> return $dMonad_rHr (I# 10#)
+%% %%          })
+
+
+%% \begin{frame}[fragile]{Compiling monads in GHC Haskell}
+
+%% \textbf{\texttt{-O1} output:}
+%% \vspace{1em}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%                              \BLU{f} \RBL{::} \GRN{Bool} \RBL{->} \GRN{Int}
+%%                              \BLU{f} b = \RED{case} b \RED{of}
+%%                                \GRN{True}  \RBL{->} 10
+%%                                \GRN{False} \RBL{->} 20
+%% \end{Verbatim}
+%% \vspace{1em}
+%% \emph{Optimization is hard!}
+%% \vspace{1em}
+
+%% Example: \ttt{\BLU{mapM}} is third-order \& rank-2 polymorphic, but almost all use cases should
+%% compile to first-order monomorphic code.
+%% \vspace{1em}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{mapM} \RBL{::} \GRN{Monad} m \RBL{=>} (a \RBL{->} m b) \RBL{->} [a] \RBL{->} m [b]
+%% \end{Verbatim}
+%% \vspace{1em}
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{Compiling monads in GHC Haskell}
+
+%% \[\begin{tikzcd}[scale cd=1.1, sep=normal]
+%% 	Source &&&&& Core &&&&& {...}
+%% 	\arrow["{Elaboration}"', from=1-1, to=1-6]
+%% 	\arrow["\begin{array}{c} Aggressive\\general\!-\!purpose\,optimization \end{array}", from=1-6, to=1-6, loop, in=55, out=125, distance=10mm]
+%% 	\arrow["Compilation"', from=1-6, to=1-11]
+%% \end{tikzcd}\]
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{Proposal}
+
+%% \[\begin{tikzcd}[scale cd=1.1, sep=normal]
+%% 	Source && Metaprograms &&&& Core &&& {...}
+%% 	\arrow["Elaboration"', from=1-1, to=1-3]
+%% 	\arrow["{Compile\!-\!time\,execution}"', from=1-3, to=1-7]
+%% 	\arrow["{Conservative\,optimization}", from=1-7, to=1-7, loop, in=55, out=125, distance=10mm]
+%% 	\arrow["Compilation"', from=1-7, to=1-10]
+%% \end{tikzcd}\]
+%% \vspace{2em}
+
+%% The paper explores \textbf{monad transformers} and stream fusion using this design.
+
+
+%% \end{frame}
+
+
+%% \begin{frame}[fragile]{Proposal}
+
+%% \begin{columns}
+%% \begin{column}{0.3\textwidth}
+%% \textbf{Source in WIP language:}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{f} : \GRN{Reader Bool Int}
+%%     \BLU{f} \RBL{:=} \RED{do}
+%%       b \RBL{<-} ask
+%%       \RED{if} b \RED{then} return 10
+%%            \RED{else} return 20
+%% \end{Verbatim}
+
+%% \end{column}
+%% \begin{column}{0.6\textwidth}
+%% \begin{itemize}
+%% \item Looks similar to Haskell.
+%% \item Desugaring \& elaboration does slightly more work.
+%% \item Compilation to efficient code is formally guaranteed.
+%% \end{itemize}
+%% \end{column}
+%% \end{columns}
+%% \vspace{1em}
+%% \pause
+
+%% \begin{block}{}
+%% \textbf{Setup}
+%% \begin{itemize}
+%% \item \emph{Two-level type theory (2LTT)}:
+%%   \begin{itemize}
+%%     \item Metalanguage (compile time): dependently typed.
+%%     \item Object language (runtime): simply typed, \emph{polarized}.
+%%     \item The two are smoothly integrated.
+%%   \end{itemize}
+%% \end{itemize}
+%% \end{block}
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{The 2LTT}
+
+%% \begin{itemize}
+%%   \item \textbf{\ttt{\GRN{MetaTy}}}: universe of meta-level types.
+%%   \item \textbf{\ttt{\GRN{Ty}}}: universe of object-level types. \alert{Polarization}:
+%%     \textbf{\ttt{\GRN{ValTy}}} and \textbf{\ttt{\GRN{CompTy}}} are sub-universes of \textbf{\ttt{\GRN{Ty}}}.
+%% \end{itemize}
+%% \vspace{1em}
+
+%% \begin{columns}
+%% \begin{column}{0.4\textwidth}
+%% \textbf{A meta-level program}:
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%   \BLU{id} \RBL{:} {\textbraceleft}A \RBL{:} \GRN{MetaTy}{\textbraceright} \RBL{->} A \RBL{->} A
+%%   \BLU{id} x \RBL{=} x
+
+
+
+
+%% \end{Verbatim}
+%% \end{column}
+
+%% \begin{column}{0.6\textwidth}
+%% \textbf{An object-level program:}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%   \RED{data} \GRN{List} (A \RBL{:} \GRN{ValTy}) \RBL{:=} \GRN{Nil} | \GRN{Cons} A (\GRN{List} A)
+
+%%   \BLU{myMap} \RBL{:} \GRN{List Int} \RBL{->} \GRN{List Int}
+%%   \BLU{myMap} ns \RBL{:=} \RED{case} xs \RED{of}
+%%     \GRN{Nil}       \RBL{->} \GRN{Nil}
+%%     \GRN{Cons} n ns \RBL{->} \GRN{Cons} (n + 10) (myMap ns)
+%% \end{Verbatim}
+%% \end{column}
+%% \end{columns}
+%% \vspace{2em}
+%% \emph{Polarization lets us control closure creation through types.}
+%% \end{frame}
+
+%% %% \begin{frame}[fragile]{Closure-freedom}
+
+%% %% In the object language:
+%% %% \begin{itemize}
+%% %%   \item Closures are \textbf{values}.
+%% %%   \item Statically known functions are \textbf{computations}.
+%% %%   \item If we don't ask for closures, we don't get them!
+%% %% \end{itemize}
+%% %% \vspace{1em}
+
+%% %% Essential usage of closures is surprisingly rare!
+
+%% %% \vspace{1em}
+%% %% Closure-freedom is a good indicator of low-cost abstraction.
+
+
+%% %% \end{frame}
+
+%% \begin{frame}[fragile]{The 2LTT - interaction between stages}
+
+%% \begin{itemize}
+%% \item \textbf{Lifting}: for \ttt{A \RBL{:} \GRN{Ty}}, we have \ttt{\RED{⇑}A \RBL{:} \GRN{MetaTy}}, as the type of
+%%       metaprograms that produce \ttt{A}-typed object programs.
+%% \item \textbf{Quoting}: for \ttt{t \RBL{:} A} and \ttt{A \RBL{:} \GRN{Ty}}, we have \ttt{\RED{<}t\RED{>} : \RED{⇑}A} as the metaprogram
+%%       which immediately returns \ttt{t}.
+%% \item \textbf{Splicing}: for \ttt{t : \RED{⇑}A}, we have \ttt{\RED{\char`~}t \RBL{:} A} which runs the
+%%        metaprogram \ttt{t} and inserts its output in some object-level code.
+%% \item Definitional equalities: \ttt{\RED{\char`~<}t\RED{>} ≡ t} and \ttt{\RED{<\char`~}t\RED{>} ≡ t}.
+%% \end{itemize}
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{Staged example}
+
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{map} \RBL{:} {\textbraceleft}A B \RBL{:} \GRN{ValTy}{\textbraceright} \RBL{->} (\RED{⇑}A \RBL{->} \RED{⇑}B) \RBL{->} \RED{⇑}(\GRN{List} A) \RBL{->} \RED{⇑}(\GRN{List} B)
+%%     \BLU{map} f as \RBL{=} \RED{<letrec} go as \RBL{:=} \RED{case} as \RED{of}
+%%                   \GRN{Nil}       \RBL{->} \GRN{Nil}
+%%                   \GRN{Cons} a as \RBL{->} \GRN{Cons} \RED{~}(f \RED{<}a\RED{>}) (go as)
+%%                 \RED{in} go \RED{~}as\RED{>}
+
+%%     \BLU{myMap} \RBL{:} \GRN{List Int} \RBL{->} \GRN{List Int}
+%%     \BLU{myMap} ns \RBL{:=} \RED{~}(map (\RBL{\bsl}x\RBL{.} \RED{<~}x \RBL{+} 10\RED{>}) \RED{<}ns\RED{>})
+%% \end{Verbatim}
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{Staged example - with stage inference}
+
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{map} \RBL{:} {\textbraceleft}A B \RBL{:} \GRN{ValTy}{\textbraceright} \RBL{->} (A \RBL{->} B) \RBL{->} \GRN{List} A \RBL{->} \GRN{List} B
+%%     \BLU{map} f \RBL{=} \RED{letrec} go as \RBL{:=} \RED{case} as \RED{of}
+%%                \GRN{Nil}       \RBL{->} \GRN{Nil}
+%%                \GRN{Cons} a as \RBL{->} \GRN{Cons} (f a) (go as)
+%%             \RED{in} go
+
+%%     \BLU{myMap} \RBL{:} \GRN{List Int} \RBL{->} \GRN{List Int}
+%%     \BLU{myMap} \RBL{:=} map (\RBL{\bsl}x\RBL{.} x \RBL{+} 10)
+%% \end{Verbatim}
+%% \end{frame}
+
+%% \begin{frame}[fragile]{A monad for code generation}
+
+%% Type classes (and monads) only exist in the metalanguage.
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \RED{class} \GRN{Monad} (M \RBL{:} \GRN{MetaTy} \RBL{->} \GRN{MetaTy}) \RED{where}
+%%       return \RBL{:} A \RBL{->} M A
+%%       (\RBL{>>=})  \RBL{:} M A \RBL{->} (A \RBL{->} M B) \RBL{->} M B
+%% \end{Verbatim}
+%% \pause
+%% \vspace{0.5em}
+%% \ttt{\GRN{Gen}} is a Monad whose effect is \textbf{generating object code}:
+%% \vspace{0.5em}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \RED{newtype} \GRN{Gen} A \RBL{=} \GRN{Gen} {\brl}unGen \RBL{:} {\brl}R \RBL{:} \GRN{Ty}\brr \RBL{->} (A \RBL{->} \RED{⇑}R) \RBL{->} \RED{⇑}R\brr
+%%     \RED{instance} \GRN{Monad} \GRN{Gen} \RED{where} ...
+
+%%     \BLU{runGen} \RBL{:} \GRN{Gen} (\RED{⇑}A) \RBL{->} \RED{⇑}A
+%%     \BLU{runGen} (\GRN{Gen} f) \RBL{=} f id
+%% \end{Verbatim}
+%% \pause
+%% \vspace{0.3em}
+%% Generating an object-level \ttt{let}-definition:
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{gen} \RBL{:} {\brl}A \RBL{:} \GRN{Ty}\brr \RBL{->} \RED{⇑}A \RBL{->} \GRN{Gen} (\RED{⇑}A)
+%%     \BLU{gen} {\brl}A\brr a \RBL{=} \GRN{Gen} \RBL{$} \RBL{{\bsl}}k\RBL{.} \RED{<let} x \RBL{:} A \RBL{:=} \RED{~}a \RED{in} \RED{~}(k \RED{<}x\RED{>})\RED{>}
+%% \end{Verbatim}
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{A monad for code generation}
+
+%% \begin{columns}
+%% \begin{column}{0.4\textwidth}
+%% \textbf{Metaprogram:}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{foo} \RBL{:} \GRN{Int}
+%%     \BLU{foo} \RBL{:=} \RED{~}(runGen \RBL{$} \RED{do}
+%%       x \RBL{<-} gen \RED{<}10 \RBL{+} 10\RED{>}
+%%       y \RBL{<-} gen \RED{<~}x \RBL{*} \RED{~}x\RED{>}
+%%       return \RED{<~}x \RBL{*} \RED{~}y\RED{>})
+%% \end{Verbatim}
+%% \end{column}
+
+%% \begin{column}{0.5\textwidth}
+%% \textbf{$\hspace{1em}$Code output:}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%      \BLU{foo} \RBL{:} \GRN{Int}
+%%      \BLU{foo} \RBL{:=} \RED{let} x \RBL{:=} 10 \RBL{+} 10 \RED{in}
+%%             \RED{let} y \RBL{:=} x \RBL{*} x \RED{in}
+%%             x \RBL{*} y
+
+%% \end{Verbatim}
+%% \end{column}
+%% \end{columns}
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{Generating monadic code}
+
+%% We want to define efficient code generation for a monad \texttt{M}.
+%% {\center
+%% \begin{block}{}
+%% \center\emph{\texttt{M} extended with \texttt{\GRN{Gen}} at the bottom yields
+%% the corresponding code generator monad.}
+%% \end{block}}
+
+%% \vspace{1em}
+
+%% For example:
+%% \begin{itemize}
+%% \item \texttt{\GRN{ReaderT} (\RED{⇑}R) \GRN{Gen} (\RED{⇑}A)} actions
+%%       are code generators for \texttt{\GRN{Reader} R A}.
+%% \item \texttt{\GRN{StateT} (\RED{⇑}S) \GRN{Gen} (\RED{⇑}A)} actions
+%%       are code generators for \texttt{\GRN{State} S A}.
+%% \end{itemize}
+%% \vspace{0.5em}
+
+%% \pause
+%% In each case, we can convert back-and forth, e.g.\
+%% \vspace{0.5em}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{up}   : \RED{⇑}(\GRN{Reader} R A) \RBL{->} \GRN{ReaderT} (\RED{⇑}R) \GRN{Gen} (\RED{⇑}A)
+%%     \BLU{down} : \GRN{ReaderT} (\RED{⇑}R) \GRN{Gen} (\RED{⇑}A) \RBL{->} \RED{⇑}(\GRN{Reader} R A)
+%% \end{Verbatim}
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{Generating monadic code}
+
+%% \begin{columns}
+%% \begin{column}{0.4\textwidth}
+%% \textbf{Metaprogram:}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{action} \RBL{:} \GRN{Reader} \GRN{Int} \GRN{Int}
+%%     \BLU{action} \RBL{:=} \RED{~}(down \RBL{$} \RED{do}
+%%       x \RBL{<-} ask
+%%       x \RBL{<-} ask
+%%       return \RED{<~}x \RBL{+} \RED{~}x\RED{>})
+%% \end{Verbatim}
+%% \end{column}
+
+%% \begin{column}{0.5\textwidth}
+%% \textbf{$\hspace{1em}$Output:}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{action} \RBL{:} \GRN{Reader} \GRN{Int} \GRN{Int}
+%%     \BLU{action} \RBL{:=} \GRN{Reader} (\RBL{\bsl}x\RBL{.} x \RBL{+} x)
+
+
+
+%% \end{Verbatim}
+%% \end{column}
+%% \end{columns}
+%% \vspace{2em}
+
+%% \emph{We get ``fusion'' for monadic code.}
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{Pattern matching on object-level values}
+
+%% How do we inspect the structure of object-level values at compile time?
+%% \vspace{1em}
+
+%% We don't directly support looking inside object expressions (it breaks some things).
+%% \vspace{1em}
+
+%% But we can generate object-level pattern matches in \texttt{\GRN{Gen}}:
+%% \vspace{0.5em}
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%     \BLU{split} \RBL{:} \RED{⇑}\GRN{Bool} \RBL{->} \GRN{Gen} \GRN{MetaBool}
+%%     \BLU{split} b \RBL{=} \GRN{Gen} \RBL{$} \RBL{\bsl}k\RBL{.} \RED{<case ~}b \RED{of}
+%%       \GRN{True } \RBL{->} \RED{~}(k \GRN{MetaTrue})
+%%       \GRN{False} \RBL{->} \RED{~}(k \GRN{MetaFalse})\RED{>}
+%% \end{Verbatim}
+
+%% \vspace{1em}
+%% \texttt{\BLU{split}} generalizes to all object ADT-s and all \texttt{\GRN{Gen}}-based monads.
+
+%% \end{frame}
+
+%% \begin{frame}[fragile]{Compiling monads - example}
+
+%% \begin{Verbatim}[commandchars=\\\{\}]
+%%       \BLU{f} \RBL{:} \GRN{Reader Bool Int}            \BLU{f} \RBL{:} \GRN{Reader Bool Int}
+%%       \BLU{f} \RBL{:=} \RED{do}                        \BLU{f} \RBL{:=} \RED{~}(down \RBL{$} \RED{do}
+%%         b \RBL{<-} ask              ==>      b \RBL{<-} ask
+%%         \RED{if} b \RED{then} return 10            split b \RBL{>>=} \RBL{\bsl}\RED{case}
+%%              \RED{else} return 20               \GRN{MetaTrue}  \RBL{->} return \RED{<}10\RED{>}
+%%                                           \GRN{MetaFalse} \RBL{->} return \RED{<}20\RED{>})
+
+
+%%                         \BLU{f} \RBL{:} \GRN{Reader Bool Int}
+%%                   ==>   \BLU{f} \RBL{:=} \GRN{Reader} (\RBL{\bsl}b\RBL{.} \RED{case} b \RED{of}
+%%                            \GRN{True}  \RBL{->} 10
+%%                            \GRN{False} \RBL{->} 20)
+%% \end{Verbatim}
+
+
+%% \end{frame}
+
+
+
+
+%% \begin{frame}{More things}
+
+%% More in the paper and artifact:
+%% \begin{itemize}
+%%   \item Handling join points in monads.
+%%   \item Handling mutually recursive blocks.
+%%   \item Stream fusion.
+%%   \item More metatheory.
+%%   \item Adaptation as Agda and Typed Template Haskell libraries.
+%% \end{itemize}
+%% \vspace{1em}
+
+%% Work in progress:
+%% \begin{itemize}
+%% \item Standalone prototype targeting LLVM.
+%% \item Deploying the Template Haskell library in the Agda source code,
+%%       in high-performance generics.
+%% \end{itemize}
+
+%% \pause
+%% \begin{center}
+
+%%   \Large{\textbf{Thank you!}}
+
+%% \end{center}
+%% \end{frame}
+\bibliography{references}
+
+\end{document}

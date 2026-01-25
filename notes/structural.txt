@@ -1,0 +1,121 @@
+
+Abstract closures a la Bowman & Ahmed
+
+
+-- Ty    : Set
+-- Scope : Set⁺
+-- Tm    : Scope → Ty → Set⁺
+-- Π     : (A : Ty) → (∀ s → Tm s A → Ty) → Ty
+-- Cl    : (A : Ty) → (Tm s A → Ty) → Ty
+
+-- -- lam, app : (∀ s' (a : Tm s' A) → Tm s' (B s' a)) ≃ Tm s (Π A B)
+-- -- mkcl : (t : Tm s A) → Tm s (Π
+-- -- appcl
+
+Simply typed abstract closures
+
+
+
+Ty    : Set
+Scope : Set⁺
+Tm    : Scope → Ty → Set⁺
+
+_→_   : Ty → Ty → Ty
+Cl    : Ty → Ty → Ty
+
+lam,app : (∀ s → Tm s A → Tm s B) ≃ Tm s (A → B)
+
+mkcl  : Tm s E → (∀ s → Tm s E → Tm s A → Tm s B) → Tm s (Cl A B)
+appcl : Tm s (Cl A B) → Tm s A → Tm s B
+
+β : appcl {s} (mkcl e t) u = t s e u
+η : (t t' : Tm s (Cl A B)) → (∀ u → appcl t u = appcl t' u) → t = t'
+
+let foo = mkcl (10, 20) (λ s e a. ....)
+
+
+
+-- Abstract closures
+--------------------------------------------------------------------------------
+
+
+Ty    : Set
+Scope : Set⁺
+Tm    : Scope → Ty → Set⁺
+Cl    : ∀ {s} → (A : Ty) → (Tm s A → Ty) → Ty
+Σ     : ∀ {s} → (A : Ty) → (Tm s A → Ty) → Ty
+...   : Tm s (Σ A B) ≃ ((a : Tm s A) × Tm s (B a))
+⊤     : Ty
+...   : Tm s ⊤ ≃ ⊤
+
+mkcl :
+  (e : Tm s E)
+  (A : ∀ s → Tm s E → Ty)
+  (B : ∀ s (e : Tm s E) → Tm s (A s e) → Ty)
+  (t : ∀ s (e : Tm s E) (a : Tm s (A s e)) → Tm s (B s e a))
+  → Tm s (Cl (A s e) (B s e))
+
+appcl : ∀ s → (t : Tm s (Cl A B))(u : Tm s A) → Tm s (B u)
+
+β : appcl s (mkcl e A B t) u = t s e u
+η : (t t' : Tm s (Cl A B)) → (∀ u → appcl s t u = appcl s t' u) → t = t'
+
+--------------------------------------------------------------------------------
+
+
+
+
+Ty        : ℕ → Set
+Scope     : Set⁺
+Tm        : Scope → Ty i → Set⁺
+Cl        : ∀ {s} → (A : Ty i) → (Tm s A → Ty j) → Ty (i ⊔ j)
+Σ         : ∀ {s} → (A : Ty i) → (Tm s A → Ty j) → Ty (i ⊔ j)
+...       : Tm s (Σ A B) ≃ ((a : Tm s A) × Tm s (B a))
+⊤         : Ty
+...       : Tm s ⊤ ≃ ⊤
+U         : (i : ℕ) → Ty (suc i)
+(El,code) : Tm Γ (U i) ≃ Ty i
+
+lam :
+  {E : Ty i}
+  (e : Tm s E)
+  (A : ∀ s → Tm s E → Ty j)
+  (B : ∀ s (e : Tm s E) → Tm s (A s e) → Ty k)
+  (t : ∀ s (e : Tm s E) (a : Tm s (A s e)) → Tm s (B s e a))
+  → Tm s (Cl (A s e) (B s e))
+
+app : ∀ s → (t : Tm s (Cl A B))(u : Tm s A) → Tm s (B u)
+
+β : app s (lam e A B t) u = t s e u
+η : (t t' : Tm s (Cl A B)) → (∀ u → app s t u = app s t' u) → t = t'
+
+
+--------------------------------------------------------------------------------
+
+Closure conversion:
+  - work internally to 2LTT over TT with structural closures
+  - have first-order syntax of source MLTT in the 2lTT
+  - define a model of the MLTT
+  - externalize to get a syntactic translation
+
+--------------------------------------------------------------------------------
+
+(Γ : S.Con)
+  lvl Γ  : ℕ               -- max of levels of types in Γ
+  Γᵉ     : Set             -- semantic context as external Σ-type
+  Γⁱ     : Ty (lvl Γ)      -- semantic context as internal Σ-type
+  (↓,↑)  : Γᵉ ≃ Γⁱ
+
+(A : S.Ty Γ i)
+  Aⁱ : Γᵉ → Ty i
+
+(t : S.Tm Γ {i} A)
+  tⁱ : (γ : Γᵉ) → Aⁱ γ
+
+(σ : S.Sub Γ Δ)
+  σᵉ : Γᵉ → Δᵉ
+
+
+
+
+--------------------------------------------------------------------------------

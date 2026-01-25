@@ -1,0 +1,10 @@
+\frametitle{notes}
+
+\begin{minted}{haskell}
+  f :: Int -> Reader Bool Int
+  f x = do
+    b <- ask
+    if b then return (x + 10)
+         else return (x + 20)
+\end{minted}
+
