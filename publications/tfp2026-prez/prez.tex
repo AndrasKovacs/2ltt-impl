@@ -305,9 +305,9 @@
 \frame{\titlepage}
 
 
-\begin{frame}{Goal}
+\begin{frame}{What is this about}
 
-High-level high-performance programming.
+Concrete, unnamed, WIP language for high-level high-performance programming.
 \vso
 
 \begin{itemize}
@@ -317,9 +317,83 @@ High-level high-performance programming.
 \vspace{1em}
 
 Non-goal: ``systems'' programming.
+\vso
+\begin{itemize}
+  \item We have substantial RTS with GC \& full memory safety.
+\end{itemize}
+\vso
+
+Past implementations: smaller demo \cite{staged2ltt}, Agda \& Typed TH embedding \cite{DBLP:journals/pacmpl/Kovacs24}
+
+Currently in early stage of development: \url{https://github.com/AndrasKovacs/2ltt-impl}
+
 \vspace{1em}
 
-Substantial RTS with GC \& full memory safety.
+\end{frame}
+
+\begin{frame}{Overview}
+
+\begin{enumerate}
+\item Motivation
+\item 2LTT intro
+\item Monads
+\item Fusion
+\item Memory layout control
+\item Region allocation
+\end{enumerate}
+
+\end{frame}
+
+
+\begin{frame}{Motivation}
+
+I'm interested in high-performance type theory implementations.
+\vso
+
+GHC Haskell has been the clear best choice:
+\begin{itemize}
+\item High-throughput GC, decent code generation, unboxed types, compact regions, type classes,
+      efficient laziness.
+\end{itemize}
+\vso
+\pause
+
+Why not use
+\begin{itemize}
+  \item Rust: no native GC, library solutions are slow \& noisy.
+  \item OCaml: GC leans more towards latency than throughput, less memory layout control.
+\end{itemize}
+\vso
+\pause
+
+However, major performance problems with GHC.
+\vso
+\pause
+
+\emph{OxCaml}: good progress but immature ecosystem ATM, legacy design constraints with many of the
+same problems as in GHC.
+
+\end{frame}
+
+\begin{frame}[fragile]{The GHC pipeline}
+
+\[\begin{tikzcd}[scale cd=1.1, sep=normal]
+	Source &&&&& Core &&&&& {...}
+	\arrow["{Elaboration}"', from=1-1, to=1-6]
+	\arrow["\begin{array}{c} Aggressive\\general\!-\!purpose\,optimization \end{array}", from=1-6, to=1-6, loop, in=55, out=125, distance=10mm]
+	\arrow["Compilation"', from=1-6, to=1-11]
+\end{tikzcd}\]
+
+The core simplifier is
+\begin{itemize}
+  \item Complex.
+  \item Unstable across GHC versions.
+  \item Poorly controllable by users.
+\end{itemize}
+\vso
+
+\emph{A lot of idiomatic Haskell relies on it for acceptable performance.}
+
 
 \end{frame}
 
@@ -338,186 +412,471 @@ Substantial RTS with GC \& full memory safety.
 %% \end{frame}
 
 
-%% \begin{frame}[fragile]{Compiling monads in GHC Haskell}
+\begin{frame}[fragile]{GHC example 1}
 
-%% \begin{columns}
-%% \begin{column}{0.3\textwidth}
-%% \textbf{Source:}
-%% \begin{Verbatim}[commandchars=\\\{\}]
+\begin{columns}
+\begin{column}{0.3\textwidth}
+\textbf{Source:}
+\begin{minted}{haskell}
 
-%%     \BLU{f} \RBL{::} \GRN{Reader Bool Int}
-%%     \BLU{f} \RBL{=} \RED{do}
-%%       b \RBL{<-} ask
-%%       \RED{if} b \RED{then} return 10
-%%            \RED{else} return 20
-
-
+    f :: Reader Bool Int
+    f = do
+      b <- ask
+      if b then return 10
+           else return 20
 
 
 
 
-%% \end{Verbatim}
-%% \end{column}
-%% \pause
-%% \begin{column}{0.5\textwidth}
-%% \textbf{\texttt{-O0} Core output:}
-%% \begin{Verbatim}[commandchars=\\\{\}]
-
-%%     \BLU{dict1} :: \GRN{Monad} (\GRN{Reader Int})
-%%     \BLU{dict1} = \GRN{MkMonad} ...
-
-%%     \BLU{dict2} :: \GRN{MonadReader} (\GRN{Reader Int})
-%%     \BLU{dict2} = \GRN{MkMonadReader} ...
-
-%%     \BLU{f} :: \GRN{Reader Bool Int}
-%%     \BLU{f} \RBL{=} (\RBL{>>=}) dict1 (ask dict2) (\RBL{\bsl}b \RBL{->}
-%%       \RED{case} b \RED{of}
-%%         \GRN{True } \RBL{->} return dict1 10
-%%         \GRN{False} \RBL{->} return dict1 20)
-%% \end{Verbatim}
-%% \end{column}
-%% \end{columns}
-
-%% \end{frame}
-
-%% %% f = >>=
-%% %%       $dMonad_rHr
-%% %%       (ask ($fMonadReaderrReaderT $fMonadIdentity))
-%% %%       (\ b_aAg ->
-%% %%          case b_aAg of {
-%% %%            False -> return $dMonad_rHr (I# 20#);
-%% %%            True -> return $dMonad_rHr (I# 10#)
-%% %%          })
-
-
-%% \begin{frame}[fragile]{Compiling monads in GHC Haskell}
-
-%% \textbf{\texttt{-O1} output:}
-%% \vspace{1em}
-%% \begin{Verbatim}[commandchars=\\\{\}]
-%%                              \BLU{f} \RBL{::} \GRN{Bool} \RBL{->} \GRN{Int}
-%%                              \BLU{f} b = \RED{case} b \RED{of}
-%%                                \GRN{True}  \RBL{->} 10
-%%                                \GRN{False} \RBL{->} 20
-%% \end{Verbatim}
-%% \vspace{1em}
-%% \emph{Optimization is hard!}
-%% \vspace{1em}
-
-%% Example: \ttt{\BLU{mapM}} is third-order \& rank-2 polymorphic, but almost all use cases should
-%% compile to first-order monomorphic code.
-%% \vspace{1em}
-%% \begin{Verbatim}[commandchars=\\\{\}]
-%%     \BLU{mapM} \RBL{::} \GRN{Monad} m \RBL{=>} (a \RBL{->} m b) \RBL{->} [a] \RBL{->} m [b]
-%% \end{Verbatim}
-%% \vspace{1em}
-
-%% \end{frame}
-
-%% \begin{frame}[fragile]{Compiling monads in GHC Haskell}
-
-%% \[\begin{tikzcd}[scale cd=1.1, sep=normal]
-%% 	Source &&&&& Core &&&&& {...}
-%% 	\arrow["{Elaboration}"', from=1-1, to=1-6]
-%% 	\arrow["\begin{array}{c} Aggressive\\general\!-\!purpose\,optimization \end{array}", from=1-6, to=1-6, loop, in=55, out=125, distance=10mm]
-%% 	\arrow["Compilation"', from=1-6, to=1-11]
-%% \end{tikzcd}\]
-
-%% \end{frame}
-
-%% \begin{frame}[fragile]{Proposal}
-
-%% \[\begin{tikzcd}[scale cd=1.1, sep=normal]
-%% 	Source && Metaprograms &&&& Core &&& {...}
-%% 	\arrow["Elaboration"', from=1-1, to=1-3]
-%% 	\arrow["{Compile\!-\!time\,execution}"', from=1-3, to=1-7]
-%% 	\arrow["{Conservative\,optimization}", from=1-7, to=1-7, loop, in=55, out=125, distance=10mm]
-%% 	\arrow["Compilation"', from=1-7, to=1-10]
-%% \end{tikzcd}\]
-%% \vspace{2em}
-
-%% The paper explores \textbf{monad transformers} and stream fusion using this design.
-
-
-%% \end{frame}
-
-
-%% \begin{frame}[fragile]{Proposal}
-
-%% \begin{columns}
-%% \begin{column}{0.3\textwidth}
-%% \textbf{Source in WIP language:}
-%% \begin{Verbatim}[commandchars=\\\{\}]
-%%     \BLU{f} : \GRN{Reader Bool Int}
-%%     \BLU{f} \RBL{:=} \RED{do}
-%%       b \RBL{<-} ask
-%%       \RED{if} b \RED{then} return 10
-%%            \RED{else} return 20
-%% \end{Verbatim}
-
-%% \end{column}
-%% \begin{column}{0.6\textwidth}
-%% \begin{itemize}
-%% \item Looks similar to Haskell.
-%% \item Desugaring \& elaboration does slightly more work.
-%% \item Compilation to efficient code is formally guaranteed.
-%% \end{itemize}
-%% \end{column}
-%% \end{columns}
-%% \vspace{1em}
-%% \pause
-
-%% \begin{block}{}
-%% \textbf{Setup}
-%% \begin{itemize}
-%% \item \emph{Two-level type theory (2LTT)}:
-%%   \begin{itemize}
-%%     \item Metalanguage (compile time): dependently typed.
-%%     \item Object language (runtime): simply typed, \emph{polarized}.
-%%     \item The two are smoothly integrated.
-%%   \end{itemize}
-%% \end{itemize}
-%% \end{block}
-
-%% \end{frame}
-
-%% \begin{frame}[fragile]{The 2LTT}
-
-%% \begin{itemize}
-%%   \item \textbf{\ttt{\GRN{MetaTy}}}: universe of meta-level types.
-%%   \item \textbf{\ttt{\GRN{Ty}}}: universe of object-level types. \alert{Polarization}:
-%%     \textbf{\ttt{\GRN{ValTy}}} and \textbf{\ttt{\GRN{CompTy}}} are sub-universes of \textbf{\ttt{\GRN{Ty}}}.
-%% \end{itemize}
-%% \vspace{1em}
-
-%% \begin{columns}
-%% \begin{column}{0.4\textwidth}
-%% \textbf{A meta-level program}:
-%% \begin{Verbatim}[commandchars=\\\{\}]
-%%   \BLU{id} \RBL{:} {\textbraceleft}A \RBL{:} \GRN{MetaTy}{\textbraceright} \RBL{->} A \RBL{->} A
-%%   \BLU{id} x \RBL{=} x
 
 
 
+\end{minted}
+\end{column}
+\pause
+\begin{column}{0.5\textwidth}
+\textbf{\texttt{-O0} Core output:}
+\begin{minted}{haskell}
 
-%% \end{Verbatim}
-%% \end{column}
+    dict1 :: Monad (Reader Int)
+    dict1 = MkMonad ...
 
-%% \begin{column}{0.6\textwidth}
-%% \textbf{An object-level program:}
-%% \begin{Verbatim}[commandchars=\\\{\}]
-%%   \RED{data} \GRN{List} (A \RBL{:} \GRN{ValTy}) \RBL{:=} \GRN{Nil} | \GRN{Cons} A (\GRN{List} A)
+    dict2 :: MonadReader (Reader Int)
+    dict2 = MkMonadReader ...
 
-%%   \BLU{myMap} \RBL{:} \GRN{List Int} \RBL{->} \GRN{List Int}
-%%   \BLU{myMap} ns \RBL{:=} \RED{case} xs \RED{of}
-%%     \GRN{Nil}       \RBL{->} \GRN{Nil}
-%%     \GRN{Cons} n ns \RBL{->} \GRN{Cons} (n + 10) (myMap ns)
-%% \end{Verbatim}
-%% \end{column}
-%% \end{columns}
-%% \vspace{2em}
-%% \emph{Polarization lets us control closure creation through types.}
-%% \end{frame}
+    f :: Reader Bool Int
+    f = (>>=) dict1 (ask dict2) (\b ->
+      case b of True  -> return dict1 10
+                False -> return dict1 20)
+
+
+\end{minted}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+\begin{frame}[fragile]{GHC example 2}
+
+\ttt{mapM} is third-order \& rank-2 polymorphic, but almost all use cases should
+compile to first-order monomorphic code.
+\vspace{1em}
+\begin{minted}{haskell}
+    mapM :: Monad m => (a -> m b) -> m [a] -> m [b]
+\end{minted}
+\vso
+
+\emph{High-performance Haskell programming requires a read-eval-print-look-at-Core loop.}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Revised pipeline}
+
+\[\begin{tikzcd}[scale cd=1.0, sep=normal]
+	Source && Metaprograms &&&& Object\,core &&& {...}
+	\arrow["Elaboration"', from=1-1, to=1-3]
+	\arrow["\substack{Compile\!-\!time \\ execution}"', from=1-3, to=1-7]
+	\arrow["{Optimization}", from=1-7, to=1-7, loop, in=55, out=125, distance=5mm]
+	\arrow["Compilation"', from=1-7, to=1-10]
+\end{tikzcd}\]
+\vso
+
+The \emph{metalanguage} and the \emph{object language} should be different.
+\vso
+
+\begin{itemize}
+  \item Simple object language supports better compilation \& performance.
+  \item Dependent type theory as metalanguage.
+\end{itemize}
+\vso
+
+\textbf{Main design question:} explicit control in object language vs.\ optimizations in the compiler.
+\begin{itemize}
+  \item Impractical manually: tail calls, dead code elimination, etc.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{The 2LTT}
+
+Universes for stages:
+\begin{itemize}
+  \item \texttt{Set : Set} contains \textbf{dependent} meta-level types.
+  \item \texttt{Ty : Set} contains \textbf{simple} object-level types.
+  \item \texttt{ValTy : Set} and \texttt{CompTy : Set} are subtypes of \texttt{Ty}.
+\end{itemize}
+Interaction between stages:
+\begin{itemize}
+\item \textbf{Lifting}: for \ttt{A : Ty}, we have \ttt{⇑A : Set}, as the type of
+      metaprograms that produce \ttt{A}-typed object programs.
+\item \textbf{Quoting}: for \ttt{t : A} and \ttt{A : Ty}, we have \ttt{<t> : ⇑A} as the metaprogram
+      which immediately returns \ttt{t}.
+\item \textbf{Splicing}: for \ttt{t : ⇑A}, we have \ttt{{\char`~}t : A} which runs the
+       metaprogram \ttt{t} and inserts its output in some object-level code.
+\item Definitional equalities: \ttt{{\char`~<}t{>} ≡ t} and \ttt{{<\char`~}t{>} ≡ t}.
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{The object level}
+
+\textbf{An object-level program:}
+\begin{verbatim}
+  data List (A : ValTy) := nil | cons A (List A)
+
+  f : List Int → List Int
+  f xs := case xs of
+    nil       → nil
+    cons x xs → cons (x + 10) (f xs)
+\end{verbatim}
+\vso
+
+Polarization:
+\begin{itemize}
+  \item Functions have value arguments and are computations.
+  \item Data types have value fields and are values.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{The object level}
+
+Explicit type former for closures:
+\begin{verbatim}
+  Close : CompTy → ValTy
+  close : A → Close A
+  open  : Close A → A
+\end{verbatim}
+\vso
+
+Mapping with closures:
+\begin{verbatim}
+  map : Close (Int → Int) → List Int → List Int
+  map f xs = case xs of
+    nil       → nil
+    cons x xs → cons (open f x) (map f xs)
+\end{verbatim}
+\vso
+
+Closures are surprisingly rarely needed in practical programming!
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Staging}
+
+Fully explicitly:
+\begin{verbatim}
+  map : {A B : ValTy} → (⇑A → ⇑B) -> ⇑(List A) → ⇑(List B)
+  map {A}{B} f as = <
+    let go : List ~A → List ~B
+        go as := case as of
+          nil       → nil {~B}
+          cons a as → cons {~B} ~(f <a>) (go as)
+    go ~as>
+
+  monoMap : List Int -> List Int
+  monoMap xs := ~(map (λ x. <~x + 10>) <xs>)
+\end{verbatim}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Staging}
+
+Unstaged output:
+\begin{verbatim}
+  monoMap : List Int → List Int
+  monoMap xs :=
+    let go : List Int → List Int
+        go as := case as of
+          nil       → nil {Int}
+          cons a as → cons {Int} (a + 10) (go as)
+    go xs
+\end{verbatim}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{With inference \& elaboration}
+
+\begin{verbatim}
+  map : {A B : ValTy} → (A → B) → List A → List B
+  map f as =
+    let go as := case as of
+          nil       → nil
+          cons a as → cons (f a) (go as)
+    go as
+
+  monoMap : List Int → List Int
+  monoMap := map (λ x. x + 10)
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}[fragile]{How to compile: monads}
+
+Not easy! We want
+\begin{itemize}
+  \item guaranteed closure-freedom for everything except CPS monads
+  \item guaranteed fusion for straight-line code (e.g.\ jumps instead of constructor allocation in \ttt{Maybe})
+  \item proper handling of join points and tail calls
+  \item modest code noise relative to Haskell
+\end{itemize}
+\vso
+\pause
+
+Overview of the solution:
+\begin{itemize}
+  \item The bulk of the logic is in a plain \emph{library}.
+  \item We use extra desugaring logic in \ttt{do}-blocks.
+  \item It's good to have implicit coercions as an extra feature.
+  \item \emph{Tail calls} are guaranteed in the general-purpose optimizer.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{Monads: the bulk of the logic}
+
+Monads only exist at compile time.
+\begin{verbatim}
+  class Monad (M : Set → Set) where
+    pure  : {A : Set} → A → M A
+    (>>=) : {A B : Set} → M A → (A → M B) → M B
+\end{verbatim}
+
+Recipe:
+\begin{enumerate}
+\item We want to port a transformer stack from Haskell.
+\item We have an object-level type, same as in Haskell (but with polarities).
+\item We have a meta-level transformer stack, which has an extra monad at the bottom, having
+      \emph{code generation as an effect}.
+\item We define back-and-forth conversion between the object-level type and the metamonad.
+\end{enumerate}
+
+\end{frame}
+
+\begin{frame}[fragile]{The Gen monad}
+
+\begin{verbatim}
+
+  record Gen (A : Set) : Set = gen {unGen : {R : Ty} → (A → ⇑R) → ⇑R}
+
+  instance Monad Gen where ...
+
+  runGen : Gen ⇑A → ⇑A
+  runGen (gen f) = f id
+
+  class Monad M => MonadGen M where
+    liftGen : Gen A → M A
+
+  genLet : MonadGen M => ⇑A → M ⇑A
+  genLet a = liftGen λ k. <let x := ~a; ~(k <x>)>
+\end{verbatim}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{The Gen monad}
+
+\begin{verbatim}
+  f : Int                                f : Int
+  f := ~(runGen do           unstage     f :=
+    x ← genLet <10 + 20>       ==>         let x := 10 + 20
+    y ← genLet <~x * 10>                   let y := x * 10
+    pure <~x + ~y>)                        x + y
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}[fragile]{Case splitting in Gen}
+
+\begin{verbatim}
+  data BoolM : Set = trueM | falseM
+  data Bool : ValTy := true | false
+
+  down : BoolM → ⇑Bool
+  down x = case x of trueM → <true>; falseM → <false>
+
+  up : ⇑Bool → BoolM
+  up = IMPOSSIBLE
+\end{verbatim}
+However:
+\begin{verbatim}
+  up : MonadGen M => ⇑Bool → M BoolM
+  up b = liftGen λ k. <case ~b of true → ~(k trueM); false → ~(k falseM)>
+\end{verbatim}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Case splitting in MonadGen}
+
+We add \textbf{extra desugaring} in \ttt{MonadGen} \ttt{do}-blocks for case splitting.
+\begin{verbatim}
+  f : Bool → Bool                        f : Bool → Bool
+  f b := runGen do         elaborate     f b := ~(runGen do
+    case b of                 ==>          b ← up <b>
+      true  → pure false                   case b of
+      false → pure true                      trueM  → pure <false>
+                                             falseM → pure <true>)
+\end{verbatim} 
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Monads in general}
+
+Implicit conversion between metamonads and runtime types, defined by recursion on the
+transformer stack (details in \cite{DBLP:journals/pacmpl/Kovacs24}). Overloading
+in \ttt{mtl}-style. Example:
+\begin{verbatim}
+M : Ty
+M = StateT Int (ReaderT Bool Identity)
+
+f : M ()                                  f : M ()
+f := do                                   f = stateT λ s. readerT λ r.
+  b <- ask                   unstage        case r of
+  n <- get                     ==>            true  → let s := s + 10; ((), s)
+  case b of                                   false → let s := s * 10; ((), s)
+    true  → put $ n + 10
+    false → put $ n * 10
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}[fragile]{Monads in general}
+
+Only a modest amount of extra noise compared to Haskell.
+
+(But no native implementation yet!)
+\vso
+
+All of \ttt{mtl} works. Closures are only needed in \ttt{ContT}.
+\vso
+
+\ttt{Reader} and \ttt{State} are computation types!
+We need to wrap them in \ttt{Close} to store them in data structures.
+
+\end{frame}
+
+\begin{frame}[fragile]{Memory layout control}
+
+All constructors are unboxed by default.
+\begin{verbatim}
+  data Pair A B := pair A B
+  data Sum A B := left A | right B
+\end{verbatim}
+
+Recursive constructors must be guarded by a \emph{pointer to a region}.
+\ttt{Hp} is the general GC-d heap.
+\begin{verbatim}
+  data List A := nil | cons@Hp A (List A)
+\end{verbatim}
+
+Weird sum type with just one unboxed constructor:
+\begin{verbatim}
+  data Sum A B := left A | right@Hp B
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}[fragile]{Tag-free GC \& bit-stealing}
+
+GC is \emph{almost tag-free}: only 1 bit metadata per heap object.
+\vso
+
+\emph{Arbitrary} data can be opportunistically stored into
+unused bits in pointers.
+\vso
+
+On x64: we use 16 bits in pointers for storage, 1 reserved for GC.
+\vso
+
+Huge space savings compared to GHC!
+
+\end{frame}
+
+\begin{frame}[fragile]{Tag-free GC \& bit-stealing}
+
+Example: pure lambda terms with 32-bit variables.
+\begin{verbatim}
+data Tm := var UInt32 | app@Hp Tm Tm | lam@Hp Tm
+\end{verbatim}
+Layout of \ttt{app (var 0) (var 1)}
+\begin{verbatim}
+  | app | ptr |                 -- 1 word
+           ↓
+        | var | 0 | var | 1 |   -- 2 words
+\end{verbatim}
+Same in GHC:
+\begin{verbatim}
+  | app | ptr |                              -- 1 word
+           ↓
+        | app    | ptr         | ptr |       -- 3 words
+                    ↓             ↓
+                 | var | 0 |   | var | 1 |   -- 4 words
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}[fragile]{Tag-free GC \& bit-stealing}
+
+Implementation: explored back in the 90s \cite{TODO}.
+\vso
+
+In a simple type theory, it's enough to know the types (memory layouts) of GC roots.
+\vso
+
+For each monotype, we generate code for GC scanning \& copying.
+\vso
+
+Only \emph{stack frames} need to store runtime type information about roots.
+
+\end{frame}
+
+\begin{frame}[fragile]{Regions}
+
+\begin{verbatim}
+  Location : Set
+  Hp       : Location
+  Region   : Set
+\end{verbatim}
+There's implicit coercion from \ttt{Region} to \ttt{Location}. The object language
+supports dependent functions of the form \ttt{(R : Region) → ...}.
+\vso
+
+Lists with cons cells in a specified location:
+\begin{verbatim}
+  data List (L : Location) (A : ValTy) := nil | cons@L A (List L A)
+\end{verbatim}
+
+\end{frame}
+
+
+\begin{frame}[fragile]{Regions}
+
+Example: list in a local region.
+\begin{verbatim}
+  sum : {R : Region} → List R Int → Int
+  sum xs := case xs of nil → 0; cons x xs → x + sum xs
+
+  countDown : {R : Region} → Int → List R Int
+  countDown x := case x of 0 → nil
+                           n → cons x (countDown (x - 1))
+
+  f : Int → Int
+  f x :=
+    let R : Region
+    let xs : List R Int := countDown x
+    sum xs
+\end{verbatim}
+
+\end{frame}
+
+
+
+
 
 %% %% \begin{frame}[fragile]{Closure-freedom}
 

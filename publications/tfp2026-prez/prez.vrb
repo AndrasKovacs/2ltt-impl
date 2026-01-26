@@ -1,10 +1,18 @@
-\frametitle{notes}
+\frametitle{Regions}
 
-\begin{minted}{haskell}
-  f :: Int -> Reader Bool Int
-  f x = do
-    b <- ask
-    if b then return (x + 10)
-         else return (x + 20)
-\end{minted}
+Example: list in a local region.
+\begin{verbatim}
+  sum : {R : Region} → List R Int → Int
+  sum xs := case xs of nil → 0; cons x xs → x + sum xs
+
+  countDown : {R : Region} → Int → List R Int
+  countDown x := case x of 0 → nil
+                           n → cons x (countDown (x - 1))
+
+  f : Int → Int
+  f x :=
+    let R : Region
+    let xs : List R Int := countDown x
+    sum xs
+\end{verbatim}
 

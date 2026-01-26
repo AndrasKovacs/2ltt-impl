@@ -1,0 +1,15 @@
+\begin{MintedVerbatim}[commandchars=\\\{\}]
+
+\PYG{+w}{    }\PYG{n}{dict1}\PYG{+w}{ }\PYG{o+ow}{::}\PYG{+w}{ }\PYG{k+kt}{Monad}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{Reader}\PYG{+w}{ }\PYG{k+kt}{Int}\PYG{p}{)}
+\PYG{+w}{    }\PYG{n}{dict1}\PYG{+w}{ }\PYG{o+ow}{=}\PYG{+w}{ }\PYG{k+kt}{MkMonad}\PYG{+w}{ }\PYG{o}{...}
+
+\PYG{+w}{    }\PYG{n}{dict2}\PYG{+w}{ }\PYG{o+ow}{::}\PYG{+w}{ }\PYG{k+kt}{MonadReader}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{Reader}\PYG{+w}{ }\PYG{k+kt}{Int}\PYG{p}{)}
+\PYG{+w}{    }\PYG{n}{dict2}\PYG{+w}{ }\PYG{o+ow}{=}\PYG{+w}{ }\PYG{k+kt}{MkMonadReader}\PYG{+w}{ }\PYG{o}{...}
+
+\PYG{+w}{    }\PYG{n}{f}\PYG{+w}{ }\PYG{o+ow}{::}\PYG{+w}{ }\PYG{k+kt}{Reader}\PYG{+w}{ }\PYG{k+kt}{Bool}\PYG{+w}{ }\PYG{k+kt}{Int}
+\PYG{+w}{    }\PYG{n}{f}\PYG{+w}{ }\PYG{o+ow}{=}\PYG{+w}{ }\PYG{p}{(}\PYG{o}{\PYGZgt{}\PYGZgt{}=}\PYG{p}{)}\PYG{+w}{ }\PYG{n}{dict1}\PYG{+w}{ }\PYG{p}{(}\PYG{n}{ask}\PYG{+w}{ }\PYG{n}{dict2}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{(}\PYG{n+nf}{\PYGZbs{}}\PYG{n}{b}\PYG{+w}{ }\PYG{o+ow}{\PYGZhy{}\PYGZgt{}}
+\PYG{+w}{      }\PYG{k+kr}{case}\PYG{+w}{ }\PYG{n}{b}\PYG{+w}{ }\PYG{k+kr}{of}\PYG{+w}{ }\PYG{k+kt}{True}\PYG{+w}{  }\PYG{o+ow}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n}{return}\PYG{+w}{ }\PYG{n}{dict1}\PYG{+w}{ }\PYG{l+m+mi}{10}
+\PYG{+w}{                }\PYG{k+kt}{False}\PYG{+w}{ }\PYG{o+ow}{\PYGZhy{}\PYGZgt{}}\PYG{+w}{ }\PYG{n}{return}\PYG{+w}{ }\PYG{n}{dict1}\PYG{+w}{ }\PYG{l+m+mi}{20}\PYG{p}{)}
+
+
+\end{MintedVerbatim}

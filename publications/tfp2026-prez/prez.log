@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999997 (TeX Live 2026/dev/Arch Linux) (preloaded format=xelatex 2026.1.5)  25 JAN 2026 22:51
+This is XeTeX, Version 3.141592653-2.6-0.999997 (TeX Live 2026/dev/Arch Linux) (preloaded format=xelatex 2026.1.7)  27 JAN 2026 00:23
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1219,61 +1219,285 @@ LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
 [1
 
 ]
-LaTeX Font Info:    Trying to load font information for U+msa on input line 324
+LaTeX Font Info:    Trying to load font information for U+msa on input line 332
 .
  (/usr/share/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 324
+LaTeX Font Info:    Trying to load font information for U+msb on input line 332
 .
 
 (/usr/share/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
 LaTeX Font Info:    Trying to load font information for U+stmry on input line 3
-24.
+32.
 
 (/usr/share/texmf-dist/tex/latex/stmaryrd/Ustmry.fd)
 LaTeX Font Info:    Font shape `TU/lmss/m/it' in size <10.95> not available
-(Font)              Font shape `TU/lmss/m/sl' tried instead on input line 324.
+(Font)              Font shape `TU/lmss/m/sl' tried instead on input line 332.
 LaTeX Font Info:    Font shape `TU/lmss/m/it' in size <8> not available
-(Font)              Font shape `TU/lmss/m/sl' tried instead on input line 324.
+(Font)              Font shape `TU/lmss/m/sl' tried instead on input line 332.
 LaTeX Font Info:    Font shape `TU/lmss/m/it' in size <6> not available
-(Font)              Font shape `TU/lmss/m/sl' tried instead on input line 324.
+(Font)              Font shape `TU/lmss/m/sl' tried instead on input line 332.
 
 
 LaTeX Font Warning: Font shape `U/stmry/b/n' undefined
-(Font)              using `U/stmry/m/n' instead on input line 324.
+(Font)              using `U/stmry/m/n' instead on input line 332.
 
 LaTeX Font Info:    Font shape `TU/lmss/bx/it' in size <10.95> not available
-(Font)              Font shape `TU/lmss/bx/sl' tried instead on input line 324.
+(Font)              Font shape `TU/lmss/bx/sl' tried instead on input line 332.
 
 LaTeX Font Info:    Font shape `TU/lmss/bx/it' in size <8> not available
-(Font)              Font shape `TU/lmss/bx/sl' tried instead on input line 324.
+(Font)              Font shape `TU/lmss/bx/sl' tried instead on input line 332.
 
 LaTeX Font Info:    Font shape `TU/lmss/bx/it' in size <6> not available
-(Font)              Font shape `TU/lmss/bx/sl' tried instead on input line 324.
+(Font)              Font shape `TU/lmss/bx/sl' tried instead on input line 332.
 
+LaTeX Font Info:    Font shape `TU/DejaVuSansMonoBold(0)/m/n' will be
+(Font)              scaled to size 8.76003pt on input line 332.
 
 
 [2
 
-] (./prez.bbl
+]
 
-LaTeX Warning: Empty `thebibliography' environment on input line 3.
+[3
+
+]
+
+[4
+
+]
+
+[5
+
+]
+
+[6
+
+]
+
+[7
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[8
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb
+\pydata@fh@_6721346AB707897993E8F040B8DC2B9C.data.minted=\write7
+\openout7 = `_6721346AB707897993E8F040B8DC2B9C.data.minted'.
+
+runsystem(latexminted config  --timestamp 20260127002333 6721346AB707897993E8F0
+40B8DC2B9C)...executed safely (allowed).
+
+ (./_6721346AB707897993E8F040B8DC2B9C.config.minted)
+runsystem(latexminted cleanconfig  --timestamp 20260127002333 6721346AB70789799
+3E8F040B8DC2B9C)...executed safely (allowed).
+
+
+(./_minted/default.style.minted)
+(./_minted/F39D7EB1CB57D9DA1759437F6890693E.highlight.minted
+
+LaTeX Font Warning: Font shape `TU/DejaVuSansMonoBold(0)/b/n' undefined
+(Font)              using `TU/DejaVuSansMonoBold(0)/m/n' instead on input line 
+3.
+
+LaTeX Font Info:    Font shape `TU/DejaVuSansMonoBold(0)/b/n' will be
+(Font)              scaled to size 8.76003pt on input line 3.
+) (./_minted/6D99A1DBBB1EEFCDEA71299FB05F1C82.highlight.minted))
+
+[9
+
+] (./prez.vrb (./_minted/F39D7EB1CB57D9DA1759437F6890693E.highlight.minted)
+(./_minted/6D99A1DBBB1EEFCDEA71299FB05F1C82.highlight.minted))
+
+[10
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb (./_minted/BE2F160E67E4185C37D3AB0164302C03.highlight.minted))
+
+[11
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[12
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[13
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[14
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[15
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[16
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[17
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[18
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[19
+
+] (./prez.vrb)
+
+[20
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[21
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[22
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[23
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[24
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[25
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[26
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[27
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[28
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[29
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[30
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb
+
+LaTeX Warning: Citation `TODO' on page 31 undefined on input line 3.
 
 )
-\tf@nav=\write7
-\openout7 = `prez.nav'.
 
-\tf@toc=\write8
-\openout8 = `prez.toc'.
+[31
 
-\tf@snm=\write9
-\openout9 = `prez.snm'.
+]
+\openout4 = `prez.vrb'.
 
-runsystem(latexminted cleantemp  --timestamp 20260125225131 6721346AB707897993E
-8F040B8DC2B9C)...executed safely (allowed).
+ (./prez.vrb)
+
+[32
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[33
+
+] (./prez.bbl
+LaTeX Font Info:    Font shape `TU/lmss/m/it' in size <9> not available
+(Font)              Font shape `TU/lmss/m/sl' tried instead on input line 6.
+)
+
+[34
+
+]
+\tf@nav=\write8
+\openout8 = `prez.nav'.
+
+\tf@toc=\write9
+\openout9 = `prez.toc'.
+
+\tf@snm=\write10
+\openout10 = `prez.snm'.
 
  (./prez.aux)
  ***********
@@ -1284,16 +1508,19 @@ L3 programming layer <2025-01-18>
 
 LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
+
+LaTeX Warning: There were undefined references.
+
 Package rerunfilecheck Info: File `prez.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
  ) 
 Here is how much of TeX's memory you used:
- 32458 strings out of 475848
- 717405 string characters out of 5776014
- 1217847 words of memory out of 5000000
- 54751 multiletter control sequences out of 15000+600000
- 567403 words of font info for 89 fonts, out of 8000000 for 9000
+ 33087 strings out of 475848
+ 731250 string characters out of 5776014
+ 1226845 words of memory out of 5000000
+ 55302 multiletter control sequences out of 15000+600000
+ 567419 words of font info for 91 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 128i,11n,123p,461b,457s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 128i,15n,123p,535b,1111s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on prez.xdv (2 pages, 9984 bytes).
+Output written on prez.xdv (34 pages, 219796 bytes).

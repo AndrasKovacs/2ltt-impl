@@ -1,3 +1,13 @@
-\begin{thebibliography}{}
+\begin{thebibliography}{Kov24}
+
+\bibitem[Kov22]{staged2ltt}
+Andr{\'{a}}s Kov{\'{a}}cs.
+\newblock Staged compilation with two-level type theory.
+\newblock {\em Proc. {ACM} Program. Lang.}, 6({ICFP}):540--569, 2022.
+
+\bibitem[Kov24]{DBLP:journals/pacmpl/Kovacs24}
+Andr{\'{a}}s Kov{\'{a}}cs.
+\newblock Closure-free functional programming in a two-level type theory.
+\newblock {\em Proc. {ACM} Program. Lang.}, 8({ICFP}):659--692, 2024.
 
 \end{thebibliography}

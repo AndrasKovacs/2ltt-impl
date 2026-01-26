@@ -1,0 +1,15 @@
+\begin{MintedVerbatim}[commandchars=\\\{\}]
+
+\PYG{+w}{    }\PYG{n}{f}\PYG{+w}{ }\PYG{o+ow}{::}\PYG{+w}{ }\PYG{k+kt}{Reader}\PYG{+w}{ }\PYG{k+kt}{Bool}\PYG{+w}{ }\PYG{k+kt}{Int}
+\PYG{+w}{    }\PYG{n}{f}\PYG{+w}{ }\PYG{o+ow}{=}\PYG{+w}{ }\PYG{k+kr}{do}
+\PYG{+w}{      }\PYG{n}{b}\PYG{+w}{ }\PYG{o+ow}{\PYGZlt{}\PYGZhy{}}\PYG{+w}{ }\PYG{n}{ask}
+\PYG{+w}{      }\PYG{k+kr}{if}\PYG{+w}{ }\PYG{n}{b}\PYG{+w}{ }\PYG{k+kr}{then}\PYG{+w}{ }\PYG{n}{return}\PYG{+w}{ }\PYG{l+m+mi}{10}
+\PYG{+w}{           }\PYG{k+kr}{else}\PYG{+w}{ }\PYG{n}{return}\PYG{+w}{ }\PYG{l+m+mi}{20}
+
+
+
+
+
+
+
+\end{MintedVerbatim}

@@ -2,47 +2,47 @@ This is BibTeX, Version 0.99d (TeX Live 2026/dev/Arch Linux)
 Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: prez.aux
 The style file: alpha.bst
-I found no \citation commands---while reading file prez.aux
 Database file #1: references.bib
-You've used 0 entries,
+Warning--I didn't find a database entry for "TODO"
+You've used 2 entries,
             2543 wiz_defined-function locations,
-            560 strings with 4480 characters,
-and the built_in function-call counts, 24 in all, are:
-= -- 0
-> -- 0
-< -- 0
-+ -- 0
-- -- 0
-* -- 2
-:= -- 10
-add.period$ -- 0
-call.type$ -- 0
-change.case$ -- 0
-chr.to.int$ -- 0
-cite$ -- 0
-duplicate$ -- 0
-empty$ -- 1
-format.name$ -- 0
-if$ -- 2
+            576 strings with 4746 characters,
+and the built_in function-call counts, 738 in all, are:
+= -- 76
+> -- 16
+< -- 2
++ -- 4
+- -- 4
+* -- 56
+:= -- 124
+add.period$ -- 6
+call.type$ -- 2
+change.case$ -- 10
+chr.to.int$ -- 2
+cite$ -- 2
+duplicate$ -- 30
+empty$ -- 61
+format.name$ -- 8
+if$ -- 146
 int.to.chr$ -- 1
 int.to.str$ -- 0
-missing$ -- 0
-newline$ -- 3
-num.names$ -- 0
-pop$ -- 0
+missing$ -- 2
+newline$ -- 13
+num.names$ -- 6
+pop$ -- 6
 preamble$ -- 1
-purify$ -- 0
+purify$ -- 12
 quote$ -- 0
-skip$ -- 2
+skip$ -- 23
 stack$ -- 0
-substring$ -- 0
-swap$ -- 0
-text.length$ -- 0
-text.prefix$ -- 0
+substring$ -- 64
+swap$ -- 2
+text.length$ -- 2
+text.prefix$ -- 2
 top$ -- 0
-type$ -- 0
+type$ -- 16
 warning$ -- 0
-while$ -- 0
-width$ -- 0
-write$ -- 2
-(There was 1 error message)
+while$ -- 8
+width$ -- 3
+write$ -- 28
+(There was 1 warning)

@@ -1,18 +1,18 @@
 # Fdb version 4
-["bibtex prez"] 1769377613.53689 "prez.aux" "prez.bbl" "prez" 1769377892.12904 0
+["bibtex prez"] 1769469607.87163 "prez.aux" "prez.bbl" "prez" 1769469815.34397 0
   "./references.bib" 1768252163 225418 91145802364fb868c6c73cf645965735 ""
   "/usr/share/texmf-dist/bibtex/bst/base/alpha.bst" 1767555874 23907 a5f93555796fb564b924339521f10a7c ""
-  "prez.aux" 1769377891.98339 839 79986bc52f9f574a1426860ba97d68dd "xelatex"
+  "prez.aux" 1769469815.11458 5556 037579f51c17ad8602981a9727a82791 "xelatex"
   (generated)
   "prez.bbl"
   "prez.blg"
   (rewritten before read)
-["xdvipdfmx"] 1769377892.06217 "prez.xdv" "prez.pdf" "prez" 1769377892.13019 0
-  "prez.xdv" 1769377891.98439 9984 e161f995549f65c970947ccfc4e47967 "xelatex"
+["xdvipdfmx"] 1769469815.22953 "prez.xdv" "prez.pdf" "prez" 1769469815.34542 0
+  "prez.xdv" 1769469815.11458 219796 ebd8160458c146cd305351fac983fb26 "xelatex"
   (generated)
   "prez.pdf"
   (rewritten before read)
-["xelatex"] 1769377891.42365 "prez.tex" "prez.xdv" "prez" 1769377892.12909 0
+["xelatex"] 1769469813.75456 "prez.tex" "prez.xdv" "prez" 1769469815.34405 0
   "/usr/share/texmf-dist/fonts/map/fontname/texfonts.map" 1767555874 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texmf-dist/fonts/tfm/adobe/zapfding/pzdr.tfm" 1767555874 1528 f853c4d1b4e0550255e02831fdc8496f ""
   "/usr/share/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmbsy6.tfm" 1767555874 1124 14ccf5552bc7f77ca02a8a402bea8bfb ""
@@ -247,12 +247,18 @@
   "/usr/share/texmf-dist/tex/latex/url/url.sty" 1767555874 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "/usr/share/texmf-dist/tex/latex/xcolor/xcolor.sty" 1767555874 55384 b454dec21c2d9f45ec0b793f0995b992 ""
   "/usr/share/texmf-dist/web2c/texmf.cnf" 1767555874 42087 b0f9697c952c8f5a8eede4134282cb0d ""
-  "/var/lib/texmf/web2c/xetex/xelatex.fmt" 1767604991 6838905 f279f6de32aac9aa0f25c15124c9e75b ""
-  "prez.aux" 1769377891.98339 839 79986bc52f9f574a1426860ba97d68dd "xelatex"
-  "prez.bbl" 1769377613.55947 49 0eba253fc001332e731e8aba3f23127b "bibtex prez"
-  "prez.nav" 1769377891.98439 395 640a03f4d3f0f705896c1d8375ddfa75 "xelatex"
-  "prez.out" 1769377891.84293 0 d41d8cd98f00b204e9800998ecf8427e "xelatex"
-  "prez.tex" 1769377889.88238 24227 1316b14eb88ed16fae7fd6432ac47d04 ""
+  "/var/lib/texmf/web2c/xetex/xelatex.fmt" 1767781611 6838907 1a22ee86bcf97549b17e464e7b034d63 ""
+  "_minted/6D99A1DBBB1EEFCDEA71299FB05F1C82.highlight.minted" 1769424871.65738 1433 d2939de6392a4ed6e1cd2e613d18cb6e ""
+  "_minted/BE2F160E67E4185C37D3AB0164302C03.highlight.minted" 1769425068.81203 530 e153be9d33a9d3735e15dbf3f170bd77 ""
+  "_minted/F39D7EB1CB57D9DA1759437F6890693E.highlight.minted" 1769424693.82345 593 2cd4ef00f14f8e246b7308971c27b69d ""
+  "_minted/_6721346AB707897993E8F040B8DC2B9C.index.minted" 1769432412.00572 376 683c6b3e7310e5db94aaa87be1cf8b0c ""
+  "_minted/default.style.minted" 1769371460 6426 e1fb43a91491f41b33310478eee48cdb ""
+  "prez.aux" 1769469815.11458 5556 037579f51c17ad8602981a9727a82791 "xelatex"
+  "prez.bbl" 1769469607.92372 456 803f377f782d18a3dcccb987a9d35bec "bibtex prez"
+  "prez.nav" 1769469815.11458 2797 b24b466dcc70a301f1e989af80f2b888 "xelatex"
+  "prez.out" 1769469814.34596 0 d41d8cd98f00b204e9800998ecf8427e "xelatex"
+  "prez.tex" 1769469812.56251 32531 edecfdd8a1caeb57ed597770f9905591 ""
+  "prez.vrb" 1769469815.10158 436 8a0ebb21614b34e7a25d45975f968e24 "xelatex"
   (generated)
   "prez.aux"
   "prez.log"
@@ -260,5 +266,7 @@
   "prez.out"
   "prez.snm"
   "prez.toc"
+  "prez.vrb"
   "prez.xdv"
   (rewritten before read)
+  "prez.vrb"
