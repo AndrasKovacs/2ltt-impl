@@ -5997,4 +5997,61 @@ articleno = {3},
 numpages = {25},
 keywords = {Agda, dependent type theory, first-class universe levels, formalisation, metatheory, universe polymorphism}
 }
+
+@inproceedings{DBLP:conf/lfp/Tolmach94,
+  author       = {Andrew P. Tolmach},
+  editor       = {Robert R. Kessler},
+  title        = {Tag-Free Garbage Collection Using Explicit Type Parameters},
+  booktitle    = {Proceedings of the 1994 {ACM} Conference on {LISP} and Functional
+                  Programming, Orlando, Florida, USA, 27-29 June 1994},
+  pages        = {1--11},
+  publisher    = {{ACM}},
+  year         = {1994},
+  url          = {https://doi.org/10.1145/182409.182411},
+  doi          = {10.1145/182409.182411},
+  timestamp    = {Fri, 06 Aug 2021 15:08:55 +0200},
+  biburl       = {https://dblp.org/rec/conf/lfp/Tolmach94.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
+}
+
+@inproceedings{DBLP:conf/icfp/YangCAEKN15,
+  author       = {Edward Z. Yang and
+                  Giovanni Campagna and
+                  {\"{O}}mer S. Agacan and
+                  Ahmed El{-}Hassany and
+                  Abhishek Kulkarni and
+                  Ryan R. Newton},
+  editor       = {Kathleen Fisher and
+                  John H. Reppy},
+  title        = {Efficient communication and collection with compact normal forms},
+  booktitle    = {Proceedings of the 20th {ACM} {SIGPLAN} International Conference on
+                  Functional Programming, {ICFP} 2015, Vancouver, BC, Canada, September
+                  1-3, 2015},
+  pages        = {362--374},
+  publisher    = {{ACM}},
+  year         = {2015},
+  url          = {https://doi.org/10.1145/2784731.2784735},
+  doi          = {10.1145/2784731.2784735},
+  timestamp    = {Wed, 23 Jun 2021 16:58:51 +0200},
+  biburl       = {https://dblp.org/rec/conf/icfp/YangCAEKN15.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
+}
+
+@article{10.1145/3776655,
+author = {Moine, Alexandre and Balzer, Stephanie and Xu, Alex and Westrick, Sam},
+title = {TypeDis: A Type System for Disentanglement},
+year = {2026},
+issue_date = {January 2026},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+volume = {10},
+number = {POPL},
+url = {https://doi.org/10.1145/3776655},
+doi = {10.1145/3776655},
+abstract = {Disentanglement is a runtime property of parallel programs   guaranteeing that parallel tasks remain oblivious to each other's   allocations. As demonstrated in the MaPLe compiler and run-time   system, disentanglement can be exploited for fast automatic memory   management, especially task-local garbage collection with no   synchronization between parallel tasks. However, as a low-level   property, disentanglement can be difficult to reason about for   programmers. The only means of statically verifying disentanglement   so far has been DisLog, an Iris-fueled variant of separation logic,   mechanized in the Rocq proof assistant. DisLog is a fully-featured   program logic, allowing for proof of functional correctness as well as   verification of disentanglement. Yet its employment requires   significant expertise and per-program proof effort.    This paper explores the route of automatic verification via a type   system, ensuring that any well-typed program is disentangled and   lifting the burden of carrying out manual proofs from the programmer.   It contributes TypeDis, a type system inspired by region types, where   each type is annotated with a timestamp, identifying the task that   allocated it. TypeDis supports iso-recursive types as well as   polymorphism over both types and timestamps. Crucially, timestamps   are allowed to change during type-checking, at join points as well as   via a form of subtyping, dubbed subtiming. The paper illustrates   TypeDis and its features on a range of examples. The soundness of   TypeDis and the examples are mechanized in the Rocq proof assistant,   using an improved version of DisLog, dubbed DisLog2.},
+journal = {Proc. ACM Program. Lang.},
+month = jan,
+articleno = {13},
+numpages = {30},
+keywords = {disentanglement, parallelism, separation logic, type system}
 }

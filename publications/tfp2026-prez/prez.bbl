@@ -1,4 +1,5 @@
-\begin{thebibliography}{Kov24}
+\newcommand{\etalchar}[1]{$^{#1}$}
+\begin{thebibliography}{MBXW26}
 
 \bibitem[Kov22]{staged2ltt}
 Andr{\'{a}}s Kov{\'{a}}cs.
@@ -9,5 +10,26 @@ Andr{\'{a}}s Kov{\'{a}}cs.
 Andr{\'{a}}s Kov{\'{a}}cs.
 \newblock Closure-free functional programming in a two-level type theory.
 \newblock {\em Proc. {ACM} Program. Lang.}, 8({ICFP}):659--692, 2024.
+
+\bibitem[MBXW26]{10.1145/3776655}
+Alexandre Moine, Stephanie Balzer, Alex Xu, and Sam Westrick.
+\newblock Typedis: A type system for disentanglement.
+\newblock {\em Proc. ACM Program. Lang.}, 10(POPL), January 2026.
+
+\bibitem[Tol94]{DBLP:conf/lfp/Tolmach94}
+Andrew~P. Tolmach.
+\newblock Tag-free garbage collection using explicit type parameters.
+\newblock In Robert~R. Kessler, editor, {\em Proceedings of the 1994 {ACM}
+  Conference on {LISP} and Functional Programming, Orlando, Florida, USA, 27-29
+  June 1994}, pages 1--11. {ACM}, 1994.
+
+\bibitem[YCA{\etalchar{+}}15]{DBLP:conf/icfp/YangCAEKN15}
+Edward~Z. Yang, Giovanni Campagna, {\"{O}}mer~S. Agacan, Ahmed El{-}Hassany,
+  Abhishek Kulkarni, and Ryan~R. Newton.
+\newblock Efficient communication and collection with compact normal forms.
+\newblock In Kathleen Fisher and John~H. Reppy, editors, {\em Proceedings of
+  the 20th {ACM} {SIGPLAN} International Conference on Functional Programming,
+  {ICFP} 2015, Vancouver, BC, Canada, September 1-3, 2015}, pages 362--374.
+  {ACM}, 2015.
 
 \end{thebibliography}

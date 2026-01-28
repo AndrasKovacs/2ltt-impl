@@ -1,18 +1,13 @@
-\frametitle{Regions}
+\frametitle{Other things}
 
-Example: list in a local region.
-\begin{verbatim}
-  sum : {R : Region} → List R Int → Int
-  sum xs := case xs of nil → 0; cons x xs → x + sum xs
+\begin{itemize}
+  \item Staged fusion.
+  \item IR optimizations.
+  \item Backend compilation to LLVM.
+\end{itemize}
+\pause
+\vso
+\vso
 
-  countDown : {R : Region} → Int → List R Int
-  countDown x := case x of 0 → nil
-                           n → cons x (countDown (x - 1))
-
-  f : Int → Int
-  f x :=
-    let R : Region
-    let xs : List R Int := countDown x
-    sum xs
-\end{verbatim}
+\center\large Thank you!
 
