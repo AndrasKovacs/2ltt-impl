@@ -321,7 +321,7 @@ Unnamed WIP language for high-level high-performance programming.
 Non-goal: ``systems'' programming.
 \vso
 \begin{itemize}
-  \item We have substantial RTS with GC \& full memory safety.
+  \item We'll have substantial RTS with GC \& full memory safety.
 \end{itemize}
 \vso
 
@@ -374,7 +374,7 @@ Still: \emph{performance issues with GHC too} - motivating this research.
 	\arrow["Compilation"', from=1-6, to=1-11]
 \end{tikzcd}\]
 
-The core simplifier is
+The optimizer is
 \begin{itemize}
   \item Complex.
   \item Unstable across GHC versions.
@@ -465,11 +465,12 @@ compile to first-order monomorphic code.
 \[\begin{tikzcd}[scale cd=1.0, sep=normal]
 	Source && Metaprograms &&&& Object\,core &&& {...}
 	\arrow["Elaboration"', from=1-1, to=1-3]
-	\arrow["\substack{Compile\!-\!time \\ execution}"', from=1-3, to=1-7]
+	\arrow["\substack{Compile\!-\!time\,\,execution \\ (unstaging)}"', from=1-3, to=1-7]
 	\arrow["{Optimization}", from=1-7, to=1-7, loop, in=55, out=125, distance=5mm]
 	\arrow["Compilation"', from=1-7, to=1-10]
 \end{tikzcd}\]
 \vso
+\pause
 
 The \emph{metalanguage} and the \emph{object language} should be different.
 
@@ -486,7 +487,7 @@ The \emph{metalanguage} and the \emph{object language} should be different.
 \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]{The 2LTT}
+\begin{frame}[fragile]{Setup}
 
 Universes for stages:
 \begin{itemize}
@@ -635,9 +636,9 @@ Quotes and splices are almost always inferable!
 Not easy! We want
 \begin{itemize}
   \item guaranteed closure-freedom for everything except CPS monads
-  \item guaranteed fusion for straight-line code (e.g.\ jumps instead of constructor allocation in \ttt{Maybe})
+  \item guaranteed fusion for straight-line code (e.g.\ no intermediate constructor allocations in \ttt{Maybe})
   \item proper handling of join points and tail calls
-  \item modest code noise relative to Haskell
+  \item modest extra noise compared to Haskell
 \end{itemize}
 \vso
 \pause
@@ -647,7 +648,7 @@ Ingredients of the solution:
   \item The bulk of the logic is in a plain library.
   \item We use type classes \& \emph{implicit coercions}.
   \item Extra desugaring logic in \ttt{do}-blocks.
-  \item Modest work in the downstream optimizer for tail calls.
+  \item Tail calls are handled by the downstream optimizer.
 \end{itemize}
 
 \end{frame}
@@ -714,8 +715,9 @@ Recipe for porting over a transformer stack from Haskell:
   down x = case x of trueM → <true>; falseM → <false>
 
   up : ⇑Bool → BoolM
-  up = IMPOSSIBLE
+  up = ?                -- impossible!
 \end{verbatim}
+\pause
 However:
 \begin{verbatim}
   up : MonadGen M => ⇑Bool → M BoolM
@@ -750,7 +752,7 @@ Example: conversion between object-level type and a meta-monad.
 
 \begin{verbatim}
                  ⇑(StateT Int (ReaderT Bool Identity) A)
-                                   ≈
+                                  ↑ ↓
                  StateTM (⇑Int) (ReaderTM (⇑Bool) Gen) (⇑A)
 \end{verbatim}
 
@@ -836,7 +838,7 @@ Layout of \ttt{app (var 0) (var 1)}
            ↓
         | var | 0 | var | 1 |   -- 2 words
 \end{verbatim}
-Same in GHC:
+In GHC:
 \begin{verbatim}
   | app | ptr |                              -- 1 word
            ↓
@@ -1028,12 +1030,12 @@ are disjoint.
 
 \end{frame}
 
-\begin{frame}[fragile]{Other things}
+\begin{frame}[fragile]{Further topics}
 
 \begin{itemize}
   \item Staged fusion.
   \item IR optimizations.
-  \item Backend compilation to LLVM.
+  \item Backend compilation, LLVM.
 \end{itemize}
 \pause
 \vso

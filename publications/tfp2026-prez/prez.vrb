@@ -1,9 +1,9 @@
-\frametitle{Other things}
+\frametitle{Further topics}
 
 \begin{itemize}
   \item Staged fusion.
   \item IR optimizations.
-  \item Backend compilation to LLVM.
+  \item Backend compilation, LLVM.
 \end{itemize}
 \pause
 \vso

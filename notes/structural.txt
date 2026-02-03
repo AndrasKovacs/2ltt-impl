@@ -62,60 +62,111 @@ appcl : ∀ s → (t : Tm s (Cl A B))(u : Tm s A) → Tm s (B u)
 
 --------------------------------------------------------------------------------
 
-
+TT with closures (TTCl)
 
 
 Ty        : ℕ → Set
 Scope     : Set⁺
+top       : Scope
 Tm        : Scope → Ty i → Set⁺
 Cl        : ∀ {s} → (A : Ty i) → (Tm s A → Ty j) → Ty (i ⊔ j)
 Σ         : ∀ {s} → (A : Ty i) → (Tm s A → Ty j) → Ty (i ⊔ j)
 ...       : Tm s (Σ A B) ≃ ((a : Tm s A) × Tm s (B a))
-⊤         : Ty
-...       : Tm s ⊤ ≃ ⊤
+⊤         : ∀ i → Ty i
+...       : Tm s (⊤ i) ≃ ⊤
 U         : (i : ℕ) → Ty (suc i)
-(El,code) : Tm Γ (U i) ≃ Ty i
+(El,code) : Tm s (U i) ≃ Ty i
 
 lam :
-  {E : Ty i}
-  (e : Tm s E)
-  (A : ∀ s → Tm s E → Ty j)
-  (B : ∀ s (e : Tm s E) → Tm s (A s e) → Ty k)
-  (t : ∀ s (e : Tm s E) (a : Tm s (A s e)) → Tm s (B s e a))
-  → Tm s (Cl (A s e) (B s e))
+  {i j k}
+  {E : Scope → Ty i}
+  (A : ∀ s → Tm s (E s) → Ty j)
+  (B : ∀ s (e : Tm s (E s)) → Tm s (A s e) → Ty k)
+  (t : ∀ s (e : Tm s (E s))(a : Tm s (A e)) → Tm s (B s e a))
 
-app : ∀ s → (t : Tm s (Cl A B))(u : Tm s A) → Tm s (B u)
+  {s : Scope}
+  (e : Tm s (E s))
 
-β : app s (lam e A B t) u = t s e u
-η : (t t' : Tm s (Cl A B)) → (∀ u → app s t u = app s t' u) → t = t'
+  → Tm s (Cl {s} (A s e) (B s e))
+
+app : ∀ s → (t : Tm s (Cl {s} A B))(u : Tm s A) → Tm s (B u)
+
+β : app s (lam E A B t e) u = t s e u
+η : (t t' : Tm s (Cl {s} A B)) → (∀ u → app s t u = app s t' u) → t = t'
 
 
+
+Closure conv: give a model of MLTT in PSh(TTCl)
 --------------------------------------------------------------------------------
 
-Closure conversion:
-  - work internally to 2LTT over TT with structural closures
-  - have first-order syntax of source MLTT in the 2lTT
-  - define a model of the MLTT
-  - externalize to get a syntactic translation
+Γ : Con
+  lvl Γ : ℕ
+  Γᵒ    : Scope → Set
+  Γᶜ    : Scope → Ty (lvl Γ)
+  ↑,↓   : ∀ {s} → Tm s (Γᶜ s) ≃ Γᵒ s
 
---------------------------------------------------------------------------------
+lvl ∙ := 0
+∙ᵒ s := ⊤
+∙ᶜ s := ⊤ 0
 
-(Γ : S.Con)
-  lvl Γ  : ℕ               -- max of levels of types in Γ
-  Γᵉ     : Set             -- semantic context as external Σ-type
-  Γⁱ     : Ty (lvl Γ)      -- semantic context as internal Σ-type
-  (↓,↑)  : Γᵉ ≃ Γⁱ
+lvl (Γ,{i} A) = lvl Γ ⊔ i
+(Γ,A)ᵒ s := (γ : Γᵒ s) × Tm s (Aᵒ γ)
+(Γ,A)ᶜ s := (γ : Γᶜ s) × Aᵒ ↑γ
 
-(A : S.Ty Γ i)
-  Aⁱ : Γᵉ → Ty i
+↑γα    := (↑(fst γα), snd γα)
+↓(γ,α) := (↓γ, α)
 
-(t : S.Tm Γ {i} A)
-  tⁱ : (γ : Γᵉ) → Aⁱ γ
+(σ : Sub Γ Δ)
+  σᵒ : ∀ {s} → Γᵒ s → Δᵒ s
 
-(σ : S.Sub Γ Δ)
-  σᵉ : Γᵉ → Δᵉ
+(A : Ty Γ i)
+  Aᵒ : ∀ {s} → Γᵒ s → Ty i
+
+(t : Tm Γ {i} A)
+  tᵒ : ∀ {s} (γ : Γᵒ s) → Tm s (Aᵒ γ)
+
+CwF obvious
+⊤, Σ obvious
+
+(Π (A : Ty Γ i)(B : Ty (Γ,A) j))ᵒ {s}(γ : Γᵒ s) : Ty (i ⊔ j)
+  := Cl {s} (Aᵒ γ) (λ α. Bᵒ (γ,α))
+
+(lam (t : Tm (Γ,A) B))ᵒ {s} (γ : Γᵒ s) : Tm s (Cl {s} (Aᵒ γ) (λ α. Bᵒ (γ,α)))
+
+  A : Ty Γ j
+  B : Ty (Γ,A) k
+
+  := apply lam
+
+    E : Scope → Ty (lvl Γ)
+    E s := Γᶜ s
+
+    A : ∀ s → Tm s (Γᶜ s) → Ty j
+    A s γ := Aᵒ ↑γ
+
+    B : ∀ s (γ : Tm s (Γᶜ s)) → Tm s (Aᵒ ↑γ) → Ty k
+    B s γ α := Bᵒ (↑γ, α)
+
+    t : ∀ s (γ : Tm s (Γᶜ s))(α : Tm s (Aᵒ ↑γ)) → Tm s (Bᵒ (↑γ, α))
+    t s γ α := tᵒ s (↑γ,α)
+
+    s : Scope
+    s := s
+
+    e : Tm s (Γᶜ s)
+    e := ↓γ
+
+    : Tm s (Cl {s} (Aᵒ γ) (λ α. Bᵒ (γ,α))    OK
 
 
+(app (t : Tm Γ (Π A B))) {s} (γ : Γᵒ s, α : Tm s (Aᵒ γ)) : Tm s (Bᵒ (γ, α))
+
+  tᵒ s γ : Tm s (Cl {s} (Aᵒ γ) (λ α. Bᵒ (γ, α)))
+
+  app s (tᵒ s γ) α : Tm s (Bᵒ (γ, α)) OK
+
+
++βη
 
 
 --------------------------------------------------------------------------------

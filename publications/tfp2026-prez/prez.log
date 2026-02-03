@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999997 (TeX Live 2026/dev/Arch Linux) (preloaded format=xelatex 2026.1.7)  28 JAN 2026 13:41
+This is XeTeX, Version 3.141592653-2.6-0.999997 (TeX Live 2026/dev/Arch Linux) (preloaded format=xelatex 2026.1.7)  29 JAN 2026 09:05
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1286,11 +1286,11 @@ LaTeX Font Info:    Font shape `TU/DejaVuSansMonoBold(0)/m/n' will be
 \pydata@fh@_6721346AB707897993E8F040B8DC2B9C.data.minted=\write7
 \openout7 = `_6721346AB707897993E8F040B8DC2B9C.data.minted'.
 
-runsystem(latexminted config  --timestamp 20260128134154 6721346AB707897993E8F0
+runsystem(latexminted config  --timestamp 20260129090551 6721346AB707897993E8F0
 40B8DC2B9C)...executed safely (allowed).
 
  (./_6721346AB707897993E8F040B8DC2B9C.config.minted)
-runsystem(latexminted cleanconfig  --timestamp 20260128134154 6721346AB70789799
+runsystem(latexminted cleanconfig  --timestamp 20260129090551 6721346AB70789799
 3E8F040B8DC2B9C)...executed safely (allowed).
 
 
@@ -1330,21 +1330,18 @@ LaTeX Font Info:    Font shape `TU/DejaVuSansMonoBold(0)/b/n' will be
 
 [11
 
-]
-\openout4 = `prez.vrb'.
-
- (./prez.vrb)
+] (./prez.vrb)
 
 [12
 
-] (./prez.vrb)
-
-[13
-
 ]
 \openout4 = `prez.vrb'.
 
  (./prez.vrb)
+
+[13
+
+] (./prez.vrb)
 
 [14
 
@@ -1359,10 +1356,6 @@ LaTeX Font Info:    Font shape `TU/DejaVuSansMonoBold(0)/b/n' will be
 \openout4 = `prez.vrb'.
 
  (./prez.vrb)
-Overfull \vbox (3.94745pt too high) detected at line 577
- []
-
-
 
 [16
 
@@ -1370,6 +1363,10 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 \openout4 = `prez.vrb'.
 
  (./prez.vrb)
+Overfull \vbox (3.94745pt too high) detected at line 578
+ []
+
+
 
 [17
 
@@ -1394,14 +1391,14 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 
 [20
 
-] (./prez.vrb)
-
-[21
-
 ]
 \openout4 = `prez.vrb'.
 
  (./prez.vrb)
+
+[21
+
+] (./prez.vrb)
 
 [22
 
@@ -1433,10 +1430,7 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 
 [26
 
-]
-\openout4 = `prez.vrb'.
-
- (./prez.vrb)
+] (./prez.vrb)
 
 [27
 
@@ -1503,11 +1497,17 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 
 [36
 
-] (./prez.vrb)
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
 
 [37
 
-] (./prez.vrb)
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
 
 [38
 
@@ -1515,10 +1515,7 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 
 [39
 
-]
-\openout4 = `prez.vrb'.
-
- (./prez.vrb)
+] (./prez.vrb)
 
 [40
 
@@ -1526,7 +1523,10 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 
 [41
 
-] (./prez.vrb)
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
 
 [42
 
@@ -1534,21 +1534,18 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 
 [43
 
-]
-\openout4 = `prez.vrb'.
-
- (./prez.vrb)
+] (./prez.vrb)
 
 [44
 
+] (./prez.vrb)
+
+[45
+
 ]
 \openout4 = `prez.vrb'.
 
  (./prez.vrb)
-
-[45
-
-] (./prez.vrb)
 
 [46
 
@@ -1559,10 +1556,7 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 
 [47
 
-]
-\openout4 = `prez.vrb'.
-
- (./prez.vrb)
+] (./prez.vrb)
 
 [48
 
@@ -1573,16 +1567,30 @@ Overfull \vbox (3.94745pt too high) detected at line 577
 
 [49
 
-] (./prez.vrb)
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
 
 [50
+
+]
+\openout4 = `prez.vrb'.
+
+ (./prez.vrb)
+
+[51
+
+] (./prez.vrb)
+
+[52
 
 ] (./prez.bbl
 LaTeX Font Info:    Font shape `TU/lmss/m/it' in size <9> not available
 (Font)              Font shape `TU/lmss/m/sl' tried instead on input line 7.
 )
 
-[51
+[53
 
 ]
 \tf@nav=\write8
@@ -1607,12 +1615,12 @@ Package rerunfilecheck Info: File `prez.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
  ) 
 Here is how much of TeX's memory you used:
- 33201 strings out of 475848
- 733262 string characters out of 5776014
+ 33247 strings out of 475848
+ 734343 string characters out of 5776014
  1226847 words of memory out of 5000000
- 55377 multiletter control sequences out of 15000+600000
+ 55419 multiletter control sequences out of 15000+600000
  567427 words of font info for 92 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  128i,15n,123p,535b,1112s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on prez.xdv (51 pages, 328952 bytes).
+Output written on prez.xdv (53 pages, 348912 bytes).
