@@ -1,0 +1,7 @@
+name: sstt
+depend: standard-library
+include: .
+flags:
+  --prop
+  --rewriting
+  -WnoRewriteVariablesBoundInSingleton
