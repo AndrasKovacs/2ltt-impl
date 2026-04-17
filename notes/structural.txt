@@ -1,0 +1,172 @@
+
+Abstract closures a la Bowman & Ahmed
+
+
+-- Ty    : Set
+-- Scope : Set⁺
+-- Tm    : Scope → Ty → Set⁺
+-- Π     : (A : Ty) → (∀ s → Tm s A → Ty) → Ty
+-- Cl    : (A : Ty) → (Tm s A → Ty) → Ty
+
+-- -- lam, app : (∀ s' (a : Tm s' A) → Tm s' (B s' a)) ≃ Tm s (Π A B)
+-- -- mkcl : (t : Tm s A) → Tm s (Π
+-- -- appcl
+
+Simply typed abstract closures
+
+
+
+Ty    : Set
+Scope : Set⁺
+Tm    : Scope → Ty → Set⁺
+
+_→_   : Ty → Ty → Ty
+Cl    : Ty → Ty → Ty
+
+lam,app : (∀ s → Tm s A → Tm s B) ≃ Tm s (A → B)
+
+mkcl  : Tm s E → (∀ s → Tm s E → Tm s A → Tm s B) → Tm s (Cl A B)
+appcl : Tm s (Cl A B) → Tm s A → Tm s B
+
+β : appcl {s} (mkcl e t) u = t s e u
+η : (t t' : Tm s (Cl A B)) → (∀ u → appcl t u = appcl t' u) → t = t'
+
+let foo = mkcl (10, 20) (λ s e a. ....)
+
+
+
+-- Abstract closures
+--------------------------------------------------------------------------------
+
+
+Ty    : Set
+Scope : Set⁺
+Tm    : Scope → Ty → Set⁺
+Cl    : ∀ {s} → (A : Ty) → (Tm s A → Ty) → Ty
+Σ     : ∀ {s} → (A : Ty) → (Tm s A → Ty) → Ty
+...   : Tm s (Σ A B) ≃ ((a : Tm s A) × Tm s (B a))
+⊤     : Ty
+...   : Tm s ⊤ ≃ ⊤
+
+mkcl :
+  (e : Tm s E)
+  (A : ∀ s → Tm s E → Ty)
+  (B : ∀ s (e : Tm s E) → Tm s (A s e) → Ty)
+  (t : ∀ s (e : Tm s E) (a : Tm s (A s e)) → Tm s (B s e a))
+  → Tm s (Cl (A s e) (B s e))
+
+appcl : ∀ s → (t : Tm s (Cl A B))(u : Tm s A) → Tm s (B u)
+
+β : appcl s (mkcl e A B t) u = t s e u
+η : (t t' : Tm s (Cl A B)) → (∀ u → appcl s t u = appcl s t' u) → t = t'
+
+--------------------------------------------------------------------------------
+
+TT with closures (TTCl)
+
+
+Ty        : ℕ → Set
+Scope     : Set⁺
+top       : Scope
+Tm        : Scope → Ty i → Set⁺
+Cl        : ∀ {s} → (A : Ty i) → (Tm s A → Ty j) → Ty (i ⊔ j)
+Σ         : ∀ {s} → (A : Ty i) → (Tm s A → Ty j) → Ty (i ⊔ j)
+...       : Tm s (Σ A B) ≃ ((a : Tm s A) × Tm s (B a))
+⊤         : ∀ i → Ty i
+...       : Tm s (⊤ i) ≃ ⊤
+U         : (i : ℕ) → Ty (suc i)
+(El,code) : Tm s (U i) ≃ Ty i
+
+lam :
+  {i j k}
+  {E : Scope → Ty i}
+  (A : ∀ s → Tm s (E s) → Ty j)
+  (B : ∀ s (e : Tm s (E s)) → Tm s (A s e) → Ty k)
+  (t : ∀ s (e : Tm s (E s))(a : Tm s (A e)) → Tm s (B s e a))
+
+  {s : Scope}
+  (e : Tm s (E s))
+
+  → Tm s (Cl {s} (A s e) (B s e))
+
+app : ∀ s → (t : Tm s (Cl {s} A B))(u : Tm s A) → Tm s (B u)
+
+β : app s (lam E A B t e) u = t s e u
+η : (t t' : Tm s (Cl {s} A B)) → (∀ u → app s t u = app s t' u) → t = t'
+
+
+
+Closure conv: give a model of MLTT in PSh(TTCl)
+--------------------------------------------------------------------------------
+
+Γ : Con
+  lvl Γ : ℕ
+  Γᵒ    : Scope → Set
+  Γᶜ    : Scope → Ty (lvl Γ)
+  ↑,↓   : ∀ {s} → Tm s (Γᶜ s) ≃ Γᵒ s
+
+lvl ∙ := 0
+∙ᵒ s := ⊤
+∙ᶜ s := ⊤ 0
+
+lvl (Γ,{i} A) = lvl Γ ⊔ i
+(Γ,A)ᵒ s := (γ : Γᵒ s) × Tm s (Aᵒ γ)
+(Γ,A)ᶜ s := (γ : Γᶜ s) × Aᵒ ↑γ
+
+↑γα    := (↑(fst γα), snd γα)
+↓(γ,α) := (↓γ, α)
+
+(σ : Sub Γ Δ)
+  σᵒ : ∀ {s} → Γᵒ s → Δᵒ s
+
+(A : Ty Γ i)
+  Aᵒ : ∀ {s} → Γᵒ s → Ty i
+
+(t : Tm Γ {i} A)
+  tᵒ : ∀ {s} (γ : Γᵒ s) → Tm s (Aᵒ γ)
+
+CwF obvious
+⊤, Σ obvious
+
+(Π (A : Ty Γ i)(B : Ty (Γ,A) j))ᵒ {s}(γ : Γᵒ s) : Ty (i ⊔ j)
+  := Cl {s} (Aᵒ γ) (λ α. Bᵒ (γ,α))
+
+(lam (t : Tm (Γ,A) B))ᵒ {s} (γ : Γᵒ s) : Tm s (Cl {s} (Aᵒ γ) (λ α. Bᵒ (γ,α)))
+
+  A : Ty Γ j
+  B : Ty (Γ,A) k
+
+  := apply lam
+
+    E : Scope → Ty (lvl Γ)
+    E s := Γᶜ s
+
+    A : ∀ s → Tm s (Γᶜ s) → Ty j
+    A s γ := Aᵒ ↑γ
+
+    B : ∀ s (γ : Tm s (Γᶜ s)) → Tm s (Aᵒ ↑γ) → Ty k
+    B s γ α := Bᵒ (↑γ, α)
+
+    t : ∀ s (γ : Tm s (Γᶜ s))(α : Tm s (Aᵒ ↑γ)) → Tm s (Bᵒ (↑γ, α))
+    t s γ α := tᵒ s (↑γ,α)
+
+    s : Scope
+    s := s
+
+    e : Tm s (Γᶜ s)
+    e := ↓γ
+
+    : Tm s (Cl {s} (Aᵒ γ) (λ α. Bᵒ (γ,α))    OK
+
+
+(app (t : Tm Γ (Π A B))) {s} (γ : Γᵒ s, α : Tm s (Aᵒ γ)) : Tm s (Bᵒ (γ, α))
+
+  tᵒ s γ : Tm s (Cl {s} (Aᵒ γ) (λ α. Bᵒ (γ, α)))
+
+  app s (tᵒ s γ) α : Tm s (Bᵒ (γ, α)) OK
+
+
++βη
+
+
+--------------------------------------------------------------------------------
