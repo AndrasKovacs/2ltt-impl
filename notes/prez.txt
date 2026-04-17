@@ -1,0 +1,161 @@
+
+First-order theories/syntax:
+
+  - Context, variables, substitutions are explicitly specified
+    Γ ⊢ t : A
+
+Second-order theories ("SOGAT" (second-order generalized algebraic theory))
+
+  - We give a specification that does not mention contexts, variables, substs
+  - We know how to automatically generate the omitted boilerplate
+
+Example:
+  Pure lambda calculus in both ways
+
+
+First-order:
+  Unityped category with families with lambda & application
+
+  Con : Set
+  ∙   : Con
+  _+  : Con → Con
+
+  Sub : Con → Con → Set
+  []  : {Γ : Con} → Sub Γ ∙
+
+  id  : Sub Γ Γ
+  _∘_ : Sub Δ Ξ → Sub Γ Δ → Sub Γ Ξ
+
+  Tm  : Con → Set
+  _,_ : Sub Γ Δ → Tm Γ → Sub Γ (Δ+)
+
+  .. (Db Indices) ..
+
+  lam : Tm (Γ+) → Tm Γ
+  app : Tm Γ → Tm (Γ+)
+
+  η : lam (app t) = t
+  β : app (lam t) = t
+
+  app' : Tm Γ → Tm Γ → Tm Γ
+  app' t u = (app t) [id, u]
+
+Second-order specification:
+
+  Tm         : Sort⁺
+  (lam, app) : (Tm → Tm) ≃ Tm
+
+  -- lam : ∀ Γ. Tm (Γ+) → Tm Γ
+  -- (lam t)[σ] = lam (t [σ∘wk, 0])
+  -- (app t u)[σ] = app (t[σ]) (u[σ])
+
+  -- automatically generate the first-order spec
+
+More examples in second-order style:
+
+System F:
+
+
+  Ty      : Sort⁺
+  Tm      : Ty → Sort⁺
+  _⇒_     : Ty → Ty → Ty
+  ∀       : (Ty → Ty) → Ty
+  (λ,app) : (Tm A → Tm B) ≃ Tm (A ⇒ B)
+  (Λ,App) : {B : Ty → Ty} → ((A : Ty) → Tm (B A)) ≃ Tm (∀ B)
+
+How specify closures in second-order style?
+------------------------------------------------------------
+
+2018 : Bowman, Ahmed: Typed closure conversion for CoC
+       AK: same thing roughly but no paper
+
+"Abstract closure" as type former
+
+First-order specification of Abstract Closures:
+
+Con : Set
+Ty  : Con → Set
+Tm  : (Γ : Con) → Ty Γ → Set
+Sub : Con → Con → Set
+
+
+Cl  : (A : Ty Γ) → Ty (Γ,A) → Ty Γ
+app : Tm Γ (Cl A B) → (t : Tm Γ A) → Tm Γ (B[id,t])
+
+lam :
+  {Γ : Con}
+  (E : Ty ∙)         -- captured environment (itered Σ-type)
+  (A : Ty (∙,E))     -- domain type
+  (B : Ty (∙,E,A))   -- codomain type
+  (t : Tm (∙,E,A) B) -- function body
+  (e : Tm Γ E)       -- actual package of captured values
+  → Tm Γ (Cl A[e] B[e])
+
+β :
+  app (lam E A B t e) u = t[e, u]
+
+η :
+  (t, u : Tm Γ (Cl A B))
+  → app (t[wk]) 0 = app (u[wk]) 0
+  → t = u
+
+-- Second-order spec
+------------------------------------------------------------
+
+  Scope : Sort⁺
+  Ty    : Scope → Sort
+  Tm    : {s : Scope} → Ty s → Sort⁺
+
+  ... (usual MLTT rules where everything is uniformly indexed over s : Scope) ...
+
+  Sigma : (A : Ty s) → (Tm A → Ty s) → Ty s
+  fst, snd, pair
+
+  Cl  : (A : Ty s) → (Tm A → Ty s) → Ty s
+  app : Tm (Cl {s} A B) → (t : Tm A) → Tm (B t)
+
+  lam :
+     {s : Scope}
+     (E : ∀ s → Ty s)
+     (A : ∀ s → Tm (E s) → Ty s)
+     (B : ∀ s (e : Tm (E s)) → Tm (A s e) → Ty s)
+     (t : ∀ s e a → Tm (B s e a))
+     (e : Tm (E s))
+   → Tm (Cl (A s e) (B s e))
+
+------------------------------------------------------------
+
+Scope : Con → Set
+_,+Scope : Con → Con
+Ty : (Γ : Con) → Scope Γ → Set
+Tm : (Γ : Con) → {s : Scope Γ} → Ty Γ s → Set
+...
+Ty (Γ, s:Scope) s  -- this has to be a closed type
+
+-- make this more formal: translate MLTT with weird Scope rules + Cl rules
+                          to vanilla MLTT with Cl rules
+------------------------------------------------------------
+
+give a model of MLTT with weird Scope rules, using the syntax of vanilla MLTT
+with Cl rules (we can use any model instead of the syntax)
+
+"_M" things from vanilla MLTT without Scope rules
+
+Con : Set
+Con := (n : ℕ) × (Fin n → Con_M)
+
+Scope : Con → Set
+Scope (n, Γ) := Fin n
+
+_+Scope : Con → Con
+(n, Γ) +Scope := (n + 1, (Γ,∙))
+
+Ty : (Γ : Con) → Scope Γ → Set
+Ty (n, Γ) s := Ty_M (Γ s)
+
+Tm : (Γ : Con) {s : Scope Γ} → Ty Γ s → Set
+Tm (n, Γ} s A := Tm_M (Γ s) A
+
+...
+
+Ty (Γ, s:Scope) s = Ty_M ∙_M

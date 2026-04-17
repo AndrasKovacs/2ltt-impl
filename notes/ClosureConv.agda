@@ -53,7 +53,6 @@ postulate
 
 postulate
   Scope : Set
-  S0    : Scope
   Ty    : Scope → Level → Set
   Tm    : ∀ {s i} → Ty s i → Set
   Top   : ∀ s i → Ty s i
@@ -108,6 +107,10 @@ tr-App-lem refl t u = refl
 
 -- Model of MLTT, implementing closure conversion
 --------------------------------------------------------------------------------
+
+-- I only do level-indexed CwF + Π here
+-- Other type formers and universes are a trivial exercise; every equation
+-- that can be REWRITE-d in the target syntax holds definitionally in the model.
 
 record con : Set₁ where
   no-eta-equality

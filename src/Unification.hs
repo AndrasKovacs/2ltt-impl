@@ -695,7 +695,7 @@ data UnifyMode
 data UnifyState
   = USPrecise Int UnifyMode
                     -- ^ We're computing everything precisely. We have Int amount
-                    --   of fule for speculation.
+                    --   of fuel for speculation.
   | USSpeculating UnifyMode
                     -- ^ We're speculating on one or more definition unfolding.
                     --   We can't unfold any new definition and can't solve metas.
